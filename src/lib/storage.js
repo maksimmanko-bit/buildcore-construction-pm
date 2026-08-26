@@ -73,6 +73,86 @@ export function cleanStorageFileName(fileName) {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-");
 }
 
+function escapePdfText(value) {
+  return String(value ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+export function makeSimplePdfBlob(lines) {
+  const content = [
+    "BT",
+    "/F1 12 Tf",
+    "50 780 Td",
+    "16 TL",
+    ...lines.flatMap((line, index) => {
+      const value = String(line ?? "").slice(0, 92);
+      return index === 0 ? [`(${escapePdfText(value)}) Tj`] : ["T*", `(${escapePdfText(value)}) Tj`];
+    }),
+    "ET",
+  ].join("\n");
+
+  const objects = [
+    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj",
+    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj",
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj",
+    "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj",
+    `5 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj`,
+  ];
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object) => {
+    offsets.push(pdf.length);
+    pdf += `${object}\n`;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+
+  return new Blob([pdf], { type: "application/pdf" });
+}
+
+export async function uploadVisitGeneratedFile({ bucket = "project-documents", companyId, projectId, visitId, profileId, blob, fileName, fileType = "project_document", fileKind = "pdf", mimeType = "application/pdf", searchText = "" }) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  if (!companyId || !projectId || !blob || !fileName) throw new Error("Missing file upload details.");
+
+  const folder = visitId || "project-files";
+  const storagePath = `${companyId}/${projectId}/${folder}/${Date.now()}-${cleanStorageFileName(fileName)}`;
+
+  const { error: uploadError } = await supabase.storage.from(bucket).upload(storagePath, blob, {
+    contentType: mimeType,
+    upsert: false,
+  });
+
+  if (uploadError) throw uploadError;
+
+  const { data, error: insertError } = await supabase
+    .from("visit_files")
+    .insert({
+      company_id: companyId,
+      project_id: projectId,
+      visit_id: visitId || null,
+      uploaded_by: profileId || null,
+      bucket_id: bucket,
+      storage_path: storagePath,
+      file_name: fileName,
+      file_type: fileType,
+      file_kind: fileKind,
+      mime_type: mimeType,
+      search_text: searchText,
+    })
+    .select()
+    .single();
+
+  if (insertError) throw insertError;
+  return data;
+}
+
 export async function uploadVisitAttachment({ companyId, projectId, visitId, profileId, file, searchText = "" }) {
   if (!supabase) throw new Error("Supabase is not configured.");
 
@@ -108,6 +188,22 @@ export async function uploadVisitAttachment({ companyId, projectId, visitId, pro
 
   if (insertError) throw insertError;
   return data;
+}
+
+export async function uploadVisitPhoto({ companyId, projectId, visitId, profileId, file, fileType = "completion_photo", searchText = "" }) {
+  return uploadVisitGeneratedFile({
+    bucket: "visit-photos",
+    companyId,
+    projectId,
+    visitId,
+    profileId,
+    blob: file,
+    fileName: file.name,
+    fileType,
+    fileKind: "photo",
+    mimeType: file.type || "image/jpeg",
+    searchText,
+  });
 }
 
 export async function createAttachmentUrls(attachment, expiresIn = 60 * 60) {

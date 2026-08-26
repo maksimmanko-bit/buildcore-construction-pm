@@ -34,7 +34,7 @@ import {
 import DocumentUploader from "./components/DocumentUploader.jsx";
 import PhotoAnnotator from "./components/PhotoAnnotator.jsx";
 import { isSupabaseConfigured, supabase } from "./lib/supabase.js";
-import { createAttachmentUrls, uploadAnnotatedVisitPhoto } from "./lib/storage.js";
+import { createAttachmentUrls, makeSimplePdfBlob, uploadAnnotatedVisitPhoto, uploadVisitGeneratedFile, uploadVisitPhoto } from "./lib/storage.js";
 import { localGlobalSearch } from "./lib/search.js";
 import { getGoogleMapsUrl, getWeatherForAddress } from "./lib/weather.js";
 
@@ -157,6 +157,13 @@ const projectStatusMap = {
   completed: "Completed",
   cancelled: "Cancelled",
 };
+const visitStatusMap = {
+  planned: "Planned",
+  on_site: "Active",
+  completed: "Done",
+  cancelled: "Cancelled",
+};
+const hazardOptions = ["Working at heights", "Excavation / trench", "Electrical hazard", "Heavy equipment", "Traffic / public access", "Weather exposure", "Dust / silica", "Manual lifting"];
 const timeLabels = ["7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM"];
 const colors = ["blue", "green", "yellow", "purple", "orange"];
 const scheduleStartHour = 7;
@@ -297,6 +304,10 @@ function normalizeStatus(status) {
   return projectStatusMap[status] ?? status ?? "Planned";
 }
 
+function normalizeVisitStatus(status) {
+  return visitStatusMap[status] ?? status ?? "Planned";
+}
+
 function samplePhoto() {
   return getProjectPhoto("Site photo");
 }
@@ -362,6 +373,7 @@ export default function App() {
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedAssignmentId, setSelectedAssignmentId] = useState("");
   const [selectedVisitId, setSelectedVisitId] = useState("");
+  const [detailOverlay, setDetailOverlay] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -381,6 +393,9 @@ export default function App() {
   const [projectForm, setProjectForm] = useState(emptyProjectForm);
   const [equipmentForm, setEquipmentForm] = useState(emptyEquipmentForm);
   const [visitForm, setVisitForm] = useState(emptyVisitForm);
+  const [safetyForm, setSafetyForm] = useState({ hazards: [], notes: "", signatures: {} });
+  const [photoStep, setPhotoStep] = useState({ kind: "", visitId: "", files: [] });
+  const [completionForm, setCompletionForm] = useState({ notes: "", files: [] });
 
   const isLive = Boolean(session && profile);
   const canManage = ["owner", "project_manager", "office_manager"].includes(profile?.role);
@@ -483,7 +498,7 @@ export default function App() {
         visitId: visit.id,
         projectId: visit.project_id,
         title: project?.name ?? "Project visit",
-        subtitle: visit.work_scope || normalizeStatus(visit.status),
+        subtitle: visit.work_scope || normalizeVisitStatus(visit.status),
         start: toHour(visit.start_time),
         end: toHour(visit.end_time),
         timeText: `${String(visit.start_time).slice(0, 5)} - ${String(visit.end_time).slice(0, 5)}`,
@@ -538,6 +553,18 @@ export default function App() {
     return () => window.clearTimeout(handle);
   }, [isSearchOpen]);
 
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key !== "Escape") return;
+      setIsSearchOpen(false);
+      setSearchResults([]);
+      setDetailOverlay("");
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   const rowsSource = isLive ? data : demo;
   const assignmentsSource = isLive ? liveAssignments : demoAssignments;
   const selectedProject = selectedProjectId ? rowsSource.projects.find((project) => project.id === selectedProjectId) : null;
@@ -549,6 +576,11 @@ export default function App() {
     : [];
   const selectedVisit = selectedVisitId ? selectedProjectVisits.find((visit) => visit.id === selectedVisitId) ?? null : null;
   const currentVisit = selectedVisit ?? selectedProjectVisits[0] ?? null;
+  const currentVisitFiles = (rowsSource.files ?? []).filter((file) => currentVisit?.id && file.visit_id === currentVisit.id);
+  const currentVisitPeople = currentVisit ? rowsSource.people.filter((person) => currentVisit.people_ids?.includes(person.id)) : [];
+  const currentVisitEquipment = currentVisit ? rowsSource.equipment.filter((item) => currentVisit.equipment_ids?.includes(item.id)) : [];
+  const todayValue = new Date().toISOString().slice(0, 10);
+  const todayVisits = (rowsSource.visits ?? []).filter((visit) => visit.visit_date === todayValue && (!isLive || visit.people_ids?.includes(profile?.id)));
   const projectAttachments = (rowsSource.files ?? [])
     .filter((file) => selectedProject && (file.project_id === selectedProject.id || file.projectId === selectedProject.id))
     .slice(0, 6);
@@ -865,6 +897,208 @@ export default function App() {
     refreshData();
   }
 
+  async function updateVisitStatusById(visitId, status, extra = {}) {
+    if (!supabase || !visitId) {
+      setNotice("Sign in and select a live visit first.");
+      return false;
+    }
+
+    const patch =
+      status === "on_site"
+        ? { status, arrived_at: new Date().toISOString(), ...extra }
+        : { status, completed_at: new Date().toISOString(), ...extra };
+    const { error } = await supabase.from("visits").update(patch).eq("id", visitId);
+
+    if (error) {
+      setNotice(error.message);
+      return false;
+    }
+
+    refreshData();
+    return true;
+  }
+
+  function getVisitFiles(visit) {
+    return (rowsSource.files ?? []).filter((file) => visit?.id && file.visit_id === visit.id);
+  }
+
+  function openProjectOverlay(project, mode = "project") {
+    setSelectedProjectId(project.id);
+    if (mode === "project") {
+      const nextVisit = (rowsSource.visits ?? [])
+        .filter((visit) => visit.project_id === project.id)
+        .sort((a, b) => `${b.visit_date} ${b.start_time}`.localeCompare(`${a.visit_date} ${a.start_time}`))[0];
+      setSelectedVisitId(nextVisit?.id ?? "");
+    }
+    setDetailOverlay(mode);
+  }
+
+  function openVisitOverlay(visit) {
+    if (!visit) return;
+    setSelectedProjectId(visit.project_id);
+    setSelectedVisitId(visit.id);
+    setSelectedDate(visit.visit_date);
+    setDetailOverlay("visit");
+  }
+
+  function startArrivalWorkflow(visit = currentVisit) {
+    if (!visit?.id) {
+      setNotice("Select today's visit first.");
+      return;
+    }
+
+    const files = getVisitFiles(visit);
+    const hasSafety = files.some((file) => file.file_type === "safety_form");
+    const hasBefore = files.some((file) => file.file_type === "before_photo");
+
+    setSelectedProjectId(visit.project_id);
+    setSelectedVisitId(visit.id);
+
+    if (!hasSafety) {
+      const team = rowsSource.people.filter((person) => visit.people_ids?.includes(person.id));
+      setSafetyForm({
+        hazards: [],
+        notes: "",
+        signatures: Object.fromEntries(team.map((person) => [person.id, ""])),
+      });
+      setModalType("safety");
+      return;
+    }
+
+    if (!hasBefore) {
+      setPhotoStep({ kind: "before", visitId: visit.id, files: [] });
+      setModalType("beforePhotos");
+      return;
+    }
+
+    updateVisitStatusById(visit.id, "on_site");
+  }
+
+  function startCompletionWorkflow(visit = currentVisit) {
+    if (!visit?.id) {
+      setNotice("Select an active visit first.");
+      return;
+    }
+
+    setSelectedProjectId(visit.project_id);
+    setSelectedVisitId(visit.id);
+    setCompletionForm({ notes: "", files: [] });
+    setModalType("completeVisit");
+  }
+
+  async function saveSafetyForm(event) {
+    event.preventDefault();
+    if (!supabase || !profile || !currentVisit || !selectedProject) return;
+
+    const team = rowsSource.people.filter((person) => currentVisit.people_ids?.includes(person.id));
+    const missingSignature = team.some((person) => !safetyForm.signatures[person.id]?.trim());
+    if (safetyForm.hazards.length === 0 || missingSignature) {
+      setNotice("Select hazards and collect every team member signature before continuing.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const names = team.map((person) => person.full_name || person.email || "Team member");
+      const lines = [
+        "BuildCore Construction - Digital Safety Form",
+        `Project: ${selectedProject.name}`,
+        `Job Number: ${selectedProject.job_number || "Not set"}`,
+        `Address: ${selectedProject.address}`,
+        `Date: ${formatDateLabel(currentVisit.visit_date)}`,
+        `Time: ${String(currentVisit.start_time).slice(0, 5)} - ${String(currentVisit.end_time).slice(0, 5)}`,
+        `Hazards: ${safetyForm.hazards.join(", ")}`,
+        `Notes: ${safetyForm.notes || "None"}`,
+        "Signatures:",
+        ...team.map((person) => `${person.full_name || person.email}: ${safetyForm.signatures[person.id]}`),
+      ];
+      const fileName = `${names.join("-")}-${currentVisit.visit_date}-safety-form.pdf`.replace(/\s+/g, "-");
+      const blob = makeSimplePdfBlob(lines);
+      await uploadVisitGeneratedFile({
+        companyId: rowsSource.companyId,
+        projectId: selectedProject.id,
+        visitId: currentVisit.id,
+        profileId: profile.id,
+        blob,
+        fileName,
+        fileType: "safety_form",
+        searchText: lines.join(" "),
+      });
+      setModalType("beforePhotos");
+      setPhotoStep({ kind: "before", visitId: currentVisit.id, files: [] });
+      setNotice("Safety form saved. Add before photos to start work.");
+      refreshData();
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveBeforePhotos(event) {
+    event.preventDefault();
+    if (!supabase || !profile || !currentVisit || !selectedProject) return;
+    if (photoStep.files.length === 0) {
+      setNotice("Upload at least one before photo.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      for (const file of photoStep.files) {
+        await uploadVisitPhoto({
+          companyId: rowsSource.companyId,
+          projectId: selectedProject.id,
+          visitId: currentVisit.id,
+          profileId: profile.id,
+          file,
+          fileType: "before_photo",
+          searchText: `Before photo uploaded by ${currentUserName} at ${new Date().toISOString()}`,
+        });
+      }
+      await updateVisitStatusById(currentVisit.id, "on_site");
+      setModalType(null);
+      setPhotoStep({ kind: "", visitId: "", files: [] });
+      setNotice("Work started. Ticket is Active.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveCompletion(event) {
+    event.preventDefault();
+    if (!supabase || !profile || !currentVisit || !selectedProject) return;
+    if (completionForm.files.length === 0) {
+      setNotice("Upload at least one after photo before completing work.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      for (const file of completionForm.files) {
+        await uploadVisitPhoto({
+          companyId: rowsSource.companyId,
+          projectId: selectedProject.id,
+          visitId: currentVisit.id,
+          profileId: profile.id,
+          file,
+          fileType: "completion_photo",
+          searchText: `After photo uploaded by ${currentUserName} at ${new Date().toISOString()}. ${completionForm.notes}`,
+        });
+      }
+      await updateVisitStatusById(currentVisit.id, "completed", { completion_notes: completionForm.notes });
+      setModalType(null);
+      setCompletionForm({ notes: "", files: [] });
+      setNotice("Thank you. Work is Done.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function deleteVisit() {
     if (!supabase || !currentVisit?.id || !canManage) {
       setNotice("Select a live visit and sign in as Owner, PM, or Office Manager.");
@@ -1014,18 +1248,19 @@ export default function App() {
   }
 
   function selectProject(project) {
-    setSelectedProjectId(project.id);
     setSelectedAssignmentId("");
-    const nextVisit = (rowsSource.visits ?? [])
-      .filter((visit) => visit.project_id === project.id)
-      .sort((a, b) => `${b.visit_date} ${b.start_time}`.localeCompare(`${a.visit_date} ${a.start_time}`))[0];
-    setSelectedVisitId(nextVisit?.id ?? "");
+    openProjectOverlay(project, "project");
   }
 
   function selectAssignment(assignment) {
     setSelectedAssignmentId(assignment.id);
-    setSelectedProjectId(assignment.projectId);
-    setSelectedVisitId(assignment.visitId ?? "");
+    const visit = rowsSource.visits.find((item) => item.id === assignment.visitId);
+    if (visit) openVisitOverlay(visit);
+    else {
+      setSelectedProjectId(assignment.projectId);
+      setSelectedVisitId(assignment.visitId ?? "");
+      setDetailOverlay("visit");
+    }
   }
 
   function editVisit(visit) {
@@ -1081,17 +1316,14 @@ export default function App() {
     setSearchResults([]);
     setIsSearchOpen(false);
     if (result.type === "project") {
-      setSelectedProjectId(result.id.replace("project-", ""));
+      const project = rowsSource.projects.find((item) => item.id === result.id.replace("project-", ""));
+      if (project) openProjectOverlay(project, "project");
       setActiveNav("projects");
     } else if (result.type === "visit") {
       const visitId = result.id.replace("visit-", "");
       const visit = rowsSource.visits.find((item) => item.id === visitId);
-      if (visit) {
-        setSelectedVisitId(visit.id);
-        setSelectedProjectId(visit.project_id);
-        setSelectedDate(visit.visit_date);
-        setActiveNav("schedule");
-      }
+      if (visit) openVisitOverlay(visit);
+      setActiveNav("schedule");
     } else if (result.type === "file") {
       const fileId = result.id.replace("file-", "");
       const file = rowsSource.files?.find((item) => item.id === fileId);
@@ -1190,7 +1422,7 @@ export default function App() {
       );
     }
     if (activeNav === "documents") {
-      return <InfoView icon={FileText} title="Documents" text="Project PDFs and Excel files are stored in Supabase Storage. Search reads extracted file text when documents are uploaded." />;
+      return <DocumentsView files={rowsSource.files ?? []} onOpen={openAttachment} profiles={rowsSource.people} projects={rowsSource.projects} />;
     }
     if (activeNav === "reports") {
       return <InfoView icon={FileBarChart2} title="Reports" text="Reports will use the same project, people, equipment, visit, and document records already connected here." />;
@@ -1199,7 +1431,7 @@ export default function App() {
       return <SettingsView profile={profile} session={session} isConfigured={isSupabaseConfigured} />;
     }
     if (activeNav === "overview") {
-      return <OverviewView data={rowsSource} assignments={assignmentsSource} isLive={isLive} />;
+      return <OverviewView data={rowsSource} getVisitFiles={getVisitFiles} onArrive={startArrivalWorkflow} onComplete={startCompletionWorkflow} onOpenVisit={openVisitOverlay} profile={profile} projects={rowsSource.projects} todayVisits={todayVisits} />;
     }
     return (
       <ScheduleView
@@ -1280,13 +1512,13 @@ export default function App() {
           </div>
         </header>
 
-        <section className={selectedProject ? "contentGrid" : "contentGrid noProjectPanel"}>
+        <section className="contentGrid noProjectPanel">
           <section className="scheduleArea">
             {loading && <div className="loadingBar" />}
             {renderMainContent()}
           </section>
 
-          {selectedProject && (
+          {false && selectedProject && (
           <aside className="projectPanel">
             <button
               className="panelCloseButton"
@@ -1500,6 +1732,40 @@ export default function App() {
           </div>
         )}
 
+        {detailOverlay === "project" && selectedProject && (
+          <ProjectDetailOverlay
+            canManage={canManage}
+            currentVisit={currentVisit}
+            files={projectAttachments}
+            onAddVisit={() => openVisitModal(selectedProject.id)}
+            onClose={() => setDetailOverlay("")}
+            onEditProject={() => editProject(selectedProject)}
+            onEditVisit={editVisit}
+            onOpenAttachment={openAttachment}
+            onOpenVisit={openVisitOverlay}
+            people={rowsSource.people}
+            project={selectedProject}
+            visits={selectedProjectVisits}
+          />
+        )}
+
+        {detailOverlay === "visit" && selectedProject && currentVisit && (
+          <VisitDetailOverlay
+            equipment={currentVisitEquipment}
+            files={currentVisitFiles}
+            onArrive={() => startArrivalWorkflow(currentVisit)}
+            onClose={() => setDetailOverlay("")}
+            onComplete={() => startCompletionWorkflow(currentVisit)}
+            onEdit={() => editVisit(currentVisit)}
+            onOpenAttachment={openAttachment}
+            onRemove={deleteVisit}
+            people={currentVisitPeople}
+            profiles={rowsSource.people}
+            project={selectedProject}
+            visit={currentVisit}
+          />
+        )}
+
         {modalType === "onboarding" && (
           <AppModal title="Create company" onClose={() => setModalType(null)}>
             <form className="stackForm" onSubmit={createCompany}>
@@ -1631,6 +1897,39 @@ export default function App() {
           </AppModal>
         )}
 
+        {modalType === "safety" && currentVisit && selectedProject && (
+          <AppModal title="Digital Safety Form" onClose={() => setModalType(null)} wide>
+            <SafetyFormModal
+              form={safetyForm}
+              hazards={hazardOptions}
+              loading={loading}
+              onChange={setSafetyForm}
+              onSubmit={saveSafetyForm}
+              project={selectedProject}
+              team={currentVisitPeople}
+              visit={currentVisit}
+            />
+          </AppModal>
+        )}
+
+        {modalType === "beforePhotos" && currentVisit && selectedProject && (
+          <AppModal title="Before Work Photos" onClose={() => setModalType(null)}>
+            <PhotoStepModal
+              files={photoStep.files}
+              label="Upload at least one photo before work starts."
+              loading={loading}
+              onFiles={(files) => setPhotoStep({ kind: "before", visitId: currentVisit.id, files })}
+              onSubmit={saveBeforePhotos}
+            />
+          </AppModal>
+        )}
+
+        {modalType === "completeVisit" && currentVisit && selectedProject && (
+          <AppModal title="Complete Work" onClose={() => setModalType(null)}>
+            <CompleteVisitModal form={completionForm} loading={loading} onChange={setCompletionForm} onSubmit={saveCompletion} />
+          </AppModal>
+        )}
+
         {modalType === "people" && (
           <AppModal title="Add employee" onClose={() => setModalType(null)}>
             <div className="inviteBox">
@@ -1693,6 +1992,296 @@ export default function App() {
         )}
       </main>
     </div>
+  );
+}
+
+function DetailOverlayShell({ children, onClose, title }) {
+  return (
+    <div className="detailOverlay">
+      <div className="searchBackdrop" onClick={onClose} />
+      <section className="detailPanel">
+        <div className="detailHeader">
+          <h2>{title}</h2>
+          <button type="button" title="Close" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+function ProjectDetailOverlay({ canManage, currentVisit, files, onAddVisit, onClose, onEditProject, onEditVisit, onOpenAttachment, onOpenVisit, people, project, visits }) {
+  return (
+    <DetailOverlayShell title={project.name} onClose={onClose}>
+      <div className="detailHero">
+        <img src={getProjectPhoto(project.name)} alt="" />
+        <div>
+          <span className="jobNumberPill">{project.job_number || "No job number"}</span>
+          <h3>{project.name}</h3>
+          <p>{project.description || "No description yet."}</p>
+          <div className="detailActionRow">
+            <a className="outlineLink" href={getGoogleMapsUrl(project.address)} target="_blank" rel="noreferrer">
+              <MapPin size={17} />
+              Open Maps
+            </a>
+            {canManage && (
+              <button className="outlineButton" type="button" onClick={onEditProject}>
+                <Edit3 size={17} />
+                Edit Project
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <dl className="detailFacts">
+        <ProjectFact icon={MapPin} label="Address" value={project.address || "Not set"} />
+        <ProjectFact icon={UserRound} label="Contact" value={project.contact_name || "Not set"} />
+        <ProjectFact icon={ClipboardCheck} label="Phone" value={project.contact_phone || "Not set"} />
+        <ProjectFact icon={CircleGauge} label="Status" value={normalizeStatus(project.status)} badge />
+      </dl>
+
+      <div className="detailSection">
+        <div className="panelSectionHeader">
+          <h3>Visits</h3>
+          <button type="button" onClick={onAddVisit}>
+            <Plus size={15} />
+            Add
+          </button>
+        </div>
+        {visits.length === 0 ? (
+          <div className="emptyPanelState">No visits scheduled for this project.</div>
+        ) : (
+          <div className="detailVisitGrid">
+            {visits.map((visit) => (
+              <button className={currentVisit?.id === visit.id ? "detailVisitCard active" : "detailVisitCard"} key={visit.id} type="button" onClick={() => onOpenVisit(visit)}>
+                <span>
+                  <strong>{formatDateLabel(visit.visit_date)}</strong>
+                  <small>
+                    {String(visit.start_time).slice(0, 5)} - {String(visit.end_time).slice(0, 5)}
+                  </small>
+                </span>
+                <em>{normalizeVisitStatus(visit.status)}</em>
+                {canManage && (
+                  <Edit3
+                    size={16}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onEditVisit(visit);
+                    }}
+                  />
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <AttachmentSections files={files} onOpen={onOpenAttachment} profiles={people} />
+    </DetailOverlayShell>
+  );
+}
+
+function VisitDetailOverlay({ equipment, files, onArrive, onClose, onComplete, onEdit, onOpenAttachment, onRemove, people, profiles, project, visit }) {
+  return (
+    <DetailOverlayShell title={`${project.name} Ticket`} onClose={onClose}>
+      <div className="ticketHeaderCard">
+        <div>
+          <span className={`ticketStatus ${visit.status}`}>{normalizeVisitStatus(visit.status)}</span>
+          <h3>{visit.work_scope || "Scheduled work"}</h3>
+          <p>{formatDateLabel(visit.visit_date)} · {String(visit.start_time).slice(0, 5)} - {String(visit.end_time).slice(0, 5)}</p>
+        </div>
+        <div className="detailActionRow">
+          <button className="outlineButton" type="button" onClick={onEdit}>
+            <Edit3 size={17} />
+            Edit
+          </button>
+          <button className="dangerAction" type="button" onClick={onRemove}>
+            <Trash2 size={17} />
+            Remove
+          </button>
+        </div>
+      </div>
+
+      <dl className="detailFacts">
+        <ProjectFact icon={MapPin} label="Address" value={project.address || "Not set"} />
+        <ProjectFact icon={UserRound} label="Contact" value={`${project.contact_name || "Not set"} ${project.contact_phone || ""}`} />
+        <ProjectFact icon={UsersRound} label="Team" value={people.map((person) => person.full_name || person.email).join(", ") || "No team assigned"} />
+        <ProjectFact icon={Truck} label="Equipment" value={equipment.map((item) => item.name).join(", ") || "No equipment"} />
+      </dl>
+
+      {visit.status !== "completed" ? (
+        <div className="visitActions wideActions">
+          {visit.status === "planned" && (
+            <button type="button" onClick={onArrive}>
+              <ClipboardCheck size={18} />
+              Arrived
+            </button>
+          )}
+          {visit.status === "on_site" && (
+            <button type="button" onClick={onComplete}>
+              <CheckCircle2 size={18} />
+              Complete
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="thanksBox">Thank you. This ticket is Done.</div>
+      )}
+
+      <AttachmentSections files={files} onOpen={onOpenAttachment} profiles={profiles} />
+    </DetailOverlayShell>
+  );
+}
+
+function AttachmentSections({ files, onOpen, profiles = [] }) {
+  const groups = [
+    ["safety_form", "Safety Form"],
+    ["before_photo", "Before Photos"],
+    ["completion_photo", "After Photos"],
+    ["project_document", "Documents"],
+    ["annotated_photo", "Annotated Photos"],
+  ];
+
+  return (
+    <div className="attachmentSections">
+      {groups.map(([type, label]) => {
+        const items = files.filter((file) => file.file_type === type);
+        return (
+          <section className="attachmentSection" key={type}>
+            <h3>{label}</h3>
+            {items.length === 0 ? (
+              <div className="emptyPanelState">No files yet</div>
+            ) : (
+              <div className="attachmentStrip">
+                {items.map((file) => {
+                  const uploader = profiles.find((profile) => profile.id === file.uploaded_by);
+                  return (
+                    <button className={file.file_kind === "photo" ? "attachmentCard photo" : "attachmentCard document"} key={file.id} type="button" onClick={() => onOpen(file)}>
+                      <span className="attachmentThumb">{file.file_kind === "photo" ? <ImagePlus size={22} /> : <FileText size={22} />}</span>
+                      <span className="attachmentMeta">
+                        <strong title={file.file_name}>{file.file_name}</strong>
+                        <small>{uploader?.full_name || uploader?.email || "Unknown"} · {new Date(file.created_at).toLocaleString()}</small>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, team, visit }) {
+  const signaturesReady = team.length > 0 && team.every((person) => form.signatures[person.id]?.trim());
+  const canSubmit = form.hazards.length > 0 && signaturesReady;
+
+  function toggleHazard(hazard) {
+    const set = new Set(form.hazards);
+    if (set.has(hazard)) set.delete(hazard);
+    else set.add(hazard);
+    onChange({ ...form, hazards: [...set] });
+  }
+
+  return (
+    <form className="workflowForm" onSubmit={onSubmit}>
+      <div className="safetySummary">
+        <strong>{project.name}</strong>
+        <span>{project.address}</span>
+        <span>{formatDateLabel(visit.visit_date)}</span>
+      </div>
+
+      <fieldset className="pickerList">
+        <legend>Potential hazards</legend>
+        {hazards.map((hazard) => (
+          <label key={hazard}>
+            <input type="checkbox" checked={form.hazards.includes(hazard)} onChange={() => toggleHazard(hazard)} />
+            {hazard}
+          </label>
+        ))}
+      </fieldset>
+
+      <FormField label="Safety notes">
+        <textarea value={form.notes} onChange={(event) => onChange({ ...form, notes: event.target.value })} />
+      </FormField>
+
+      <div className="signatureStack">
+        <h3>Team signatures</h3>
+        {team.length === 0 ? (
+          <div className="emptyPanelState">No team members assigned to this ticket.</div>
+        ) : (
+          team.map((person) => (
+            <FormField label={person.full_name || person.email || "Team member"} key={person.id}>
+              <input
+                placeholder="Type full name as digital signature"
+                value={form.signatures[person.id] || ""}
+                onChange={(event) =>
+                  onChange({
+                    ...form,
+                    signatures: { ...form.signatures, [person.id]: event.target.value },
+                  })
+                }
+              />
+            </FormField>
+          ))
+        )}
+      </div>
+
+      <div className="formActions wide">
+        <button className="addButton" type="submit" disabled={loading || !canSubmit}>
+          <Save size={18} />
+          Save Safety PDF
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function PhotoStepModal({ files, label, loading, onFiles, onSubmit }) {
+  return (
+    <form className="workflowForm" onSubmit={onSubmit}>
+      <div className="emptyPanelState">{label}</div>
+      <input accept="image/jpeg,image/png,image/webp" multiple required type="file" onChange={(event) => onFiles([...event.target.files])} />
+      <div className="selectedFiles">
+        {files.map((file) => (
+          <span key={`${file.name}-${file.size}`}>{file.name}</span>
+        ))}
+      </div>
+      <div className="formActions wide">
+        <button className="addButton" type="submit" disabled={loading || files.length === 0}>
+          <Upload size={18} />
+          Save Photos
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
+  return (
+    <form className="workflowForm" onSubmit={onSubmit}>
+      <FormField label="Completion comments">
+        <textarea placeholder="Describe completed work, issues, materials, office notes..." value={form.notes} onChange={(event) => onChange({ ...form, notes: event.target.value })} />
+      </FormField>
+      <div className="emptyPanelState">Upload at least one after photo before completing the ticket.</div>
+      <input accept="image/jpeg,image/png,image/webp" multiple required type="file" onChange={(event) => onChange({ ...form, files: [...event.target.files] })} />
+      <div className="selectedFiles">
+        {form.files.map((file) => (
+          <span key={`${file.name}-${file.size}`}>{file.name}</span>
+        ))}
+      </div>
+      <div className="formActions wide">
+        <button className="addButton" type="submit" disabled={loading || form.files.length === 0}>
+          <CheckCircle2 size={18} />
+          Finish Work
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -1846,14 +2435,101 @@ function EquipmentView({ equipment }) {
   );
 }
 
-function OverviewView({ data, assignments, isLive }) {
+function DocumentsView({ files, onOpen, profiles, projects }) {
   return (
-    <div className="overviewGrid">
-      <MetricCard label="Projects" value={data.projects.length} />
-      <MetricCard label="People" value={data.people.length} />
-      <MetricCard label="Equipment" value={data.equipment.length} />
-      <MetricCard label="Today visits" value={assignments.filter((item) => item.type === "person").length} />
-      {!isLive && <div className="emptyState wide">Demo preview is visible until you sign in.</div>}
+    <div className="documentsView">
+      {files.length === 0 && <div className="emptyState">No documents or photos saved yet.</div>}
+      {files.map((file) => {
+        const project = projects.find((item) => item.id === file.project_id);
+        const uploader = profiles.find((item) => item.id === file.uploaded_by);
+        return (
+          <button className="documentRow" key={file.id} type="button" onClick={() => onOpen(file)}>
+            <span className="searchIcon">{file.file_kind === "photo" ? <ImagePlus size={18} /> : file.file_kind === "excel" ? <FileSpreadsheet size={18} /> : <FileText size={18} />}</span>
+            <span>
+              <strong>{file.file_name}</strong>
+              <small>{project?.name || "Project"} · {file.file_type?.replaceAll("_", " ")} · {uploader?.full_name || uploader?.email || "Unknown"} · {new Date(file.created_at).toLocaleString()}</small>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function OverviewView({ getVisitFiles, onArrive, onComplete, onOpenVisit, projects, todayVisits }) {
+  const [weather, setWeather] = useState({ status: "idle", data: null });
+  const firstVisit = todayVisits[0];
+  const firstProject = firstVisit ? projects.find((project) => project.id === firstVisit.project_id) : null;
+
+  useEffect(() => {
+    let alive = true;
+    if (!firstProject?.address) {
+      setWeather({ status: "idle", data: null });
+      return undefined;
+    }
+
+    setWeather({ status: "loading", data: null });
+    getWeatherForAddress(firstProject.address)
+      .then((data) => {
+        if (alive) setWeather({ status: "ready", data });
+      })
+      .catch((error) => {
+        if (alive) setWeather({ status: "error", message: error.message, data: null });
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [firstProject?.address]);
+
+  return (
+    <div className="todayTickets">
+      {todayVisits.length === 0 && <div className="emptyState">No visits assigned to you today.</div>}
+      {todayVisits.map((visit) => {
+        const project = projects.find((item) => item.id === visit.project_id);
+        const files = getVisitFiles(visit);
+        const hasSafety = files.some((file) => file.file_type === "safety_form");
+        const hasBefore = files.some((file) => file.file_type === "before_photo");
+        const hasAfter = files.some((file) => file.file_type === "completion_photo");
+
+        return (
+          <section className="todayTicket" key={visit.id}>
+            <div className="ticketTopLine">
+              <span className={`ticketStatus ${visit.status}`}>{normalizeVisitStatus(visit.status)}</span>
+              <button className="outlineButton" type="button" onClick={() => onOpenVisit(visit)}>
+                View Ticket
+              </button>
+            </div>
+            <h2>{project?.name || "Project visit"}</h2>
+            <p>{visit.work_scope || "Today's scheduled work"}</p>
+
+            <dl className="detailFacts compact">
+              <ProjectFact icon={MapPin} label="Address" value={project?.address || "Not set"} />
+              <ProjectFact icon={CloudSun} label="Weather" value={weather.status === "ready" ? `${weather.data.temperature}°C, ${weather.data.condition}` : weather.status === "loading" ? "Loading..." : "Not available"} />
+              <ProjectFact icon={UserRound} label="Site Contact" value={`${project?.contact_name || "Not set"} ${project?.contact_phone || ""}`} />
+              <ProjectFact icon={ClipboardCheck} label="Checklist" value={`Safety ${hasSafety ? "done" : "needed"} · Before ${hasBefore ? "done" : "needed"} · After ${hasAfter ? "done" : "needed"}`} />
+            </dl>
+
+            {visit.status === "planned" && (
+              <div className="visitActions wideActions">
+                <button type="button" onClick={() => onArrive(visit)}>
+                  <ClipboardCheck size={18} />
+                  Arrived
+                </button>
+              </div>
+            )}
+            {visit.status === "on_site" && (
+              <div className="visitActions wideActions">
+                <button type="button" onClick={() => onComplete(visit)}>
+                  <CheckCircle2 size={18} />
+                  Complete Work
+                </button>
+              </div>
+            )}
+            {visit.status === "completed" && <div className="thanksBox">Thank you. Work is Done.</div>}
+          </section>
+        );
+      })}
     </div>
   );
 }
