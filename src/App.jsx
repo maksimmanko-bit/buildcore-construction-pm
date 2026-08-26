@@ -361,7 +361,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState("signin");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
-  const [showAuth, setShowAuth] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [showAnnotator, setShowAnnotator] = useState(false);
   const [selectedAttachment, setSelectedAttachment] = useState(null);
   const [projectWeather, setProjectWeather] = useState({ status: "idle", address: "", data: null });
@@ -394,8 +394,12 @@ export default function App() {
         } else {
           setProfile(null);
           setData({ ...demo, visits: [] });
-          setModalType("onboarding");
-          if (claimResult.error?.message?.includes("verify")) setNotice("Check your email and confirm the account before continuing.");
+          setNotice(
+            claimResult.error?.message?.includes("verify")
+              ? "Check your email and confirm the account before continuing."
+              : "Supabase did not confirm Owner access for this account.",
+          );
+          await supabase.auth.signOut();
           return;
         }
       }
@@ -438,13 +442,13 @@ export default function App() {
 
     supabase.auth.getSession().then(({ data: authData }) => {
       setSession(authData.session);
-      setShowAuth(!authData.session);
+      setAuthReady(true);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       setProfile(null);
-      setShowAuth(!nextSession);
+      setAuthReady(true);
     });
 
     return () => listener.subscription.unsubscribe();
@@ -593,12 +597,11 @@ export default function App() {
     setLoading(false);
 
     if (error) {
-      setNotice(error.message);
+      setNotice(`${error.message}. Supabase did not confirm this account.`);
       return;
     }
 
     setNotice(authMode === "signup" ? "Account created. Check your email to verify it, then return here and sign in." : "");
-    setShowAuth(false);
   }
 
   async function signOut() {
@@ -921,7 +924,7 @@ export default function App() {
 
   function openAddModal() {
     if (!session) {
-      setShowAuth(true);
+      setNotice("Sign in first.");
       return;
     }
     if (!profile) {
@@ -1005,6 +1008,30 @@ export default function App() {
     );
   }
 
+  function renderAuthScreen() {
+    if (!isSupabaseConfigured) {
+      return <AuthGate notice="Supabase environment variables are missing. Add them before signing in." />;
+    }
+
+    if (!authReady || (session && !profile)) {
+      return <AuthGate loading notice={notice || "Checking Supabase session and account access..."} />;
+    }
+
+    return (
+      <AuthGate
+        authEmail={authEmail}
+        authMode={authMode}
+        authPassword={authPassword}
+        loading={loading}
+        notice={notice}
+        onEmailChange={setAuthEmail}
+        onModeChange={setAuthMode}
+        onPasswordChange={setAuthPassword}
+        onSubmit={signIn}
+      />
+    );
+  }
+
   function renderMainContent() {
     if (activeNav === "projects") {
       return (
@@ -1056,6 +1083,10 @@ export default function App() {
         onSelect={selectAssignment}
       />
     );
+  }
+
+  if (!session || !profile) {
+    return renderAuthScreen();
   }
 
   return (
@@ -1134,17 +1165,10 @@ export default function App() {
               <Bell size={20} />
             </button>
 
-            {isSupabaseConfigured && session ? (
-              <button className="sessionButton" type="button" onClick={signOut}>
-                <LogOut size={17} />
-                Sign out
-              </button>
-            ) : (
-              <button className="sessionButton" type="button" onClick={() => setShowAuth(true)}>
-                <LogIn size={17} />
-                Sign in
-              </button>
-            )}
+            <button className="sessionButton" type="button" onClick={signOut}>
+              <LogOut size={17} />
+              Sign out
+            </button>
 
             <div className="avatar face small">{makeInitials(currentUserName)}</div>
           </div>
@@ -1153,8 +1177,6 @@ export default function App() {
         <section className="contentGrid">
           <section className="scheduleArea">
             {loading && <div className="loadingBar" />}
-            {!isSupabaseConfigured && <div className="emptyState">Add Supabase variables to connect the app.</div>}
-            {isSupabaseConfigured && session && !profile && <div className="emptyState">Create your company profile to start using live data.</div>}
             {renderMainContent()}
           </section>
 
@@ -1268,28 +1290,6 @@ export default function App() {
             </button>
           </aside>
         </section>
-
-        {showAuth && (
-          <AppModal title={authMode === "signup" ? "Create account" : "Sign in"} onClose={() => setShowAuth(false)}>
-            <form className="stackForm" onSubmit={signIn}>
-              <FormField label="Email">
-                <input autoComplete="email" required type="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} />
-              </FormField>
-              <FormField label="Password">
-                <input autoComplete={authMode === "signup" ? "new-password" : "current-password"} required minLength={6} type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} />
-              </FormField>
-              <div className="formActions">
-                <button className="outlineButton" type="button" onClick={() => setAuthMode(authMode === "signup" ? "signin" : "signup")}>
-                  {authMode === "signup" ? "I have account" : "Create account"}
-                </button>
-                <button className="addButton" type="submit" disabled={loading}>
-                  <LogIn size={18} />
-                  Continue
-                </button>
-              </div>
-            </form>
-          </AppModal>
-        )}
 
         {modalType === "onboarding" && (
           <AppModal title="Create company" onClose={() => setModalType(null)}>
@@ -1714,6 +1714,94 @@ function AppModal({ children, onClose, title, wide = false }) {
         {children}
       </div>
     </div>
+  );
+}
+
+function AuthGate({ authEmail = "", authMode = "signin", authPassword = "", loading = false, notice = "", onEmailChange, onModeChange, onPasswordChange, onSubmit }) {
+  const canSubmit = typeof onSubmit === "function";
+  const isChecking = loading && !canSubmit;
+
+  return (
+    <main className="authGate">
+      <section className="authVisual" aria-hidden="true">
+        <div className="authBrandCard">
+          <div className="brandMark">B</div>
+          <span>BuildCore Construction</span>
+        </div>
+        <div className="authPreview">
+          <div className="authPreviewHeader">
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="authPreviewGrid">
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+          </div>
+        </div>
+      </section>
+
+      <section className="authPanel" aria-label="Account access">
+        <div className="authCard">
+          <div className="authLogo">
+            <div className="brandMark">B</div>
+            <div>
+              <strong>BuildCore</strong>
+              <span>Construction PM</span>
+            </div>
+          </div>
+
+          <div className="authCopy">
+            <h1>{isChecking ? "Checking access" : !canSubmit ? "Supabase required" : authMode === "signup" ? "Create Owner Account" : "Sign in"}</h1>
+            <p>
+              {isChecking
+                ? "Supabase is confirming your session before opening the workspace."
+                : !canSubmit
+                  ? "Connect Supabase before opening the workspace."
+                  : "Only verified Supabase accounts with company access can open the workspace."}
+            </p>
+          </div>
+
+          {notice && <div className="authNotice">{notice}</div>}
+
+          {isChecking || !canSubmit ? (
+            <div className="authLoader">
+              {isChecking && <span />}
+              <strong>{isChecking ? "Verifying account..." : "Access locked"}</strong>
+            </div>
+          ) : (
+            <form className="authForm" onSubmit={onSubmit}>
+              <FormField label="Email">
+                <input autoComplete="email" required type="email" value={authEmail} onChange={(event) => onEmailChange?.(event.target.value)} />
+              </FormField>
+              <FormField label="Password">
+                <input
+                  autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+                  required
+                  minLength={6}
+                  type="password"
+                  value={authPassword}
+                  onChange={(event) => onPasswordChange?.(event.target.value)}
+                />
+              </FormField>
+              <div className="authActions">
+                <button className="outlineButton" type="button" onClick={() => onModeChange?.(authMode === "signup" ? "signin" : "signup")}>
+                  {authMode === "signup" ? "I have account" : "Create account"}
+                </button>
+                <button className="addButton" type="submit" disabled={loading}>
+                  <LogIn size={18} />
+                  {authMode === "signup" ? "Create" : "Sign in"}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </section>
+    </main>
   );
 }
 

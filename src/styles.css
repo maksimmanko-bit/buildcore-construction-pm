@@ -62,6 +62,207 @@ button:disabled {
   overflow: hidden;
 }
 
+.authGate {
+  display: grid;
+  grid-template-columns: minmax(420px, 0.95fr) minmax(420px, 1fr);
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(207, 46, 46, 0.11), transparent 28%),
+    radial-gradient(circle at 78% 84%, rgba(37, 99, 235, 0.08), transparent 32%),
+    var(--bg);
+}
+
+.authVisual {
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  padding: 42px;
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, rgba(17, 24, 39, 0.94), rgba(31, 41, 55, 0.84)),
+    #111827;
+}
+
+.authVisual::before {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border-radius: 42px;
+  background: linear-gradient(135deg, rgba(207, 46, 46, 0.32), rgba(255, 255, 255, 0.08));
+  filter: blur(34px);
+}
+
+.authBrandCard,
+.authPreview {
+  position: relative;
+  z-index: 1;
+}
+
+.authBrandCard {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 13px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-weight: 850;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.authPreview {
+  display: grid;
+  gap: 18px;
+  min-height: 440px;
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.28);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+
+.authPreviewHeader,
+.authPreviewGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.authPreviewHeader {
+  grid-template-columns: 1.2fr 0.8fr 0.5fr;
+}
+
+.authPreviewHeader span,
+.authPreviewGrid i {
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.authPreviewHeader span {
+  height: 48px;
+}
+
+.authPreviewGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.authPreviewGrid i {
+  min-height: 118px;
+}
+
+.authPreviewGrid i:nth-child(1),
+.authPreviewGrid i:nth-child(4) {
+  background: linear-gradient(135deg, rgba(207, 46, 46, 0.52), rgba(255, 255, 255, 0.12));
+}
+
+.authPanel {
+  display: grid;
+  place-items: center;
+  padding: 28px;
+}
+
+.authCard {
+  display: grid;
+  gap: 24px;
+  width: min(100%, 480px);
+  padding: 30px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--card-shadow-hover);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12);
+  backdrop-filter: blur(22px) saturate(1.12);
+}
+
+.authLogo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.authLogo strong,
+.authLogo span {
+  display: block;
+}
+
+.authLogo strong {
+  font-family: var(--font-header);
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.authLogo span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.authCopy h1 {
+  font-family: var(--font-header);
+  font-size: 38px;
+  line-height: 1;
+}
+
+.authCopy p {
+  margin-top: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.authNotice {
+  padding: 12px 14px;
+  border: 1px solid rgba(207, 46, 46, 0.22);
+  border-radius: 11px;
+  background: rgba(207, 46, 46, 0.08);
+  color: #9f1239;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.authForm {
+  display: grid;
+  gap: 16px;
+}
+
+.authActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.authLoader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.authLoader span {
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgba(207, 46, 46, 0.18);
+  border-top-color: var(--brand-red);
+  border-radius: 50%;
+  animation: authSpin 0.85s linear infinite;
+}
+
+@keyframes authSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .sidebar {
   position: sticky;
   top: 0;
@@ -1576,6 +1777,14 @@ canvas {
 }
 
 @media (max-width: 1280px) {
+  .authGate {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .authVisual {
+    display: none;
+  }
+
   .dashboardShell {
     grid-template-columns: 236px minmax(0, 1fr);
   }
@@ -1590,6 +1799,25 @@ canvas {
 }
 
 @media (max-width: 860px) {
+  .authPanel {
+    align-items: start;
+    padding: 18px 14px;
+  }
+
+  .authCard {
+    gap: 20px;
+    padding: 22px;
+    border-radius: 14px;
+  }
+
+  .authCopy h1 {
+    font-size: 32px;
+  }
+
+  .authActions {
+    grid-template-columns: 1fr;
+  }
+
   .dashboardShell {
     display: block;
   }
