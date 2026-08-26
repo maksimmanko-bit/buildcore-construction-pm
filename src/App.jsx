@@ -332,6 +332,10 @@ function highlightText(value, query) {
   );
 }
 
+function getAuthRedirectUrl() {
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
 function FormField({ label, children }) {
   return (
     <label className="formField">
@@ -379,14 +383,21 @@ export default function App() {
     setNotice("");
 
     try {
-      const profileResult = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+      let profileResult = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
       if (profileResult.error) throw profileResult.error;
 
       if (!profileResult.data) {
-        setProfile(null);
-        setData({ ...demo, visits: [] });
-        setModalType("onboarding");
-        return;
+        const claimResult = await supabase.rpc("claim_owner_invite");
+        if (!claimResult.error && claimResult.data) {
+          profileResult = { data: claimResult.data, error: null };
+          setNotice("Owner account verified and connected.");
+        } else {
+          setProfile(null);
+          setData({ ...demo, visits: [] });
+          setModalType("onboarding");
+          if (claimResult.error?.message?.includes("verify")) setNotice("Check your email and confirm the account before continuing.");
+          return;
+        }
       }
 
       setProfile(profileResult.data);
@@ -566,10 +577,18 @@ export default function App() {
     if (!supabase) return;
 
     setLoading(true);
+    const normalizedEmail = authEmail.trim().toLowerCase();
     const action =
       authMode === "signup"
-        ? supabase.auth.signUp({ email: authEmail, password: authPassword })
-        : supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+        ? supabase.auth.signUp({
+            email: normalizedEmail,
+            password: authPassword,
+            options: {
+              emailRedirectTo: getAuthRedirectUrl(),
+              data: { full_name: companyForm.full_name || normalizedEmail.split("@")[0] },
+            },
+          })
+        : supabase.auth.signInWithPassword({ email: normalizedEmail, password: authPassword });
     const { error } = await action;
     setLoading(false);
 
@@ -578,7 +597,7 @@ export default function App() {
       return;
     }
 
-    setNotice(authMode === "signup" ? "Account created. Check email confirmation if Supabase asks for it." : "");
+    setNotice(authMode === "signup" ? "Account created. Check your email to verify it, then return here and sign in." : "");
     setShowAuth(false);
   }
 
@@ -1254,10 +1273,10 @@ export default function App() {
           <AppModal title={authMode === "signup" ? "Create account" : "Sign in"} onClose={() => setShowAuth(false)}>
             <form className="stackForm" onSubmit={signIn}>
               <FormField label="Email">
-                <input required type="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} />
+                <input autoComplete="email" required type="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} />
               </FormField>
               <FormField label="Password">
-                <input required minLength={6} type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} />
+                <input autoComplete={authMode === "signup" ? "new-password" : "current-password"} required minLength={6} type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} />
               </FormField>
               <div className="formActions">
                 <button className="outlineButton" type="button" onClick={() => setAuthMode(authMode === "signup" ? "signin" : "signup")}>

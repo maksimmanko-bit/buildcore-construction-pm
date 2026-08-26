@@ -11,6 +11,7 @@ export const supabase = isSupabaseConfigured
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true,
+        storageKey: "buildcore-construction-auth",
       },
     })
   : null;

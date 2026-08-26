@@ -43,6 +43,16 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.owner_invites (
+  email text primary key,
+  company_name text not null default 'BuildCore Construction',
+  full_name text not null default '',
+  is_active boolean not null default true,
+  claimed_by uuid references public.profiles(id) on delete set null,
+  claimed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.projects (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies(id) on delete cascade,
@@ -214,6 +224,92 @@ $$;
 revoke all on function public.create_company_for_current_user(text, text, text) from public;
 revoke all on function public.create_company_for_current_user(text, text, text) from anon;
 grant execute on function public.create_company_for_current_user(text, text, text) to authenticated;
+
+create or replace function public.claim_owner_invite()
+returns public.profiles
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  current_user_id uuid := auth.uid();
+  current_email text;
+  current_email_confirmed_at timestamptz;
+  matching_invite public.owner_invites;
+  existing_profile public.profiles;
+  new_company_id uuid;
+  created_profile public.profiles;
+begin
+  if current_user_id is null then
+    raise exception 'You must be signed in.';
+  end if;
+
+  select lower(email), email_confirmed_at
+    into current_email, current_email_confirmed_at
+  from auth.users
+  where id = current_user_id;
+
+  if current_email_confirmed_at is null then
+    raise exception 'Please verify your email before claiming owner access.';
+  end if;
+
+  select *
+    into matching_invite
+  from public.owner_invites
+  where email = current_email
+    and is_active = true
+  limit 1;
+
+  if not found then
+    raise exception 'This email is not invited for Owner access.';
+  end if;
+
+  select *
+    into existing_profile
+  from public.profiles
+  where id = current_user_id;
+
+  if found then
+    update public.profiles
+      set role = 'owner',
+          is_active = true
+    where id = current_user_id
+    returning * into existing_profile;
+
+    update public.owner_invites
+      set claimed_by = current_user_id,
+          claimed_at = coalesce(claimed_at, now())
+    where email = current_email;
+
+    return existing_profile;
+  end if;
+
+  insert into public.companies (name)
+  values (matching_invite.company_name)
+  returning id into new_company_id;
+
+  insert into public.profiles (id, company_id, full_name, role, is_active)
+  values (
+    current_user_id,
+    new_company_id,
+    coalesce(nullif(trim(matching_invite.full_name), ''), split_part(current_email, '@', 1)),
+    'owner',
+    true
+  )
+  returning * into created_profile;
+
+  update public.owner_invites
+    set claimed_by = current_user_id,
+        claimed_at = now()
+  where email = current_email;
+
+  return created_profile;
+end;
+$$;
+
+revoke all on function public.claim_owner_invite() from public;
+revoke all on function public.claim_owner_invite() from anon;
+grant execute on function public.claim_owner_invite() to authenticated;
 
 create or replace function public.can_manage()
 returns boolean
@@ -437,6 +533,7 @@ as $$
 $$;
 
 alter table public.companies enable row level security;
+alter table public.owner_invites enable row level security;
 alter table public.profiles enable row level security;
 alter table public.projects enable row level security;
 alter table public.equipment enable row level security;
@@ -599,3 +696,10 @@ with check (
   and split_part(name, '/', 1)::uuid = public.current_company_id()
   and public.can_manage()
 );
+
+insert into public.owner_invites (email, company_name, full_name, is_active)
+values ('maksim.manko@gmail.com', 'BuildCore Construction', 'Maksim Manko', true)
+on conflict (email) do update
+set company_name = excluded.company_name,
+    full_name = excluded.full_name,
+    is_active = excluded.is_active;
