@@ -160,6 +160,61 @@ as $$
   select role from public.profiles where id = auth.uid() limit 1;
 $$;
 
+create or replace function public.create_company_for_current_user(
+  company_name text,
+  full_name text default '',
+  phone text default null
+)
+returns public.profiles
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  current_user_id uuid := auth.uid();
+  existing_profile public.profiles;
+  new_company_id uuid;
+  created_profile public.profiles;
+begin
+  if current_user_id is null then
+    raise exception 'You must be signed in to create a company.';
+  end if;
+
+  select * into existing_profile
+  from public.profiles
+  where id = current_user_id;
+
+  if found then
+    return existing_profile;
+  end if;
+
+  if nullif(trim(company_name), '') is null then
+    raise exception 'Company name is required.';
+  end if;
+
+  insert into public.companies (name)
+  values (trim(company_name))
+  returning id into new_company_id;
+
+  insert into public.profiles (id, company_id, full_name, role, phone, is_active)
+  values (
+    current_user_id,
+    new_company_id,
+    coalesce(nullif(trim(full_name), ''), split_part(coalesce((select email from auth.users where id = current_user_id), 'Owner'), '@', 1)),
+    'owner',
+    nullif(trim(phone), ''),
+    true
+  )
+  returning * into created_profile;
+
+  return created_profile;
+end;
+$$;
+
+revoke all on function public.create_company_for_current_user(text, text, text) from public;
+revoke all on function public.create_company_for_current_user(text, text, text) from anon;
+grant execute on function public.create_company_for_current_user(text, text, text) to authenticated;
+
 create or replace function public.can_manage()
 returns boolean
 language sql

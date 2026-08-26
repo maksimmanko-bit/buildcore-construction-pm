@@ -853,6 +853,29 @@ h1 {
   width: 100%;
 }
 
+.visitActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding-top: 18px;
+}
+
+.visitActions button,
+.sessionButton {
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fff;
+  color: #111827;
+  font-weight: 800;
+}
+
+.sessionButton {
+  gap: 8px;
+  white-space: nowrap;
+}
+
 .viewProjectButton {
   width: 100%;
   min-height: 62px;
@@ -886,6 +909,14 @@ h1 {
   padding: 18px;
   border-radius: 18px;
   background: #fff;
+}
+
+.modal:not(.wideModal) {
+  width: min(680px, 100%);
+}
+
+.wideModal {
+  width: min(1120px, 100%);
 }
 
 .modalHeader,
@@ -944,6 +975,278 @@ h1 {
 canvas {
   max-width: 100%;
   height: auto;
+}
+
+.hiddenDateInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loadingBar {
+  height: 3px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--blue), transparent);
+  animation: loadingSlide 1.1s ease-in-out infinite;
+}
+
+@keyframes loadingSlide {
+  from {
+    transform: translateX(-35%);
+  }
+
+  to {
+    transform: translateX(35%);
+  }
+}
+
+.sectionToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.sectionToolbar strong {
+  font-size: 18px;
+}
+
+.listView,
+.overviewGrid,
+.infoView {
+  min-height: 520px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.listView {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.listRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 68px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: #111827;
+  text-align: left;
+}
+
+.listRow span {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.listRow strong,
+.listRow small,
+.listRow em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.listRow small {
+  color: var(--muted);
+}
+
+.listRow em {
+  color: #475569;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.listRow select,
+.formField input,
+.formField select,
+.formField textarea {
+  min-height: 44px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+}
+
+.listRow select {
+  width: min(220px, 100%);
+  padding: 0 10px;
+}
+
+.emptyState,
+.emptyTimeline {
+  display: grid;
+  place-items: center;
+  min-height: 90px;
+  padding: 18px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  color: #64748b;
+  font-weight: 750;
+  text-align: center;
+}
+
+.emptyTimeline {
+  position: relative;
+  z-index: 1;
+  margin: 14px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.stackForm {
+  display: grid;
+  gap: 14px;
+}
+
+.twoColumns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.formField {
+  display: grid;
+  gap: 7px;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.formField input,
+.formField select {
+  padding: 0 12px;
+}
+
+.formField textarea {
+  min-height: 110px;
+  padding: 12px;
+  resize: vertical;
+}
+
+.formField:has(textarea),
+.pickerList,
+.wide {
+  grid-column: 1 / -1;
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.checkLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  color: #111827;
+  font-weight: 800;
+}
+
+.pickerList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.pickerList legend {
+  padding: 0 6px;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.pickerList label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 38px;
+  color: #111827;
+  font-weight: 750;
+}
+
+.mutedLine {
+  color: #64748b;
+}
+
+.inviteBox,
+.infoView {
+  display: grid;
+  gap: 12px;
+  color: #111827;
+}
+
+.inviteBox {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+}
+
+.inviteBox p,
+.infoView p {
+  margin-top: 6px;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.overviewGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.metricCard {
+  display: grid;
+  align-content: center;
+  min-height: 130px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.metricCard strong {
+  font-size: 34px;
+}
+
+.metricCard span {
+  color: #64748b;
+  font-weight: 800;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.on_site {
+  box-shadow: inset 0 0 0 2px rgba(34, 197, 94, 0.28);
+}
+
+.completed {
+  opacity: 0.78;
 }
 
 @media (max-width: 1280px) {
@@ -1011,5 +1314,24 @@ canvas {
 
   .timelineCard {
     min-width: 980px;
+  }
+
+  .twoColumns,
+  .overviewGrid,
+  .pickerList {
+    grid-template-columns: 1fr;
+  }
+
+  .visitActions {
+    grid-template-columns: 1fr;
+  }
+
+  .listRow {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .listRow em,
+  .listRow select {
+    grid-column: 2;
   }
 }
