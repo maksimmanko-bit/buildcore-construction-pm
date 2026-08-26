@@ -274,6 +274,20 @@ function profileDisplayName(person, fallback = "Not set") {
   return firstLast || person.full_name || person.email || fallback;
 }
 
+function getPersonWorkStatus({ date, personId, projects = [], visits = [] }) {
+  const dayVisits = visits.filter((visit) => visit.visit_date === date && visit.people_ids?.includes(personId) && visit.status !== "cancelled");
+  const activeVisit = dayVisits.find((visit) => visit.status === "on_site");
+  const plannedVisit = dayVisits.find((visit) => visit.status === "planned");
+  const completedVisit = dayVisits.find((visit) => visit.status === "completed");
+  const visit = activeVisit || plannedVisit || completedVisit;
+  const project = visit ? projects.find((item) => item.id === visit.project_id) : null;
+
+  if (activeVisit) return { label: "Active", tone: "active", detail: project?.name || "On site" };
+  if (plannedVisit) return { label: "Scheduled", tone: "scheduled", detail: project?.name || "Project visit" };
+  if (completedVisit) return { label: "Available", tone: "available", detail: "Finished today" };
+  return { label: "Available", tone: "available", detail: "No assignment" };
+}
+
 function equipmentIcon(type) {
   const label = String(type ?? "").toLowerCase();
   if (label.includes("truck") || label.includes("pickup")) return "TR";
@@ -727,7 +741,9 @@ export default function App() {
   const peopleRows = rowsSource.people.map((person) => ({
     ...person,
     kind: "person",
-    subtitle: person.trade || roleLabel(person.role),
+    subtitle: roleLabel(person.role),
+    resourceStatus: getPersonWorkStatus({ date: selectedDate, personId: person.id, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
+    peopleStatus: getPersonWorkStatus({ date: todayValue, personId: person.id, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
     assignments: assignmentsSource.filter((item) => item.type === "person" && item.resourceId === person.id),
   }));
 
@@ -1730,7 +1746,7 @@ export default function App() {
       return (
         <>
           <SectionToolbar label="People" onAdd={openAddModal} />
-          <PeopleView avatarUrls={avatarUrls} people={rowsSource.people} canManage={canManage} onRoleChange={updateRole} onSelect={(person) => {
+          <PeopleView avatarUrls={avatarUrls} people={peopleRows} onSelect={(person) => {
             setSelectedPersonId(person.id);
             setDetailOverlay("person");
           }} pendingPeople={rowsSource.pendingPeople ?? []} onApprove={approvePerson} />
@@ -2845,7 +2861,7 @@ function ProjectsView({ canManage, getProfileName, projects, onDelete, onEdit, o
   );
 }
 
-function PeopleView({ avatarUrls = {}, people, canManage, onApprove, onRoleChange, onSelect, pendingPeople = [] }) {
+function PeopleView({ avatarUrls = {}, people, onApprove, onSelect, pendingPeople = [] }) {
   return (
     <div className="listView">
       {pendingPeople.length > 0 && (
@@ -2866,21 +2882,14 @@ function PeopleView({ avatarUrls = {}, people, canManage, onApprove, onRoleChang
             <Avatar profile={person} url={avatarUrls[person.id]} />
             <span>
               <strong>{profileDisplayName(person, "Unnamed user")}</strong>
-              <small>{person.trade || "Team member"}</small>
+              <small className="personMetaLine">
+                <span>{roleLabel(person.role)}</span>
+                {person.peopleStatus?.tone === "active" && <em className="resourceStatusChip active">Active</em>}
+              </small>
               <small>{person.phone || person.email || "No contact info"}</small>
             </span>
           </button>
-          {canManage ? (
-            <select value={person.role} onChange={(event) => onRoleChange(person, event.target.value)}>
-              {roleOptions.map((role) => (
-                <option value={role} key={role}>
-                  {roleLabel(role)}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <em>{roleLabel(person.role)}</em>
-          )}
+          <em>{person.peopleStatus?.label || roleLabel(person.role)}</em>
         </div>
       ))}
     </div>
@@ -3319,8 +3328,12 @@ function ResourceGroup({ avatarUrls = {}, title, count, icon: Icon, rows, onDrop
               <div className={`equipmentAvatar ${row.icon ?? "machine"}`}>{equipmentIcon(row.type)}</div>
             )}
             <div>
-              <strong>{row.full_name}</strong>
+              <div className="resourceTitleLine">
+                <strong>{row.full_name}</strong>
+                {row.resourceStatus && <em className={`resourceStatusChip ${row.resourceStatus.tone}`}>{row.resourceStatus.label}</em>}
+              </div>
               <span>{row.subtitle ?? roleLabel(row.role)}</span>
+              {row.resourceStatus?.detail && <small>{row.resourceStatus.detail}</small>}
             </div>
           </div>
 
@@ -3360,7 +3373,10 @@ function ScheduleBlock({ assignment, onSelect }) {
         event.dataTransfer.setData("application/json", JSON.stringify(assignment));
       }}
     >
-      <strong>{assignment.title}</strong>
+      <span className="scheduleBlockTop">
+        <strong>{assignment.title}</strong>
+        {assignment.status && <em>{normalizeVisitStatus(assignment.status)}</em>}
+      </span>
       <span>{assignment.subtitle}</span>
       {assignment.timeText && <small>{assignment.timeText}</small>}
     </button>

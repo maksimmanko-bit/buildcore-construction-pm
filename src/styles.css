@@ -1283,6 +1283,7 @@ h1 {
 }
 
 .timelineCard {
+  --resource-col: 236px;
   position: relative;
   min-width: 880px;
   overflow: hidden;
@@ -1294,11 +1295,11 @@ h1 {
 
 .timelineHeader {
   display: grid;
-  grid-template-columns: 198px repeat(12, minmax(68px, 1fr));
+  grid-template-columns: var(--resource-col) repeat(12, minmax(68px, 1fr));
   height: 60px;
   border-bottom: 1px solid var(--line);
   background:
-    linear-gradient(90deg, transparent 0 197px, rgba(229, 234, 241, 0.86) 198px),
+    linear-gradient(90deg, transparent 0 calc(var(--resource-col) - 1px), rgba(229, 234, 241, 0.86) var(--resource-col)),
     #fff;
 }
 
@@ -1323,7 +1324,7 @@ h1 {
   position: absolute;
   top: 60px;
   bottom: 0;
-  left: calc(198px + ((10.5 - 7) / 11) * (100% - 198px));
+  left: calc(var(--resource-col) + ((10.5 - 7) / 11) * (100% - var(--resource-col)));
   z-index: 3;
   width: 2px;
   background: var(--blue);
@@ -1333,7 +1334,7 @@ h1 {
 .nowPill {
   position: absolute;
   top: 62px;
-  left: calc(198px + ((10.5 - 7) / 11) * (100% - 198px));
+  left: calc(var(--resource-col) + ((10.5 - 7) / 11) * (100% - var(--resource-col)));
   z-index: 4;
   transform: translateX(-50%);
   display: grid;
@@ -1366,7 +1367,7 @@ h1 {
 
 .resourceRow {
   display: grid;
-  grid-template-columns: 198px minmax(0, 1fr);
+  grid-template-columns: var(--resource-col) minmax(0, 1fr);
   min-height: 84px;
   border-bottom: 1px solid var(--line);
 }
@@ -1380,16 +1381,75 @@ h1 {
   grid-template-columns: 46px minmax(0, 1fr);
   align-items: center;
   gap: 14px;
-  padding: 0 18px;
+  padding: 0 16px;
   border-right: 1px solid var(--line);
   background: #fff;
 }
 
 .resourceIdentity span {
   display: block;
-  margin-top: 5px;
+  margin-top: 3px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.resourceIdentity small {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resourceTitleLine {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.resourceTitleLine strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resourceStatusChip {
+  display: inline-grid;
+  flex: 0 0 auto;
+  min-height: 24px;
+  place-items: center;
+  padding: 0 9px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.resourceStatusChip.available {
+  border-color: rgba(22, 163, 74, 0.18);
+  background: #eefdf4;
+  color: #15803d;
+}
+
+.resourceStatusChip.scheduled {
+  border-color: rgba(37, 99, 235, 0.18);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.resourceStatusChip.active {
+  border-color: rgba(22, 163, 74, 0.24);
+  background: #dcfce7;
+  color: #166534;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.08);
 }
 
 .equipmentAvatar {
@@ -1455,21 +1515,31 @@ h1 {
   bottom: 12px;
   display: grid;
   align-content: center;
-  gap: 4px;
+  gap: 5px;
   min-width: 120px;
-  padding: 0 16px;
+  padding: 0 14px;
   overflow: hidden;
-  border: 1px solid rgba(15, 23, 42, 0.05);
-  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  border-radius: 12px;
   color: #111827;
   text-align: left;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.74),
+    0 10px 22px rgba(15, 23, 42, 0.06);
   cursor: grab;
   user-select: none;
+  transition:
+    transform var(--transition-speed),
+    box-shadow var(--transition-speed),
+    outline-color var(--transition-speed);
 }
 
 .scheduleBlock:hover {
   outline: 2px solid rgba(23, 105, 255, 0.34);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 16px 32px rgba(15, 23, 42, 0.1);
 }
 
 .scheduleBlock:active {
@@ -1479,10 +1549,34 @@ h1 {
 
 .scheduleBlock strong,
 .scheduleBlock span,
-.scheduleBlock small {
+.scheduleBlock small,
+.scheduleBlockTop em {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.scheduleBlockTop {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.scheduleBlockTop strong {
+  min-width: 0;
+}
+
+.scheduleBlockTop em {
+  flex: 0 1 auto;
+  max-width: 82px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  color: rgba(15, 23, 42, 0.72);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .scheduleBlock strong {
@@ -1496,23 +1590,35 @@ h1 {
 }
 
 .scheduleBlock.blue {
-  background: linear-gradient(90deg, #dce9ff, #c9ddff);
+  background: linear-gradient(135deg, #eef5ff, #cfe1ff);
 }
 
 .scheduleBlock.green {
-  background: linear-gradient(90deg, #e4f3de, #d9ecd3);
+  background: linear-gradient(135deg, #eef9e9, #d7edcf);
 }
 
 .scheduleBlock.yellow {
-  background: linear-gradient(90deg, #fff0c9, #ffe8ba);
+  background: linear-gradient(135deg, #fff6d8, #ffe7ad);
 }
 
 .scheduleBlock.purple {
-  background: linear-gradient(90deg, #eadcff, #dfcef6);
+  background: linear-gradient(135deg, #f1e8ff, #ddccf4);
 }
 
 .scheduleBlock.orange {
-  background: linear-gradient(90deg, #ffe8cf, #ffddbf);
+  background: linear-gradient(135deg, #fff0df, #ffd9b8);
+}
+
+.scheduleBlock.on_site {
+  border-color: rgba(22, 163, 74, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 0 0 3px rgba(34, 197, 94, 0.08),
+    0 14px 28px rgba(15, 23, 42, 0.08);
+}
+
+.scheduleBlock.completed {
+  opacity: 0.78;
 }
 
 .projectPanel {
@@ -2326,11 +2432,32 @@ canvas {
   color: var(--muted);
 }
 
+.personMetaLine {
+  display: flex !important;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.personMetaLine > span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .listRow em {
   color: #475569;
   font-size: 13px;
   font-style: normal;
   font-weight: 800;
+}
+
+.listRow .resourceStatusChip {
+  color: #166534;
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .listRow select,
