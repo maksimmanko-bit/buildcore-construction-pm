@@ -1,0 +1,25 @@
+{
+  "name": "construction-pm-supabase",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "dev:local": "vite --host 127.0.0.1 --port 5174",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "preview:local": "vite preview --host 127.0.0.1 --port 4174"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "fabric": "^7.2.0",
+    "fflate": "^0.8.3",
+    "lucide-react": "^1.34.0",
+    "pdfjs-dist": "^6.2.108",
+    "vite": "^8.2.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {}
+}

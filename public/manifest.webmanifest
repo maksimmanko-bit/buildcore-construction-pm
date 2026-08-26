@@ -1,0 +1,9 @@
+{
+  "name": "Build Dispatch PM",
+  "short_name": "Build PM",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f5ef",
+  "theme_color": "#f4f5ef",
+  "icons": []
+}
