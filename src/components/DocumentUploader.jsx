@@ -1,81 +1,149 @@
-import { useRef, useState } from "react";
-import { FileSpreadsheet, FileText, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { FileSpreadsheet, FileText, Image, Upload } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
 import { extractSearchText } from "../lib/fileText.js";
+import { createAttachmentUrls, uploadVisitAttachment } from "../lib/storage.js";
 
-function cleanFileName(fileName) {
-  return fileName.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-");
+function isPhoto(file) {
+  return file?.type?.startsWith("image/");
 }
 
-export default function DocumentUploader({ companyId, projectId, visitId, onUploaded }) {
-  const inputRef = useRef(null);
+function isAttachmentPhoto(attachment) {
+  return attachment.file_kind === "photo" || attachment.mime_type?.startsWith("image/");
+}
+
+function getDocLabel(attachment) {
+  if (attachment.file_kind === "pdf") return "PDF";
+  if (attachment.file_kind === "excel" || attachment.file_kind === "xlsx") return "Excel";
+  return "File";
+}
+
+function AttachmentThumbnail({ attachment, onOpen }) {
+  const [urls, setUrls] = useState({});
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadUrls() {
+      try {
+        const nextUrls = await createAttachmentUrls(attachment);
+        if (alive) setUrls(nextUrls);
+      } catch {
+        if (alive) setUrls({});
+      }
+    }
+
+    if (supabase && attachment?.storage_path) loadUrls();
+    return () => {
+      alive = false;
+    };
+  }, [attachment]);
+
+  const photo = isAttachmentPhoto(attachment);
+
+  return (
+    <button className={photo ? "attachmentCard photo" : "attachmentCard document"} type="button" onClick={() => onOpen?.({ ...attachment, ...urls })}>
+      <span className="attachmentThumb">
+        {photo && urls.thumbnailUrl ? (
+          <img src={urls.thumbnailUrl} alt="" />
+        ) : attachment.file_kind === "excel" ? (
+          <span className="spreadsheetPreview" aria-hidden="true" />
+        ) : (
+          <FileText size={24} />
+        )}
+      </span>
+      <span className="attachmentMeta">
+        <strong title={attachment.file_name}>{attachment.file_name}</strong>
+        <small>{photo ? "Photo" : getDocLabel(attachment)}</small>
+      </span>
+    </button>
+  );
+}
+
+export default function DocumentUploader({ companyId, projectId, visitId, profileId, attachments = [], onUploaded, onOpen }) {
+  const documentInputRef = useRef(null);
+  const photoInputRef = useRef(null);
   const [busy, setBusy] = useState(false);
 
   async function handleFile(file) {
     if (!file) return;
 
     if (!supabase) {
-      onUploaded?.("Demo mode: подключите Supabase, чтобы загрузить документ.");
+      onUploaded?.("Demo mode: connect Supabase to upload files.");
+      return;
+    }
+
+    if (!companyId || !projectId) {
+      onUploaded?.("Select a live project before uploading files.");
       return;
     }
 
     setBusy(true);
 
     try {
-      const { text, kind } = await extractSearchText(file);
-      const bucket = "project-documents";
-      const storagePath = `${companyId}/${projectId}/${visitId ?? "documents"}/${Date.now()}-${cleanFileName(file.name)}`;
-
-      const { error: uploadError } = await supabase.storage.from(bucket).upload(storagePath, file, {
-        contentType: file.type,
-        upsert: false,
+      const { text } = isPhoto(file) ? { text: "" } : await extractSearchText(file);
+      const row = await uploadVisitAttachment({
+        companyId,
+        projectId,
+        visitId,
+        profileId,
+        file,
+        searchText: text,
       });
 
-      if (uploadError) throw uploadError;
-
-      const { error: insertError } = await supabase.from("visit_files").insert({
-        company_id: companyId,
-        project_id: projectId,
-        visit_id: visitId,
-        bucket_id: bucket,
-        storage_path: storagePath,
-        file_name: file.name,
-        file_type: "project_document",
-        file_kind: kind,
-        mime_type: file.type,
-        search_text: text,
-      });
-
-      if (insertError) throw insertError;
-      onUploaded?.(`Документ добавлен в поиск: ${file.name}`);
+      onUploaded?.(`${isPhoto(file) ? "Photo" : "Document"} uploaded to Supabase Storage: ${row.file_name}`);
     } catch (error) {
       onUploaded?.(error.message);
     } finally {
       setBusy(false);
-      if (inputRef.current) inputRef.current.value = "";
+      if (documentInputRef.current) documentInputRef.current.value = "";
+      if (photoInputRef.current) photoInputRef.current.value = "";
     }
   }
 
   return (
-    <div className="documentUploader">
-      <input
-        ref={inputRef}
-        accept=".pdf,.xls,.xlsx,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        type="file"
-        onChange={(event) => handleFile(event.target.files?.[0])}
-      />
-      <button type="button" onClick={() => inputRef.current?.click()} disabled={busy}>
-        <Upload size={18} />
-        {busy ? "Индексируем..." : "Загрузить PDF / Excel"}
-      </button>
-      <span>
-        <FileText size={16} />
-        PDF
-      </span>
-      <span>
-        <FileSpreadsheet size={16} />
-        Excel
-      </span>
+    <div className="attachmentManager">
+      <div className="uploadControls">
+        <input
+          ref={documentInputRef}
+          accept=".pdf,.xls,.xlsx,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          type="file"
+          onChange={(event) => handleFile(event.target.files?.[0])}
+        />
+        <input ref={photoInputRef} accept="image/jpeg,image/png,image/webp" type="file" onChange={(event) => handleFile(event.target.files?.[0])} />
+
+        <button type="button" onClick={() => photoInputRef.current?.click()} disabled={busy}>
+          <Image size={18} />
+          Photo
+        </button>
+        <button type="button" onClick={() => documentInputRef.current?.click()} disabled={busy}>
+          <Upload size={18} />
+          {busy ? "Saving..." : "PDF / Excel"}
+        </button>
+      </div>
+
+      <div className="attachmentLegend">
+        <span>
+          <Image size={15} />
+          Photos
+        </span>
+        <span>
+          <FileText size={15} />
+          PDF
+        </span>
+        <span>
+          <FileSpreadsheet size={15} />
+          Excel
+        </span>
+      </div>
+
+      <div className="attachmentStrip" aria-label="Saved attachments">
+        {attachments.length ? (
+          attachments.slice(0, 6).map((attachment) => <AttachmentThumbnail attachment={attachment} key={attachment.id} onOpen={onOpen} />)
+        ) : (
+          <div className="emptyAttachments">No saved files yet</div>
+        )}
+      </div>
     </div>
   );
 }

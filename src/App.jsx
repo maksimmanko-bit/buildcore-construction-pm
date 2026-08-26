@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   Calendar,
@@ -8,12 +8,14 @@ import {
   ChevronRight,
   CircleGauge,
   ClipboardCheck,
+  Edit3,
   FileBarChart2,
   FileSpreadsheet,
   FileText,
   FolderKanban,
   Home,
   ImagePlus,
+  MapPin,
   LogIn,
   LogOut,
   MoreHorizontal,
@@ -21,6 +23,8 @@ import {
   Save,
   Search,
   Settings,
+  CloudSun,
+  Trash2,
   Truck,
   UserPlus,
   UserRound,
@@ -30,8 +34,9 @@ import {
 import DocumentUploader from "./components/DocumentUploader.jsx";
 import PhotoAnnotator from "./components/PhotoAnnotator.jsx";
 import { isSupabaseConfigured, supabase } from "./lib/supabase.js";
-import { uploadAnnotatedVisitPhoto } from "./lib/storage.js";
+import { createAttachmentUrls, uploadAnnotatedVisitPhoto } from "./lib/storage.js";
 import { localGlobalSearch } from "./lib/search.js";
+import { getGoogleMapsUrl, getWeatherForAddress } from "./lib/weather.js";
 
 const demo = {
   companyId: "00000000-0000-0000-0000-000000000001",
@@ -150,6 +155,8 @@ const projectStatusMap = {
 };
 const timeLabels = ["7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM"];
 const colors = ["blue", "green", "yellow", "purple", "orange"];
+const scheduleStartHour = 7;
+const scheduleEndHour = 18;
 
 const demoAssignments = [
   { id: "a1", type: "person", resourceId: "person-1", projectId: "project-1", title: "Riverside Building", subtitle: "Site Supervision", start: 7.55, end: 12.7, color: "blue" },
@@ -192,8 +199,16 @@ const emptyVisitForm = {
   equipment_ids: [],
 };
 
+function escapeSvgText(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 function getProjectPhoto(projectName) {
-  const title = encodeURIComponent(projectName);
+  const title = escapeSvgText(projectName);
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600">
       <defs>
@@ -250,6 +265,14 @@ function toHour(time) {
   return hours + (minutes || 0) / 60;
 }
 
+function toTimeValue(hourValue) {
+  const clamped = Math.max(0, Math.min(23.75, hourValue));
+  const totalMinutes = Math.round(clamped * 4) * 15;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
 function formatDateLabel(value) {
   return new Intl.DateTimeFormat("en-US", {
     weekday: "long",
@@ -283,6 +306,32 @@ function makeInitials(name, fallback = "BC") {
     .toUpperCase();
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function highlightText(value, query) {
+  const raw = String(value ?? "");
+  const terms = String(query ?? "")
+    .toLowerCase()
+    .split(/[^a-z0-9а-яё]+/i)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+
+  if (!raw || terms.length === 0) return raw;
+
+  const pattern = new RegExp(`(${terms.map(escapeRegExp).join("|")})`, "gi");
+  return raw.split(pattern).map((part, index) =>
+    terms.includes(part.toLowerCase()) ? (
+      <mark className="searchHit" key={`${part}-${index}`}>
+        {part}
+      </mark>
+    ) : (
+      part
+    ),
+  );
+}
+
 function FormField({ label, children }) {
   return (
     <label className="formField">
@@ -293,6 +342,7 @@ function FormField({ label, children }) {
 }
 
 export default function App() {
+  const globalSearchRef = useRef(null);
   const [activeNav, setActiveNav] = useState("schedule");
   const [scheduleMode, setScheduleMode] = useState("day");
   const [session, setSession] = useState(null);
@@ -309,8 +359,11 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState("");
   const [showAuth, setShowAuth] = useState(false);
   const [showAnnotator, setShowAnnotator] = useState(false);
+  const [selectedAttachment, setSelectedAttachment] = useState(null);
+  const [projectWeather, setProjectWeather] = useState({ status: "idle", address: "", data: null });
   const [modalType, setModalType] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState(null);
   const [companyForm, setCompanyForm] = useState({ company_name: "BuildCore Construction", full_name: "", phone: "" });
   const [projectForm, setProjectForm] = useState(emptyProjectForm);
   const [equipmentForm, setEquipmentForm] = useState(emptyEquipmentForm);
@@ -338,14 +391,15 @@ export default function App() {
 
       setProfile(profileResult.data);
 
-      const [projectsResult, peopleResult, equipmentResult, visitsResult] = await Promise.all([
+      const [projectsResult, peopleResult, equipmentResult, visitsResult, filesResult] = await Promise.all([
         supabase.from("projects").select("*").order("created_at", { ascending: false }),
         supabase.from("profiles").select("*").eq("is_active", true).order("full_name"),
         supabase.from("equipment").select("*").order("name"),
         supabase.from("visit_schedule_view").select("*").eq("visit_date", selectedDate).order("start_time"),
+        supabase.from("visit_files").select("*").order("created_at", { ascending: false }),
       ]);
 
-      const failed = [projectsResult, peopleResult, equipmentResult, visitsResult].find((result) => result.error);
+      const failed = [projectsResult, peopleResult, equipmentResult, visitsResult, filesResult].find((result) => result.error);
       if (failed) throw failed.error;
 
       const nextProjects = projectsResult.data ?? [];
@@ -355,7 +409,7 @@ export default function App() {
         people: peopleResult.data ?? [],
         equipment: equipmentResult.data ?? [],
         visits: visitsResult.data ?? [],
-        files: demo.files,
+        files: filesResult.data ?? [],
       });
 
       if (nextProjects.length && !nextProjects.some((project) => project.id === selectedProjectId)) {
@@ -384,6 +438,10 @@ export default function App() {
 
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    document.querySelector(".sideNavItem.active")?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [activeNav]);
 
   useEffect(() => {
     if (!session) return;
@@ -439,14 +497,54 @@ export default function App() {
     return () => window.clearTimeout(handle);
   }, [data, liveAssignments, profile, searchQuery, session]);
 
+  useEffect(() => {
+    function handlePointerDown(event) {
+      if (!globalSearchRef.current?.contains(event.target)) {
+        setSearchResults([]);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, []);
+
   const rowsSource = isLive ? data : demo;
   const assignmentsSource = isLive ? liveAssignments : demoAssignments;
   const selectedProject = rowsSource.projects.find((project) => project.id === selectedProjectId) ?? rowsSource.projects[0] ?? demo.projects[0];
   const selectedAssignment = assignmentsSource.find((item) => item.id === selectedAssignmentId) ?? assignmentsSource[0];
+  const activeVisitId = isLive && selectedAssignment?.visitId ? selectedAssignment.visitId : null;
   const currentVisit = {
-    id: selectedAssignment?.visitId ?? selectedAssignment?.id ?? "demo-visit",
+    id: activeVisitId,
     project_id: selectedProject.id,
   };
+  const projectAttachments = (rowsSource.files ?? [])
+    .filter((file) => file.project_id === selectedProject.id || file.projectId === selectedProject.id)
+    .slice(0, 6);
+
+  useEffect(() => {
+    let alive = true;
+    const address = selectedProject?.address;
+
+    if (!address) {
+      setProjectWeather({ status: "idle", address: "", data: null });
+      return undefined;
+    }
+
+    setProjectWeather({ status: "loading", address, data: null });
+    const handle = window.setTimeout(async () => {
+      try {
+        const weather = await getWeatherForAddress(address);
+        if (alive) setProjectWeather({ status: "ready", address, data: weather });
+      } catch (error) {
+        if (alive) setProjectWeather({ status: "error", address, data: null, message: error.message });
+      }
+    }, 250);
+
+    return () => {
+      alive = false;
+      window.clearTimeout(handle);
+    };
+  }, [selectedProject?.address]);
 
   const peopleRows = rowsSource.people.map((person) => ({
     ...person,
@@ -515,15 +613,30 @@ export default function App() {
     if (!supabase || !profile) return;
 
     setLoading(true);
-    const { data: inserted, error } = await supabase
-      .from("projects")
-      .insert({
-        ...projectForm,
-        company_id: profile.company_id,
-        created_by: profile.id,
-      })
-      .select()
-      .single();
+
+    const payload = {
+      name: projectForm.name,
+      address: projectForm.address,
+      contact_name: projectForm.contact_name,
+      contact_email: projectForm.contact_email,
+      contact_phone: projectForm.contact_phone,
+      description: projectForm.description,
+      status: projectForm.status,
+    };
+
+    const query = editingProjectId
+      ? supabase.from("projects").update(payload).eq("id", editingProjectId).select().single()
+      : supabase
+          .from("projects")
+          .insert({
+            ...payload,
+            company_id: profile.company_id,
+            created_by: profile.id,
+          })
+          .select()
+          .single();
+
+    const { data: saved, error } = await query;
     setLoading(false);
 
     if (error) {
@@ -532,9 +645,52 @@ export default function App() {
     }
 
     setProjectForm(emptyProjectForm);
+    setEditingProjectId(null);
     setModalType(null);
-    setSelectedProjectId(inserted.id);
-    setNotice("Project saved.");
+    setSelectedProjectId(saved.id);
+    setNotice(editingProjectId ? "Project changes saved." : "Project saved.");
+    refreshData();
+  }
+
+  function editProject(project) {
+    if (!canManage) {
+      setNotice("Only Owner, PM, or Office Manager can edit projects.");
+      return;
+    }
+
+    setEditingProjectId(project.id);
+    setProjectForm({
+      name: project.name ?? "",
+      address: project.address ?? "",
+      contact_name: project.contact_name ?? "",
+      contact_email: project.contact_email ?? "",
+      contact_phone: project.contact_phone ?? "",
+      description: project.description ?? "",
+      status: project.status && projectStatusMap[project.status] ? project.status : "planning",
+    });
+    setModalType("project");
+  }
+
+  async function deleteProject(project) {
+    if (!supabase || !canManage) {
+      setNotice("Sign in as Owner, PM, or Office Manager to delete projects.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete project "${project.name}" and its scheduled visits?`);
+    if (!confirmed) return;
+
+    setLoading(true);
+    const { error } = await supabase.from("projects").delete().eq("id", project.id);
+    setLoading(false);
+
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+
+    setNotice("Project deleted.");
+    setSelectedProjectId(rowsSource.projects.find((item) => item.id !== project.id)?.id ?? "");
     refreshData();
   }
 
@@ -643,6 +799,107 @@ export default function App() {
     refreshData();
   }
 
+  async function deleteVisit() {
+    if (!supabase || !selectedAssignment?.visitId || !canManage) {
+      setNotice("Select a live visit and sign in as Owner, PM, or Office Manager.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Remove visit "${selectedAssignment.title}" from the schedule?`);
+    if (!confirmed) return;
+
+    const { error } = await supabase.from("visits").delete().eq("id", selectedAssignment.visitId);
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+
+    setSelectedAssignmentId("");
+    setNotice("Visit removed from schedule.");
+    refreshData();
+  }
+
+  async function moveVisitAssignment({ assignment, row, clientX, trackElement }) {
+    if (!supabase || !canManage) {
+      setNotice("Sign in as Owner, PM, or Office Manager to move schedule items.");
+      return;
+    }
+    if (!assignment?.visitId || !trackElement) return;
+    if (assignment.type !== row.kind) {
+      setNotice("Drop people visits on people rows and equipment visits on equipment rows.");
+      return;
+    }
+
+    const rect = trackElement.getBoundingClientRect();
+    const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const duration = Math.max(0.25, assignment.end - assignment.start);
+    const rawStart = scheduleStartHour + percent * (scheduleEndHour - scheduleStartHour);
+    const start = Math.min(scheduleEndHour - duration, Math.max(scheduleStartHour, Math.round(rawStart * 4) / 4));
+    const end = start + duration;
+
+    setLoading(true);
+    let addedNewResource = false;
+
+    if (row.id !== assignment.resourceId) {
+      if (row.kind === "person") {
+        const addResult = await supabase.from("visit_people").insert({ visit_id: assignment.visitId, profile_id: row.id });
+        if (addResult.error) {
+          setLoading(false);
+          setNotice(addResult.error.message);
+          refreshData();
+          return;
+        }
+        addedNewResource = true;
+      } else {
+        const addResult = await supabase.from("visit_equipment").insert({ visit_id: assignment.visitId, equipment_id: row.id });
+        if (addResult.error) {
+          setLoading(false);
+          setNotice(addResult.error.message);
+          refreshData();
+          return;
+        }
+        addedNewResource = true;
+      }
+    }
+
+    const visitResult = await supabase
+      .from("visits")
+      .update({
+        start_time: toTimeValue(start),
+        end_time: toTimeValue(end),
+      })
+      .eq("id", assignment.visitId);
+
+    if (visitResult.error) {
+      if (addedNewResource) {
+        if (row.kind === "person") await supabase.from("visit_people").delete().eq("visit_id", assignment.visitId).eq("profile_id", row.id);
+        else await supabase.from("visit_equipment").delete().eq("visit_id", assignment.visitId).eq("equipment_id", row.id);
+      }
+      setLoading(false);
+      setNotice(visitResult.error.message);
+      refreshData();
+      return;
+    }
+
+    if (addedNewResource) {
+      const removeResult =
+        row.kind === "person"
+          ? await supabase.from("visit_people").delete().eq("visit_id", assignment.visitId).eq("profile_id", assignment.resourceId)
+          : await supabase.from("visit_equipment").delete().eq("visit_id", assignment.visitId).eq("equipment_id", assignment.resourceId);
+
+      if (removeResult.error) {
+        setLoading(false);
+        setNotice(removeResult.error.message);
+        refreshData();
+        return;
+      }
+    }
+
+    setLoading(false);
+    setNotice(`Visit moved to ${toTimeValue(start)} - ${toTimeValue(end)}.`);
+    refreshData();
+  }
+
   function openAddModal() {
     if (!session) {
       setShowAuth(true);
@@ -657,8 +914,11 @@ export default function App() {
       return;
     }
 
-    if (activeNav === "projects") setModalType("project");
-    else if (activeNav === "equipment") setModalType("equipment");
+    if (activeNav === "projects") {
+      setEditingProjectId(null);
+      setProjectForm(emptyProjectForm);
+      setModalType("project");
+    } else if (activeNav === "equipment") setModalType("equipment");
     else if (activeNav === "people") setModalType("people");
     else {
       setVisitForm({
@@ -673,6 +933,15 @@ export default function App() {
   function selectAssignment(assignment) {
     setSelectedAssignmentId(assignment.id);
     setSelectedProjectId(assignment.projectId);
+  }
+
+  async function openAttachment(attachment) {
+    try {
+      const urls = attachment.viewUrl ? attachment : await createAttachmentUrls(attachment);
+      setSelectedAttachment({ ...attachment, ...urls });
+    } catch (error) {
+      setNotice(error.message);
+    }
   }
 
   function handleSearchSelect(result) {
@@ -703,12 +972,26 @@ export default function App() {
     return <Calendar size={18} />;
   }
 
+  function renderSearchBadges(result) {
+    const fileKind = result.file_kind ?? result.fileKind;
+    if (result.type !== "file") return null;
+
+    return (
+      <span className="searchDocBadges">
+        <span className="searchDocBadge">
+          {fileKind === "pdf" ? <FileText size={13} /> : <FileSpreadsheet size={13} />}
+          {fileKind === "pdf" ? "PDF" : "Excel"}
+        </span>
+      </span>
+    );
+  }
+
   function renderMainContent() {
     if (activeNav === "projects") {
       return (
         <>
           <SectionToolbar label="Projects" onAdd={openAddModal} />
-          <ProjectsView projects={rowsSource.projects} onSelect={(project) => setSelectedProjectId(project.id)} />
+          <ProjectsView canManage={canManage} projects={rowsSource.projects} onDelete={deleteProject} onEdit={editProject} onSelect={(project) => setSelectedProjectId(project.id)} />
         </>
       );
     }
@@ -750,6 +1033,7 @@ export default function App() {
         setScheduleMode={setScheduleMode}
         setSelectedDate={setSelectedDate}
         onAdd={openAddModal}
+        onDropAssignment={moveVisitAssignment}
         onSelect={selectAssignment}
       />
     );
@@ -796,9 +1080,19 @@ export default function App() {
           </div>
 
           <div className="headerActions">
-            <div className="globalSearch">
+            <div className="globalSearch" ref={globalSearchRef}>
               <Search size={18} />
-              <input placeholder="Search..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
+              <input
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setSearchQuery("");
+                    setSearchResults([]);
+                  }
+                }}
+              />
 
               {searchResults.length > 0 && (
                 <div className="searchResults">
@@ -806,9 +1100,10 @@ export default function App() {
                     <button className="searchResult" key={result.id} type="button" onClick={() => handleSearchSelect(result)}>
                       <span className="searchIcon">{renderSearchIcon(result)}</span>
                       <span>
-                        <strong>{result.title}</strong>
-                        <small>{result.subtitle}</small>
-                        <em>{result.snippet}</em>
+                        <strong>{highlightText(result.title, searchQuery)}</strong>
+                        <small>{highlightText(result.subtitle, searchQuery)}</small>
+                        <em>{highlightText(result.snippet, searchQuery)}</em>
+                        {renderSearchBadges(result)}
                       </span>
                     </button>
                   ))}
@@ -858,6 +1153,38 @@ export default function App() {
               <p>{selectedProject.category ?? "Construction Project"}</p>
             </div>
 
+            <div className="projectMapWeather">
+              <div className="addressLine">
+                <MapPin size={18} />
+                <span>{selectedProject.address || "No address set"}</span>
+                <a href={getGoogleMapsUrl(selectedProject.address)} target="_blank" rel="noreferrer">
+                  Open Maps
+                </a>
+              </div>
+              <div className={`weatherCard ${projectWeather.status}`}>
+                <CloudSun size={22} />
+                {projectWeather.status === "ready" ? (
+                  <>
+                    <strong>{projectWeather.data.temperature}°C</strong>
+                    <span>{projectWeather.data.condition}</span>
+                    <small>
+                      Feels {projectWeather.data.apparent}°C • Wind {projectWeather.data.wind} km/h • {projectWeather.data.locationName}
+                    </small>
+                  </>
+                ) : projectWeather.status === "error" ? (
+                  <>
+                    <strong>Weather unavailable</strong>
+                    <span>{projectWeather.message}</span>
+                  </>
+                ) : (
+                  <>
+                    <strong>Loading weather...</strong>
+                    <span>Live site conditions</span>
+                  </>
+                )}
+              </div>
+            </div>
+
             <dl className="projectFacts">
               <ProjectFact icon={UserRound} label="Client" value={selectedProject.contact_name || "Not set"} />
               <ProjectFact icon={UsersRound} label="Project Manager" value={selectedProject.project_manager ?? currentUserName} />
@@ -890,10 +1217,25 @@ export default function App() {
                 <CheckCircle2 size={18} />
                 Complete
               </button>
+              <button className="dangerAction" type="button" onClick={deleteVisit}>
+                <Trash2 size={18} />
+                Remove
+              </button>
             </div>
 
             <div className="panelActions">
-              <DocumentUploader companyId={rowsSource.companyId} projectId={selectedProject.id} visitId={currentVisit.id} onUploaded={setNotice} />
+              <DocumentUploader
+                attachments={projectAttachments}
+                companyId={rowsSource.companyId}
+                profileId={profile?.id}
+                projectId={selectedProject.id}
+                visitId={currentVisit.id}
+                onOpen={openAttachment}
+                onUploaded={(message) => {
+                  setNotice(message);
+                  refreshData();
+                }}
+              />
 
               <button className="photoAction" type="button" onClick={() => setShowAnnotator(true)}>
                 <ImagePlus size={18} />
@@ -953,7 +1295,7 @@ export default function App() {
         )}
 
         {modalType === "project" && (
-          <AppModal title="Add project" onClose={() => setModalType(null)}>
+          <AppModal title={editingProjectId ? "Edit project" : "Add project"} onClose={() => setModalType(null)}>
             <form className="stackForm twoColumns" onSubmit={saveProject}>
               <FormField label="Project name">
                 <input required value={projectForm.name} onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })} />
@@ -985,7 +1327,7 @@ export default function App() {
               <div className="formActions wide">
                 <button className="addButton" type="submit" disabled={loading}>
                   <Save size={18} />
-                  Save project
+                  {editingProjectId ? "Save changes" : "Save project"}
                 </button>
               </div>
             </form>
@@ -1072,28 +1414,50 @@ export default function App() {
 
         {showAnnotator && (
           <AppModal title="Visit photo markup" onClose={() => setShowAnnotator(false)} wide>
-            <PhotoAnnotator
-              imageUrl={samplePhoto()}
-              onSave={async ({ dataUrl, annotationJson }) => {
-                try {
-                  if (supabase && session && profile) {
-                    await uploadAnnotatedVisitPhoto({
-                      companyId: rowsSource.companyId,
-                      projectId: selectedProject.id,
-                      visitId: currentVisit.id,
-                      dataUrl,
-                      annotationJson,
-                    });
-                    setNotice("Annotated photo saved to Supabase Storage.");
-                  } else {
-                    setNotice("Annotated photo is ready. Sign in to save it to Supabase Storage.");
+            <div className="viewerFrame">
+              <PhotoAnnotator
+                imageUrl={samplePhoto()}
+                onSave={async ({ dataUrl, annotationJson }) => {
+                  try {
+                    if (supabase && session && profile) {
+                      await uploadAnnotatedVisitPhoto({
+                        companyId: rowsSource.companyId,
+                        projectId: selectedProject.id,
+                        visitId: currentVisit.id,
+                        dataUrl,
+                        annotationJson,
+                      });
+                      setNotice("Annotated photo saved to Supabase Storage.");
+                    } else {
+                      setNotice("Annotated photo is ready. Sign in to save it to Supabase Storage.");
+                    }
+                    setShowAnnotator(false);
+                  } catch (error) {
+                    setNotice(error.message);
                   }
-                  setShowAnnotator(false);
-                } catch (error) {
-                  setNotice(error.message);
-                }
-              }}
-            />
+                }}
+              />
+            </div>
+          </AppModal>
+        )}
+
+        {selectedAttachment && (
+          <AppModal title={selectedAttachment.file_name || "Attachment"} onClose={() => setSelectedAttachment(null)} wide>
+            <div className="attachmentViewer">
+              {selectedAttachment.file_kind === "photo" || selectedAttachment.mime_type?.startsWith("image/") ? (
+                <img src={selectedAttachment.viewUrl} alt={selectedAttachment.file_name || "Attachment"} />
+              ) : selectedAttachment.file_kind === "pdf" || selectedAttachment.mime_type === "application/pdf" ? (
+                <iframe title={selectedAttachment.file_name || "PDF"} src={selectedAttachment.viewUrl} />
+              ) : (
+                <div className="documentOpenCard">
+                  <FileSpreadsheet size={38} />
+                  <strong>{selectedAttachment.file_name}</strong>
+                  <a href={selectedAttachment.viewUrl} target="_blank" rel="noreferrer">
+                    Open Excel file
+                  </a>
+                </div>
+              )}
+            </div>
           </AppModal>
         )}
       </main>
@@ -1101,7 +1465,7 @@ export default function App() {
   );
 }
 
-function ScheduleView({ assignmentsReady, equipmentRows, peopleRows, scheduleMode, selectedDate, setScheduleMode, setSelectedDate, onAdd, onSelect }) {
+function ScheduleView({ assignmentsReady, equipmentRows, peopleRows, scheduleMode, selectedDate, setScheduleMode, setSelectedDate, onAdd, onDropAssignment, onSelect }) {
   return (
     <>
       <div className="modeTabs">
@@ -1156,8 +1520,8 @@ function ScheduleView({ assignmentsReady, equipmentRows, peopleRows, scheduleMod
         <div className="nowPill">10:30 AM</div>
         {!assignmentsReady && <div className="emptyTimeline">No visits scheduled for this day.</div>}
 
-        <ResourceGroup title="People" count={peopleRows.length} icon={UsersRound} rows={peopleRows} onSelect={onSelect} />
-        <ResourceGroup title="Equipment" count={equipmentRows.length} icon={Truck} rows={equipmentRows} onSelect={onSelect} />
+        <ResourceGroup title="People" count={peopleRows.length} icon={UsersRound} rows={peopleRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
+        <ResourceGroup title="Equipment" count={equipmentRows.length} icon={Truck} rows={equipmentRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
       </div>
     </>
   );
@@ -1175,19 +1539,31 @@ function SectionToolbar({ label, onAdd }) {
   );
 }
 
-function ProjectsView({ projects, onSelect }) {
+function ProjectsView({ canManage, projects, onDelete, onEdit, onSelect }) {
   return (
     <div className="listView">
       {projects.length === 0 && <div className="emptyState">No projects yet. Press Add to create the first project.</div>}
       {projects.map((project) => (
-        <button className="listRow" type="button" key={project.id} onClick={() => onSelect(project)}>
-          <FolderKanban size={20} />
-          <span>
-            <strong>{project.name}</strong>
-            <small>{project.address}</small>
-          </span>
-          <em>{normalizeStatus(project.status)}</em>
-        </button>
+        <div className="listRow projectListRow" key={project.id}>
+          <button className="rowMainButton" type="button" onClick={() => onSelect(project)}>
+            <FolderKanban size={20} />
+            <span>
+              <strong>{project.name}</strong>
+              <small>{project.address}</small>
+            </span>
+            <em>{normalizeStatus(project.status)}</em>
+          </button>
+          {canManage && (
+            <div className="rowActions">
+              <button type="button" title="Edit project" onClick={() => onEdit(project)}>
+                <Edit3 size={16} />
+              </button>
+              <button className="dangerIcon" type="button" title="Delete project" onClick={() => onDelete(project)}>
+                <Trash2 size={16} />
+              </button>
+            </div>
+          )}
+        </div>
       ))}
     </div>
   );
@@ -1322,7 +1698,7 @@ function AppModal({ children, onClose, title, wide = false }) {
   );
 }
 
-function ResourceGroup({ title, count, icon: Icon, rows, onSelect }) {
+function ResourceGroup({ title, count, icon: Icon, rows, onDropAssignment, onSelect }) {
   return (
     <div className="resourceGroup">
       <div className="groupLabel">
@@ -1347,7 +1723,16 @@ function ResourceGroup({ title, count, icon: Icon, rows, onSelect }) {
             </div>
           </div>
 
-          <div className="rowTrack">
+          <div
+            className="rowTrack"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+              const raw = event.dataTransfer.getData("application/json");
+              if (!raw) return;
+              onDropAssignment?.({ assignment: JSON.parse(raw), row, clientX: event.clientX, trackElement: event.currentTarget });
+            }}
+          >
             {row.assignments.map((assignment) => (
               <ScheduleBlock assignment={assignment} key={assignment.id} onSelect={onSelect} />
             ))}
@@ -1363,7 +1748,17 @@ function ScheduleBlock({ assignment, onSelect }) {
   const width = Math.min(100 - left, ((assignment.end - assignment.start) / 11) * 100);
 
   return (
-    <button className={`scheduleBlock ${assignment.color} ${assignment.status ?? ""}`} style={{ left: `${left}%`, width: `${width}%` }} type="button" onClick={() => onSelect(assignment)}>
+    <button
+      className={`scheduleBlock ${assignment.color} ${assignment.status ?? ""}`}
+      draggable={Boolean(assignment.visitId)}
+      style={{ left: `${left}%`, width: `${width}%` }}
+      type="button"
+      onClick={() => onSelect(assignment)}
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/json", JSON.stringify(assignment));
+      }}
+    >
       <strong>{assignment.title}</strong>
       <span>{assignment.subtitle}</span>
       {assignment.timeText && <small>{assignment.timeText}</small>}

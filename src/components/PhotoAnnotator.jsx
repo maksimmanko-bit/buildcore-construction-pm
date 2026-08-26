@@ -1,20 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { Circle, Download, MousePointer2, Pencil, Square, Type, Undo2 } from "lucide-react";
-import { Canvas, FabricImage, IText, Path, Rect, Circle as FabricCircle } from "fabric";
+import { Canvas, Circle as FabricCircle, FabricImage, IText, PencilBrush, Rect } from "fabric";
 
 const tools = [
-  { id: "select", label: "Выбор", icon: MousePointer2 },
-  { id: "draw", label: "Карандаш", icon: Pencil },
-  { id: "rect", label: "Прямоугольник", icon: Square },
-  { id: "circle", label: "Круг", icon: Circle },
-  { id: "text", label: "Текст", icon: Type },
+  { id: "select", label: "Select", icon: MousePointer2 },
+  { id: "draw", label: "Pencil", icon: Pencil },
+  { id: "rect", label: "Rectangle", icon: Square },
+  { id: "circle", label: "Circle", icon: Circle },
+  { id: "text", label: "Text", icon: Type },
 ];
 
 export default function PhotoAnnotator({ imageUrl, onSave }) {
   const canvasElement = useRef(null);
   const fabricRef = useRef(null);
   const [tool, setTool] = useState("select");
-  const [color, setColor] = useState("#f04f32");
+  const [color, setColor] = useState("#cf2e2e");
 
   useEffect(() => {
     if (!canvasElement.current) return undefined;
@@ -22,10 +22,11 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     const canvas = new Canvas(canvasElement.current, {
       width: 920,
       height: 620,
-      backgroundColor: "#151713",
+      backgroundColor: "#090e18",
       preserveObjectStacking: true,
     });
 
+    canvas.freeDrawingBrush = new PencilBrush(canvas);
     fabricRef.current = canvas;
 
     FabricImage.fromURL(imageUrl, { crossOrigin: "anonymous" }).then((img) => {
@@ -47,10 +48,11 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
 
   useEffect(() => {
     const canvas = fabricRef.current;
-    if (!canvas) return;
+    if (!canvas) return undefined;
 
     canvas.isDrawingMode = tool === "draw";
     canvas.selection = tool === "select";
+    if (!canvas.freeDrawingBrush) canvas.freeDrawingBrush = new PencilBrush(canvas);
     canvas.freeDrawingBrush.color = color;
     canvas.freeDrawingBrush.width = 5;
 
@@ -64,7 +66,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
             top: point.y,
             width: 190,
             height: 110,
-            fill: "rgba(240,79,50,0.12)",
+            fill: "rgba(207,46,46,0.12)",
             stroke: color,
             strokeWidth: 4,
           }),
@@ -77,7 +79,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
             left: point.x,
             top: point.y,
             radius: 55,
-            fill: "rgba(240,79,50,0.12)",
+            fill: "rgba(207,46,46,0.12)",
             stroke: color,
             strokeWidth: 4,
           }),
@@ -92,7 +94,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
             fill: color,
             fontSize: 32,
             fontFamily: "Inter, system-ui, sans-serif",
-            backgroundColor: "rgba(255,255,255,0.82)",
+            backgroundColor: "rgba(255,255,255,0.86)",
             padding: 8,
           }),
         );
@@ -105,18 +107,18 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     return () => canvas.off("mouse:down", handleClick);
   }, [tool, color]);
 
-  const undo = () => {
+  function undo() {
     const canvas = fabricRef.current;
-    const objects = canvas.getObjects();
+    const objects = canvas?.getObjects() ?? [];
     if (objects.length) canvas.remove(objects.at(-1));
-  };
+  }
 
-  const save = async () => {
+  async function save() {
     const canvas = fabricRef.current;
     const dataUrl = canvas.toDataURL({ format: "jpeg", quality: 0.92, multiplier: 1 });
     const annotationJson = canvas.toJSON();
     await onSave?.({ dataUrl, annotationJson });
-  };
+  }
 
   return (
     <section className="annotator">
@@ -135,19 +137,13 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
             </button>
           );
         })}
-        <input
-          aria-label="Annotation color"
-          className="colorInput"
-          type="color"
-          value={color}
-          onChange={(event) => setColor(event.target.value)}
-        />
+        <input aria-label="Annotation color" className="colorInput" type="color" value={color} onChange={(event) => setColor(event.target.value)} />
         <button className="iconButton" type="button" title="Undo" onClick={undo}>
           <Undo2 size={18} />
         </button>
         <button className="saveButton" type="button" onClick={save}>
           <Download size={18} />
-          Сохранить
+          Save
         </button>
       </div>
       <div className="canvasShell">

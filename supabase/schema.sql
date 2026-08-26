@@ -315,6 +315,55 @@ create trigger visit_equipment_no_conflicts
 before insert or update on public.visit_equipment
 for each row execute function public.assert_equipment_available();
 
+create or replace function public.assert_visit_schedule_available()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if new.status = 'cancelled' then
+    return new;
+  end if;
+
+  if exists (
+    select 1
+    from public.visit_people current_people
+    join public.visit_people other_people on other_people.profile_id = current_people.profile_id
+    join public.visits other_visit on other_visit.id = other_people.visit_id
+    where current_people.visit_id = new.id
+      and other_people.visit_id <> new.id
+      and other_visit.status <> 'cancelled'
+      and other_visit.visit_date = new.visit_date
+      and other_visit.start_time < new.end_time
+      and new.start_time < other_visit.end_time
+  ) then
+    raise exception 'This employee is already assigned during this time.';
+  end if;
+
+  if exists (
+    select 1
+    from public.visit_equipment current_equipment
+    join public.visit_equipment other_equipment on other_equipment.equipment_id = current_equipment.equipment_id
+    join public.visits other_visit on other_visit.id = other_equipment.visit_id
+    where current_equipment.visit_id = new.id
+      and other_equipment.visit_id <> new.id
+      and other_visit.status <> 'cancelled'
+      and other_visit.visit_date = new.visit_date
+      and other_visit.start_time < new.end_time
+      and new.start_time < other_visit.end_time
+  ) then
+    raise exception 'This equipment is already booked during this time.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists visits_no_conflicts_on_update on public.visits;
+create trigger visits_no_conflicts_on_update
+before update of visit_date, start_time, end_time, status on public.visits
+for each row execute function public.assert_visit_schedule_available();
+
 create or replace function public.global_search(search_query text)
 returns table (
   id text,
