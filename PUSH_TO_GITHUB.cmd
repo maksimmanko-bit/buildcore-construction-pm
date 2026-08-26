@@ -3,6 +3,8 @@ cd /d "%~dp0"
 echo Pushing BuildCore Construction PM to GitHub...
 echo Repository: https://github.com/maksimmanko-bit/buildcore-construction-pm
 echo.
+set "GIT_CONFIG_GLOBAL=%~dp0.gitconfig-buildcore"
+git config --global --add safe.directory "%~dp0"
 git remote remove origin 2>nul
 git remote add origin https://github.com/maksimmanko-bit/buildcore-construction-pm.git
 git branch -M main

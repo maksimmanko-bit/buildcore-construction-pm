@@ -6,3 +6,4 @@ dist
 .npm-cache
 .DS_Store
 *.zip
+.gitconfig-buildcore

@@ -1,6 +1,12 @@
 $ErrorActionPreference = "Stop"
 
 Set-Location -LiteralPath $PSScriptRoot
+$repoPath = (Resolve-Path -LiteralPath $PSScriptRoot).Path
+$env:GIT_CONFIG_GLOBAL = Join-Path $PSScriptRoot ".gitconfig-buildcore"
+
+# Git blocks repositories in some OneDrive/Cyrillic paths until they are marked safe.
+# Use a project-local Git config for this run so Windows global config is not required.
+git config --global --add safe.directory "$repoPath"
 
 Write-Host "BuildCore Construction PM -> GitHub" -ForegroundColor Cyan
 Write-Host "Repository: https://github.com/maksimmanko-bit/buildcore-construction-pm"
