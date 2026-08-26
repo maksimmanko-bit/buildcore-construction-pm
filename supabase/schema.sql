@@ -35,7 +35,11 @@ create table if not exists public.companies (
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   company_id uuid references public.companies(id) on delete set null,
+  first_name text not null default '',
+  last_name text not null default '',
   full_name text not null default '',
+  email text,
+  avatar_path text,
   role public.app_role not null default 'builder',
   trade text,
   phone text,
@@ -65,6 +69,7 @@ create table if not exists public.projects (
   description text,
   status public.project_status not null default 'planning',
   created_by uuid references public.profiles(id),
+  manager_id uuid references public.profiles(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -102,6 +107,7 @@ create table if not exists public.visits (
   completion_notes text,
   office_notes text,
   created_by uuid references public.profiles(id),
+  assigned_by uuid references public.profiles(id),
   created_at timestamptz not null default now(),
   check (start_time < end_time)
 );
@@ -207,11 +213,12 @@ begin
   values (trim(company_name))
   returning id into new_company_id;
 
-  insert into public.profiles (id, company_id, full_name, role, phone, is_active)
+  insert into public.profiles (id, company_id, full_name, email, role, phone, is_active)
   values (
     current_user_id,
     new_company_id,
     coalesce(nullif(trim(full_name), ''), split_part(coalesce((select email from auth.users where id = current_user_id), 'Owner'), '@', 1)),
+    (select email from auth.users where id = current_user_id),
     'owner',
     nullif(trim(phone), ''),
     true
@@ -273,6 +280,7 @@ begin
   if found then
     update public.profiles
       set role = 'owner',
+          email = current_email,
           is_active = true
     where id = current_user_id
     returning * into existing_profile;
@@ -289,11 +297,12 @@ begin
   values (matching_invite.company_name)
   returning id into new_company_id;
 
-  insert into public.profiles (id, company_id, full_name, role, is_active)
+  insert into public.profiles (id, company_id, full_name, email, role, is_active)
   values (
     current_user_id,
     new_company_id,
     coalesce(nullif(trim(matching_invite.full_name), ''), split_part(current_email, '@', 1)),
+    current_email,
     'owner',
     true
   )
@@ -311,6 +320,86 @@ $$;
 revoke all on function public.claim_owner_invite() from public;
 revoke all on function public.claim_owner_invite() from anon;
 grant execute on function public.claim_owner_invite() to authenticated;
+
+create or replace function public.request_employee_access()
+returns public.profiles
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  current_user_id uuid := auth.uid();
+  current_email text;
+  current_email_confirmed_at timestamptz;
+  meta jsonb;
+  existing_profile public.profiles;
+  target_company_id uuid;
+  first_name_value text;
+  last_name_value text;
+  phone_value text;
+  created_profile public.profiles;
+begin
+  if current_user_id is null then
+    raise exception 'You must be signed in.';
+  end if;
+
+  select lower(email), email_confirmed_at, raw_user_meta_data
+    into current_email, current_email_confirmed_at, meta
+  from auth.users
+  where id = current_user_id;
+
+  if current_email_confirmed_at is null then
+    raise exception 'Please verify your email before requesting access.';
+  end if;
+
+  select *
+    into existing_profile
+  from public.profiles
+  where id = current_user_id;
+
+  if found then
+    update public.profiles
+      set email = current_email
+    where id = current_user_id
+    returning * into existing_profile;
+    return existing_profile;
+  end if;
+
+  select id
+    into target_company_id
+  from public.companies
+  order by created_at
+  limit 1;
+
+  if target_company_id is null then
+    raise exception 'Company is not configured yet. Ask the Owner to sign in first.';
+  end if;
+
+  first_name_value := nullif(trim(coalesce(meta->>'first_name', '')), '');
+  last_name_value := nullif(trim(coalesce(meta->>'last_name', '')), '');
+  phone_value := nullif(trim(coalesce(meta->>'phone', '')), '');
+
+  insert into public.profiles (id, company_id, first_name, last_name, full_name, email, phone, role, is_active)
+  values (
+    current_user_id,
+    target_company_id,
+    coalesce(first_name_value, split_part(current_email, '@', 1)),
+    coalesce(last_name_value, ''),
+    trim(coalesce(first_name_value, split_part(current_email, '@', 1)) || ' ' || coalesce(last_name_value, '')),
+    current_email,
+    phone_value,
+    'builder',
+    false
+  )
+  returning * into created_profile;
+
+  return created_profile;
+end;
+$$;
+
+revoke all on function public.request_employee_access() from public;
+revoke all on function public.request_employee_access() from anon;
+grant execute on function public.request_employee_access() to authenticated;
 
 create or replace function public.can_manage()
 returns boolean
@@ -566,6 +655,12 @@ for update to authenticated
 using (company_id = public.current_company_id() and public.can_manage())
 with check (company_id = public.current_company_id() and public.can_manage());
 
+drop policy if exists "users update own profile" on public.profiles;
+create policy "users update own profile" on public.profiles
+for update to authenticated
+using (id = auth.uid() and company_id = public.current_company_id())
+with check (id = auth.uid() and company_id = public.current_company_id());
+
 drop policy if exists "members read projects" on public.projects;
 create policy "members read projects" on public.projects
 for select to authenticated
@@ -662,6 +757,7 @@ with check (company_id = public.current_company_id() and public.can_manage());
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
   ('visit-photos', 'visit-photos', false, 52428800, array['image/jpeg', 'image/png', 'image/webp']),
+  ('profile-avatars', 'profile-avatars', false, 10485760, array['image/jpeg', 'image/png', 'image/webp']),
   ('project-documents', 'project-documents', false, 104857600, array[
     'application/pdf',
     'application/vnd.ms-excel',
@@ -673,7 +769,7 @@ drop policy if exists "company members read storage objects" on storage.objects;
 create policy "company members read storage objects" on storage.objects
 for select to authenticated
 using (
-  bucket_id in ('visit-photos', 'project-documents')
+  bucket_id in ('visit-photos', 'project-documents', 'profile-avatars')
   and split_part(name, '/', 1)::uuid = public.current_company_id()
 );
 
@@ -681,7 +777,7 @@ drop policy if exists "company members upload storage objects" on storage.object
 create policy "company members upload storage objects" on storage.objects
 for insert to authenticated
 with check (
-  bucket_id in ('visit-photos', 'project-documents')
+  bucket_id in ('visit-photos', 'project-documents', 'profile-avatars')
   and split_part(name, '/', 1)::uuid = public.current_company_id()
 );
 
@@ -689,12 +785,12 @@ drop policy if exists "managers update storage objects" on storage.objects;
 create policy "managers update storage objects" on storage.objects
 for update to authenticated
 using (
-  bucket_id in ('visit-photos', 'project-documents')
+  bucket_id in ('visit-photos', 'project-documents', 'profile-avatars')
   and split_part(name, '/', 1)::uuid = public.current_company_id()
   and public.can_manage()
 )
 with check (
-  bucket_id in ('visit-photos', 'project-documents')
+  bucket_id in ('visit-photos', 'project-documents', 'profile-avatars')
   and split_part(name, '/', 1)::uuid = public.current_company_id()
   and public.can_manage()
 );

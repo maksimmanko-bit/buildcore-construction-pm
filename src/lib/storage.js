@@ -206,6 +206,33 @@ export async function uploadVisitPhoto({ companyId, projectId, visitId, profileI
   });
 }
 
+export async function uploadProfileAvatar({ companyId, profileId, file }) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  if (!companyId || !profileId || !file) throw new Error("Missing avatar upload details.");
+
+  const extension = cleanStorageFileName(file.name).split(".").pop() || "jpg";
+  const storagePath = `${companyId}/${profileId}/avatar-${Date.now()}.${extension}`;
+
+  const { error } = await supabase.storage.from("profile-avatars").upload(storagePath, file, {
+    contentType: file.type || "image/jpeg",
+    upsert: false,
+  });
+
+  if (error) throw error;
+  return storagePath;
+}
+
+export async function createProfileAvatarUrl(avatarPath, expiresIn = 60 * 60) {
+  if (!supabase || !avatarPath) return "";
+
+  const { data, error } = await supabase.storage.from("profile-avatars").createSignedUrl(avatarPath, expiresIn, {
+    transform: { width: 160, height: 160, resize: "cover" },
+  });
+
+  if (error) throw error;
+  return data?.signedUrl ?? "";
+}
+
 export async function createAttachmentUrls(attachment, expiresIn = 60 * 60) {
   if (!supabase || !attachment?.bucket_id || !attachment?.storage_path) return {};
 

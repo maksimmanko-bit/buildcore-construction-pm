@@ -232,6 +232,16 @@ button:disabled {
   gap: 16px;
 }
 
+.authNameGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.authNameGrid .formField:last-child {
+  grid-column: 1 / -1;
+}
+
 .authActions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -378,7 +388,16 @@ button:disabled {
     linear-gradient(#111827 0 32%, transparent 33%),
     radial-gradient(circle at 50% 78%, #0f172a 0 28%, transparent 29%),
     #e5e7eb;
-  color: transparent;
+  color: #fff;
+  overflow: hidden;
+  text-shadow: 0 1px 2px rgba(15, 23, 42, 0.36);
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
 }
 
 .avatar.small {
@@ -614,6 +633,110 @@ h1 {
   text-decoration: none;
 }
 
+.outlineLink.disabled {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+.personHero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.personHero .avatar {
+  width: 74px;
+  height: 74px;
+  font-size: 20px;
+}
+
+.personHero h3 {
+  margin-top: 8px;
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.personHero p {
+  color: var(--muted);
+}
+
+.contactActions {
+  margin-top: 4px;
+}
+
+.contactFactLink {
+  color: var(--blue);
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.contactFactLink:hover {
+  text-decoration: underline;
+}
+
+.pendingRequests {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 16px;
+  background: rgba(239, 246, 255, 0.58);
+}
+
+.pendingRequests .panelSectionHeader span {
+  display: inline-grid;
+  min-width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #fff;
+  font-weight: 900;
+}
+
+.pendingRow {
+  grid-template-columns: minmax(0, 1fr) 170px auto;
+  gap: 10px;
+  padding: 10px;
+}
+
+.compactButton {
+  min-height: 42px;
+  padding-inline: 14px;
+}
+
+.pendingPreview {
+  align-content: center;
+  gap: 12px;
+  padding: 28px;
+}
+
+.pendingPreview strong {
+  font-size: 28px;
+}
+
+.pendingPreview p,
+.pendingProfileCard span {
+  color: var(--muted);
+}
+
+.pendingProfileCard {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.fullWidth {
+  width: 100%;
+}
+
 .detailFacts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -769,6 +892,74 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 13px;
   background: rgba(255, 255, 255, 0.74);
+}
+
+.signaturePad {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.signaturePadHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.signaturePadHeader button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--muted);
+  font-weight: 850;
+}
+
+.signaturePad canvas {
+  width: 100%;
+  height: 150px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 11px;
+  background:
+    linear-gradient(transparent calc(100% - 34px), rgba(100, 116, 139, 0.16) calc(100% - 33px), transparent calc(100% - 32px)),
+    #fff;
+  touch-action: none;
+}
+
+.signaturePad > span {
+  position: absolute;
+  right: 22px;
+  bottom: 22px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  pointer-events: none;
+}
+
+.settingsProfileForm {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.settingsAvatarBlock {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.settingsAvatarBlock span {
+  display: grid;
+  gap: 4px;
 }
 
 .safetySummary span {
@@ -2063,6 +2254,12 @@ canvas {
   padding: 0;
 }
 
+.peopleListRow {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0;
+  padding: 0;
+}
+
 .rowMainButton {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -2355,6 +2552,10 @@ canvas {
     grid-template-columns: 1fr;
   }
 
+  .authNameGrid {
+    grid-template-columns: 1fr;
+  }
+
   .dashboardShell {
     display: block;
   }
@@ -2435,6 +2636,7 @@ canvas {
   .detailFacts,
   .detailFacts.compact,
   .detailVisitGrid,
+  .pendingRow,
   .wideActions {
     grid-template-columns: 1fr;
   }

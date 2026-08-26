@@ -15,10 +15,12 @@ import {
   FolderKanban,
   Home,
   ImagePlus,
+  Mail,
   MapPin,
   LogIn,
   LogOut,
   MoreHorizontal,
+  Phone,
   Plus,
   Save,
   Search,
@@ -26,15 +28,17 @@ import {
   CloudSun,
   Trash2,
   Truck,
+  Upload,
   UserPlus,
   UserRound,
   UsersRound,
   X,
 } from "lucide-react";
+import { jsPDF } from "jspdf";
 import DocumentUploader from "./components/DocumentUploader.jsx";
 import PhotoAnnotator from "./components/PhotoAnnotator.jsx";
 import { isSupabaseConfigured, supabase } from "./lib/supabase.js";
-import { createAttachmentUrls, makeSimplePdfBlob, uploadAnnotatedVisitPhoto, uploadVisitGeneratedFile, uploadVisitPhoto } from "./lib/storage.js";
+import { createAttachmentUrls, createProfileAvatarUrl, uploadAnnotatedVisitPhoto, uploadProfileAvatar, uploadVisitGeneratedFile, uploadVisitPhoto } from "./lib/storage.js";
 import { localGlobalSearch } from "./lib/search.js";
 import { getGoogleMapsUrl, getWeatherForAddress } from "./lib/weather.js";
 
@@ -193,6 +197,7 @@ const emptyProjectForm = {
   job_number: "",
   name: "",
   address: "",
+  manager_id: "",
   contact_name: "",
   contact_email: "",
   contact_phone: "",
@@ -261,6 +266,12 @@ function roleLabel(role) {
     office_manager: "Office Manager",
     builder: "Builder",
   }[role] ?? role;
+}
+
+function profileDisplayName(person, fallback = "Not set") {
+  if (!person) return fallback;
+  const firstLast = `${person.first_name || ""} ${person.last_name || ""}`.trim();
+  return firstLast || person.full_name || person.email || fallback;
 }
 
 function equipmentIcon(type) {
@@ -352,12 +363,35 @@ function getAuthRedirectUrl() {
   return `${window.location.origin}${window.location.pathname}`;
 }
 
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function dataUrlToFile(dataUrl, fileName, mimeType = "image/jpeg") {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return new File([blob], fileName, { type: mimeType });
+}
+
 function FormField({ label, children }) {
   return (
     <label className="formField">
       <span>{label}</span>
       {children}
     </label>
+  );
+}
+
+function Avatar({ profile, small = false, url }) {
+  return (
+    <div className={small ? "avatar face small" : "avatar face"}>
+      {url ? <img src={url} alt="" /> : makeInitials(profile?.full_name || profile?.email || "No Name", "NN")}
+    </div>
   );
 }
 
@@ -373,6 +407,7 @@ export default function App() {
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedAssignmentId, setSelectedAssignmentId] = useState("");
   const [selectedVisitId, setSelectedVisitId] = useState("");
+  const [selectedPersonId, setSelectedPersonId] = useState("");
   const [detailOverlay, setDetailOverlay] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -381,6 +416,10 @@ export default function App() {
   const [authMode, setAuthMode] = useState("signin");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authFirstName, setAuthFirstName] = useState("");
+  const [authLastName, setAuthLastName] = useState("");
+  const [authPhone, setAuthPhone] = useState("");
+  const [authAvatarFile, setAuthAvatarFile] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [showAnnotator, setShowAnnotator] = useState(false);
   const [selectedAttachment, setSelectedAttachment] = useState(null);
@@ -394,11 +433,15 @@ export default function App() {
   const [equipmentForm, setEquipmentForm] = useState(emptyEquipmentForm);
   const [visitForm, setVisitForm] = useState(emptyVisitForm);
   const [safetyForm, setSafetyForm] = useState({ hazards: [], notes: "", signatures: {} });
+  const [workflowVisitId, setWorkflowVisitId] = useState("");
   const [photoStep, setPhotoStep] = useState({ kind: "", visitId: "", files: [] });
   const [completionForm, setCompletionForm] = useState({ notes: "", files: [] });
+  const [profileForm, setProfileForm] = useState({ first_name: "", last_name: "", phone: "", avatarFile: null, removeAvatar: false });
+  const [avatarUrls, setAvatarUrls] = useState({});
 
-  const isLive = Boolean(session && profile);
-  const canManage = ["owner", "project_manager", "office_manager"].includes(profile?.role);
+  const isLive = Boolean(session && profile?.is_active);
+  const canManage = Boolean(profile?.is_active && ["owner", "project_manager", "office_manager"].includes(profile?.role));
+  const visibleNavItems = canManage ? navItems : navItems.filter((item) => item.id !== "people");
   const currentUserName = profile?.full_name || session?.user?.email || "James Carter";
 
   const refreshData = useCallback(async () => {
@@ -416,23 +459,46 @@ export default function App() {
           profileResult = { data: claimResult.data, error: null };
           setNotice("Owner account verified and connected.");
         } else {
-          setProfile(null);
-          setData({ ...demo, visits: [] });
-          setNotice(
-            claimResult.error?.message?.includes("verify")
-              ? "Check your email and confirm the account before continuing."
-              : "Supabase did not confirm Owner access for this account.",
-          );
-          await supabase.auth.signOut();
-          return;
+          const requestResult = await supabase.rpc("request_employee_access");
+          if (!requestResult.error && requestResult.data) {
+            profileResult = { data: requestResult.data, error: null };
+            setNotice("Access request sent. A manager must approve this account before the app opens.");
+          } else {
+            setProfile(null);
+            setData({ ...demo, visits: [], pendingPeople: [] });
+            setNotice(
+              requestResult.error?.message?.includes("verify") || claimResult.error?.message?.includes("verify")
+                ? "Check your email and confirm the account before continuing."
+                : requestResult.error?.message || "Supabase did not confirm access for this account.",
+            );
+            await supabase.auth.signOut();
+            return;
+          }
         }
       }
 
-      setProfile(profileResult.data);
+      let nextProfile = profileResult.data;
+      if (session.user.email && nextProfile.email !== session.user.email) {
+        const profileEmailResult = await supabase.from("profiles").update({ email: session.user.email }).eq("id", nextProfile.id).select().single();
+        if (!profileEmailResult.error && profileEmailResult.data) nextProfile = profileEmailResult.data;
+      }
+
+      await applyPendingSignupProfile(nextProfile);
+      setProfile(nextProfile);
+
+      if (!nextProfile.is_active) {
+        setData({ ...demo, visits: [], pendingPeople: [nextProfile] });
+        return;
+      }
+
+      const nextCanManage = ["owner", "project_manager", "office_manager"].includes(nextProfile.role);
+      const peopleQuery = nextCanManage
+        ? supabase.from("profiles").select("*").order("is_active", { ascending: true }).order("full_name")
+        : supabase.from("profiles").select("*").eq("is_active", true).order("full_name");
 
       const [projectsResult, peopleResult, equipmentResult, visitsResult, filesResult] = await Promise.all([
         supabase.from("projects").select("*").order("created_at", { ascending: false }),
-        supabase.from("profiles").select("*").eq("is_active", true).order("full_name"),
+        peopleQuery,
         supabase.from("equipment").select("*").order("name"),
         supabase.from("visit_schedule_view").select("*").order("visit_date", { ascending: false }).order("start_time"),
         supabase.from("visit_files").select("*").order("created_at", { ascending: false }),
@@ -442,10 +508,12 @@ export default function App() {
       if (failed) throw failed.error;
 
       const nextProjects = projectsResult.data ?? [];
+      const allPeople = peopleResult.data ?? [];
       setData({
-        companyId: profileResult.data.company_id,
+        companyId: nextProfile.company_id,
         projects: nextProjects,
-        people: peopleResult.data ?? [],
+        people: allPeople.filter((person) => person.is_active),
+        pendingPeople: allPeople.filter((person) => !person.is_active),
         equipment: equipmentResult.data ?? [],
         visits: visitsResult.data ?? [],
         files: filesResult.data ?? [],
@@ -481,9 +549,49 @@ export default function App() {
   }, [activeNav]);
 
   useEffect(() => {
+    if (activeNav === "people" && !canManage) setActiveNav("overview");
+  }, [activeNav, canManage]);
+
+  useEffect(() => {
     if (!session) return;
     refreshData();
   }, [refreshData, session]);
+
+  useEffect(() => {
+    if (!profile) return;
+    const [first = "", ...rest] = String(profile.full_name || "").split(" ").filter(Boolean);
+    setProfileForm({
+      first_name: profile.first_name || first,
+      last_name: profile.last_name || rest.join(" "),
+      phone: profile.phone || "",
+      avatarFile: null,
+      removeAvatar: false,
+    });
+  }, [profile]);
+
+  useEffect(() => {
+    let alive = true;
+    const profiles = [profile, ...(data.people ?? []), ...(data.pendingPeople ?? [])].filter(Boolean).filter((item) => item.avatar_path);
+    if (profiles.length === 0) return undefined;
+
+    async function loadAvatars() {
+      const pairs = await Promise.all(
+        profiles.map(async (item) => {
+          try {
+            return [item.id, await createProfileAvatarUrl(item.avatar_path)];
+          } catch {
+            return [item.id, ""];
+          }
+        }),
+      );
+      if (alive) setAvatarUrls((current) => ({ ...current, ...Object.fromEntries(pairs) }));
+    }
+
+    loadAvatars();
+    return () => {
+      alive = false;
+    };
+  }, [data.people, profile]);
 
   const projectLookup = useMemo(() => new Map(data.projects.map((project, index) => [project.id, { ...project, color: colors[index % colors.length] }])), [data.projects]);
 
@@ -567,6 +675,8 @@ export default function App() {
 
   const rowsSource = isLive ? data : demo;
   const assignmentsSource = isLive ? liveAssignments : demoAssignments;
+  const profileById = useMemo(() => new Map((rowsSource.people ?? []).map((person) => [person.id, person])), [rowsSource.people]);
+  const getProfileName = useCallback((id, fallback = "Not set") => profileDisplayName(profileById.get(id), fallback), [profileById]);
   const selectedProject = selectedProjectId ? rowsSource.projects.find((project) => project.id === selectedProjectId) : null;
   const selectedAssignment = assignmentsSource.find((item) => item.id === selectedAssignmentId) ?? null;
   const selectedProjectVisits = selectedProject
@@ -579,6 +689,10 @@ export default function App() {
   const currentVisitFiles = (rowsSource.files ?? []).filter((file) => currentVisit?.id && file.visit_id === currentVisit.id);
   const currentVisitPeople = currentVisit ? rowsSource.people.filter((person) => currentVisit.people_ids?.includes(person.id)) : [];
   const currentVisitEquipment = currentVisit ? rowsSource.equipment.filter((item) => currentVisit.equipment_ids?.includes(item.id)) : [];
+  const workflowVisit = workflowVisitId ? (rowsSource.visits ?? []).find((visit) => visit.id === workflowVisitId) ?? currentVisit : currentVisit;
+  const workflowProject = workflowVisit ? rowsSource.projects.find((project) => project.id === workflowVisit.project_id) ?? selectedProject : selectedProject;
+  const workflowPeople = workflowVisit ? rowsSource.people.filter((person) => workflowVisit.people_ids?.includes(person.id)) : currentVisitPeople;
+  const selectedPerson = selectedPersonId ? [...(rowsSource.people ?? []), ...(rowsSource.pendingPeople ?? [])].find((person) => person.id === selectedPersonId) : null;
   const todayValue = new Date().toISOString().slice(0, 10);
   const todayVisits = (rowsSource.visits ?? []).filter((visit) => visit.visit_date === todayValue && (!isLive || visit.people_ids?.includes(profile?.id)));
   const projectAttachments = (rowsSource.files ?? [])
@@ -625,12 +739,68 @@ export default function App() {
     assignments: assignmentsSource.filter((item) => item.type === "equipment" && item.resourceId === equipment.id),
   }));
 
+  async function applyPendingSignupProfile(nextProfile) {
+    if (!supabase || !nextProfile?.id || !nextProfile.company_id || !session?.user?.email) return;
+
+    const key = `buildcore_pending_profile_${session.user.email.toLowerCase()}`;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return;
+
+    window.localStorage.removeItem(key);
+    const pending = JSON.parse(raw);
+    const firstName = pending.firstName || "";
+    const lastName = pending.lastName || "";
+    const phone = pending.phone || nextProfile.phone || "";
+    let avatarPath = nextProfile.avatar_path || null;
+
+    if (pending.avatarDataUrl) {
+      const avatarFile = await dataUrlToFile(pending.avatarDataUrl, pending.avatarName || "avatar.jpg", pending.avatarType || "image/jpeg");
+      avatarPath = await uploadProfileAvatar({ companyId: nextProfile.company_id, profileId: nextProfile.id, file: avatarFile });
+    }
+
+    if (firstName || lastName || phone || avatarPath) {
+      await supabase
+        .from("profiles")
+        .update({
+          first_name: firstName,
+          last_name: lastName,
+          full_name: `${firstName} ${lastName}`.trim() || nextProfile.full_name,
+          email: session.user.email,
+          phone,
+          avatar_path: avatarPath,
+        })
+        .eq("id", nextProfile.id);
+    }
+  }
+
   async function signIn(event) {
     event.preventDefault();
     if (!supabase) return;
 
     setLoading(true);
     const normalizedEmail = authEmail.trim().toLowerCase();
+    const firstName = authFirstName.trim();
+    const lastName = authLastName.trim();
+    const phone = authPhone.trim();
+
+    if (authMode === "signup" && (!firstName || !lastName || !phone)) {
+      setLoading(false);
+      setNotice("First name, last name, and phone number are required.");
+      return;
+    }
+
+    if (authMode === "signup") {
+      const pendingProfile = {
+        firstName,
+        lastName,
+        phone,
+        avatarDataUrl: authAvatarFile ? await fileToDataUrl(authAvatarFile) : "",
+        avatarName: authAvatarFile?.name || "",
+        avatarType: authAvatarFile?.type || "",
+      };
+      window.localStorage.setItem(`buildcore_pending_profile_${normalizedEmail}`, JSON.stringify(pendingProfile));
+    }
+
     const action =
       authMode === "signup"
         ? supabase.auth.signUp({
@@ -638,7 +808,7 @@ export default function App() {
             password: authPassword,
             options: {
               emailRedirectTo: getAuthRedirectUrl(),
-              data: { full_name: companyForm.full_name || normalizedEmail.split("@")[0] },
+              data: { first_name: firstName, last_name: lastName, full_name: `${firstName} ${lastName}`.trim(), phone },
             },
           })
         : supabase.auth.signInWithPassword({ email: normalizedEmail, password: authPassword });
@@ -661,6 +831,9 @@ export default function App() {
     setSelectedProjectId("");
     setSelectedVisitId("");
     setSelectedAssignmentId("");
+    setSelectedPersonId("");
+    setWorkflowVisitId("");
+    setDetailOverlay("");
   }
 
   async function createCompany(event) {
@@ -691,6 +864,7 @@ export default function App() {
       job_number: projectForm.job_number,
       name: projectForm.name,
       address: projectForm.address,
+      manager_id: projectForm.manager_id || profile.id,
       contact_name: projectForm.contact_name,
       contact_email: projectForm.contact_email,
       contact_phone: projectForm.contact_phone,
@@ -706,6 +880,7 @@ export default function App() {
             ...payload,
             company_id: profile.company_id,
             created_by: profile.id,
+            manager_id: profile.id,
           })
           .select()
           .single();
@@ -737,6 +912,7 @@ export default function App() {
       job_number: project.job_number ?? "",
       name: project.name ?? "",
       address: project.address ?? "",
+      manager_id: project.manager_id ?? project.created_by ?? profile?.id ?? "",
       contact_name: project.contact_name ?? "",
       contact_email: project.contact_email ?? "",
       contact_phone: project.contact_phone ?? "",
@@ -814,6 +990,7 @@ export default function App() {
             ...visitPayload,
             company_id: profile.company_id,
             created_by: profile.id,
+            assigned_by: profile.id,
           })
           .select()
           .single();
@@ -874,6 +1051,63 @@ export default function App() {
 
     setNotice(`${person.full_name || "Employee"} role updated.`);
     refreshData();
+  }
+
+  async function approvePerson(person, role) {
+    if (!supabase || !canManage) return;
+
+    setLoading(true);
+    const { error } = await supabase.from("profiles").update({ role, is_active: true }).eq("id", person.id);
+    setLoading(false);
+
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+
+    setNotice(`${profileDisplayName(person, "Employee")} approved as ${roleLabel(role)}.`);
+    refreshData();
+  }
+
+  async function saveProfileSettings(event) {
+    event.preventDefault();
+    if (!supabase || !profile) return;
+
+    const firstName = profileForm.first_name.trim();
+    const lastName = profileForm.last_name.trim();
+    const phone = profileForm.phone.trim();
+    if (!firstName || !lastName || !phone) {
+      setNotice("First name, last name, and phone number are required.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      let avatarPath = profile.avatar_path || null;
+      if (profileForm.removeAvatar) avatarPath = null;
+      if (profileForm.avatarFile) {
+        avatarPath = await uploadProfileAvatar({ companyId: profile.company_id, profileId: profile.id, file: profileForm.avatarFile });
+      }
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          first_name: firstName,
+          last_name: lastName,
+          full_name: `${firstName} ${lastName}`.trim(),
+          phone,
+          avatar_path: avatarPath,
+        })
+        .eq("id", profile.id);
+
+      if (error) throw error;
+      setNotice("Profile saved.");
+      refreshData();
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function updateVisitStatus(status) {
@@ -951,6 +1185,7 @@ export default function App() {
     const hasSafety = files.some((file) => file.file_type === "safety_form");
     const hasBefore = files.some((file) => file.file_type === "before_photo");
 
+    setWorkflowVisitId(visit.id);
     setSelectedProjectId(visit.project_id);
     setSelectedVisitId(visit.id);
 
@@ -982,15 +1217,21 @@ export default function App() {
 
     setSelectedProjectId(visit.project_id);
     setSelectedVisitId(visit.id);
+    setWorkflowVisitId(visit.id);
     setCompletionForm({ notes: "", files: [] });
     setModalType("completeVisit");
   }
 
   async function saveSafetyForm(event) {
     event.preventDefault();
-    if (!supabase || !profile || !currentVisit || !selectedProject) return;
+    const activeVisit = workflowVisit ?? currentVisit;
+    const activeProject = workflowProject ?? selectedProject;
+    if (!supabase || !profile || !activeVisit || !activeProject) {
+      setNotice("Select a visit before saving the safety form.");
+      return;
+    }
 
-    const team = rowsSource.people.filter((person) => currentVisit.people_ids?.includes(person.id));
+    const team = rowsSource.people.filter((person) => activeVisit.people_ids?.includes(person.id));
     const missingSignature = team.some((person) => !safetyForm.signatures[person.id]?.trim());
     if (safetyForm.hazards.length === 0 || missingSignature) {
       setNotice("Select hazards and collect every team member signature before continuing.");
@@ -1000,34 +1241,88 @@ export default function App() {
     setLoading(true);
     try {
       const names = team.map((person) => person.full_name || person.email || "Team member");
-      const lines = [
-        "BuildCore Construction - Digital Safety Form",
-        `Project: ${selectedProject.name}`,
-        `Job Number: ${selectedProject.job_number || "Not set"}`,
-        `Address: ${selectedProject.address}`,
-        `Date: ${formatDateLabel(currentVisit.visit_date)}`,
-        `Time: ${String(currentVisit.start_time).slice(0, 5)} - ${String(currentVisit.end_time).slice(0, 5)}`,
-        `Hazards: ${safetyForm.hazards.join(", ")}`,
-        `Notes: ${safetyForm.notes || "None"}`,
-        "Signatures:",
-        ...team.map((person) => `${person.full_name || person.email}: ${safetyForm.signatures[person.id]}`),
-      ];
-      const fileName = `${names.join("-")}-${currentVisit.visit_date}-safety-form.pdf`.replace(/\s+/g, "-");
-      const blob = makeSimplePdfBlob(lines);
+      const signedAt = new Date();
+      const doc = new jsPDF({ unit: "pt", format: "letter" });
+      doc.setFillColor(17, 24, 39);
+      doc.rect(0, 0, 612, 92, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(22);
+      doc.text("BuildCore Construction", 42, 42);
+      doc.setFontSize(13);
+      doc.text("Digital Safety Form", 42, 66);
+      doc.setTextColor(17, 24, 39);
+      doc.setFontSize(15);
+      doc.text(activeProject.name, 42, 132);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text(`Job Number: ${activeProject.job_number || "Not set"}`, 42, 154);
+      doc.text(`Address: ${activeProject.address}`, 42, 170);
+      doc.text(`Visit Date: ${formatDateLabel(activeVisit.visit_date)}`, 42, 186);
+      doc.text(`Current Time: ${signedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`, 42, 202);
+      doc.text(`Scheduled Time: ${String(activeVisit.start_time).slice(0, 5)} - ${String(activeVisit.end_time).slice(0, 5)}`, 42, 218);
+
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(42, 244, 528, 112, 8, 8);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text("Potential Hazards", 58, 270);
+      doc.setFont("helvetica", "normal");
+      const hazards = doc.splitTextToSize(safetyForm.hazards.join(", "), 492);
+      doc.text(hazards, 58, 292);
+
+      doc.setFont("helvetica", "bold");
+      doc.text("Notes", 58, 336);
+      doc.setFont("helvetica", "normal");
+      doc.text(doc.splitTextToSize(safetyForm.notes || "None", 430), 100, 336);
+
+      let y = 398;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text("Team Signatures", 42, y);
+      y += 24;
+      team.forEach((person) => {
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(42, y, 528, 82, 8, 8);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.text(person.full_name || person.email || "Team member", 58, y + 24);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Signed: ${signedAt.toLocaleString()}`, 58, y + 42);
+        doc.addImage(safetyForm.signatures[person.id], "PNG", 320, y + 12, 190, 48);
+        y += 96;
+      });
+
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Generated by BuildCore PM and saved to Supabase Storage.", 42, 760);
+      const blob = doc.output("blob");
+      const searchableText = [
+        activeProject.name,
+        activeProject.job_number,
+        activeProject.address,
+        formatDateLabel(activeVisit.visit_date),
+        signedAt.toLocaleString(),
+        safetyForm.hazards.join(", "),
+        safetyForm.notes,
+        ...names,
+      ].join(" ");
+      const fileName = `${names.join("-")}-${activeVisit.visit_date}-safety-form.pdf`.replace(/\s+/g, "-");
       await uploadVisitGeneratedFile({
         companyId: rowsSource.companyId,
-        projectId: selectedProject.id,
-        visitId: currentVisit.id,
+        projectId: activeProject.id,
+        visitId: activeVisit.id,
         profileId: profile.id,
         blob,
         fileName,
         fileType: "safety_form",
-        searchText: lines.join(" "),
+        searchText: searchableText,
       });
+      await refreshData();
+      setWorkflowVisitId(activeVisit.id);
+      setPhotoStep({ kind: "before", visitId: activeVisit.id, files: [] });
       setModalType("beforePhotos");
-      setPhotoStep({ kind: "before", visitId: currentVisit.id, files: [] });
       setNotice("Safety form saved. Add before photos to start work.");
-      refreshData();
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -1037,7 +1332,12 @@ export default function App() {
 
   async function saveBeforePhotos(event) {
     event.preventDefault();
-    if (!supabase || !profile || !currentVisit || !selectedProject) return;
+    const activeVisit = (rowsSource.visits ?? []).find((visit) => visit.id === photoStep.visitId) ?? workflowVisit ?? currentVisit;
+    const activeProject = activeVisit ? rowsSource.projects.find((project) => project.id === activeVisit.project_id) ?? workflowProject ?? selectedProject : workflowProject ?? selectedProject;
+    if (!supabase || !profile || !activeVisit || !activeProject) {
+      setNotice("Select a visit before uploading photos.");
+      return;
+    }
     if (photoStep.files.length === 0) {
       setNotice("Upload at least one before photo.");
       return;
@@ -1048,16 +1348,17 @@ export default function App() {
       for (const file of photoStep.files) {
         await uploadVisitPhoto({
           companyId: rowsSource.companyId,
-          projectId: selectedProject.id,
-          visitId: currentVisit.id,
+          projectId: activeProject.id,
+          visitId: activeVisit.id,
           profileId: profile.id,
           file,
           fileType: "before_photo",
           searchText: `Before photo uploaded by ${currentUserName} at ${new Date().toISOString()}`,
         });
       }
-      await updateVisitStatusById(currentVisit.id, "on_site");
+      await updateVisitStatusById(activeVisit.id, "on_site");
       setModalType(null);
+      setWorkflowVisitId("");
       setPhotoStep({ kind: "", visitId: "", files: [] });
       setNotice("Work started. Ticket is Active.");
     } catch (error) {
@@ -1069,7 +1370,12 @@ export default function App() {
 
   async function saveCompletion(event) {
     event.preventDefault();
-    if (!supabase || !profile || !currentVisit || !selectedProject) return;
+    const activeVisit = workflowVisit ?? currentVisit;
+    const activeProject = workflowProject ?? selectedProject;
+    if (!supabase || !profile || !activeVisit || !activeProject) {
+      setNotice("Select a visit before completing work.");
+      return;
+    }
     if (completionForm.files.length === 0) {
       setNotice("Upload at least one after photo before completing work.");
       return;
@@ -1080,16 +1386,17 @@ export default function App() {
       for (const file of completionForm.files) {
         await uploadVisitPhoto({
           companyId: rowsSource.companyId,
-          projectId: selectedProject.id,
-          visitId: currentVisit.id,
+          projectId: activeProject.id,
+          visitId: activeVisit.id,
           profileId: profile.id,
           file,
           fileType: "completion_photo",
           searchText: `After photo uploaded by ${currentUserName} at ${new Date().toISOString()}. ${completionForm.notes}`,
         });
       }
-      await updateVisitStatusById(currentVisit.id, "completed", { completion_notes: completionForm.notes });
+      await updateVisitStatusById(activeVisit.id, "completed", { completion_notes: completionForm.notes });
       setModalType(null);
+      setWorkflowVisitId("");
       setCompletionForm({ notes: "", files: [] });
       setNotice("Thank you. Work is Done.");
     } catch (error) {
@@ -1217,7 +1524,7 @@ export default function App() {
 
     if (activeNav === "projects") {
       setEditingProjectId(null);
-      setProjectForm(emptyProjectForm);
+      setProjectForm({ ...emptyProjectForm, manager_id: profile.id });
       setModalType("project");
     } else if (activeNav === "equipment") setModalType("equipment");
     else if (activeNav === "people") setModalType("people");
@@ -1377,6 +1684,10 @@ export default function App() {
       return <AuthGate notice="Supabase environment variables are missing. Add them before signing in." />;
     }
 
+    if (session && profile && !profile.is_active) {
+      return <PendingAccessScreen notice={notice} onSignOut={signOut} profile={profile} />;
+    }
+
     if (!authReady || (session && !profile)) {
       return <AuthGate loading notice={notice || "Checking Supabase session and account access..."} />;
     }
@@ -1384,13 +1695,20 @@ export default function App() {
     return (
       <AuthGate
         authEmail={authEmail}
+        authFirstName={authFirstName}
+        authLastName={authLastName}
         authMode={authMode}
         authPassword={authPassword}
+        authPhone={authPhone}
         loading={loading}
         notice={notice}
+        onAvatarChange={setAuthAvatarFile}
         onEmailChange={setAuthEmail}
+        onFirstNameChange={setAuthFirstName}
+        onLastNameChange={setAuthLastName}
         onModeChange={setAuthMode}
         onPasswordChange={setAuthPassword}
+        onPhoneChange={setAuthPhone}
         onSubmit={signIn}
       />
     );
@@ -1401,15 +1719,21 @@ export default function App() {
       return (
         <>
           <SectionToolbar label="Projects" onAdd={openAddModal} />
-          <ProjectsView canManage={canManage} projects={rowsSource.projects} onDelete={deleteProject} onEdit={editProject} onSelect={selectProject} />
+          <ProjectsView canManage={canManage} getProfileName={getProfileName} projects={rowsSource.projects} onDelete={deleteProject} onEdit={editProject} onSelect={selectProject} />
         </>
       );
     }
     if (activeNav === "people") {
+      if (!canManage) {
+        return <InfoView icon={UsersRound} title="People access locked" text="People records are available only to Owner, Project Manager, and Office Manager roles." />;
+      }
       return (
         <>
           <SectionToolbar label="People" onAdd={openAddModal} />
-          <PeopleView people={rowsSource.people} canManage={canManage} onRoleChange={updateRole} />
+          <PeopleView avatarUrls={avatarUrls} people={rowsSource.people} canManage={canManage} onRoleChange={updateRole} onSelect={(person) => {
+            setSelectedPersonId(person.id);
+            setDetailOverlay("person");
+          }} pendingPeople={rowsSource.pendingPeople ?? []} onApprove={approvePerson} />
         </>
       );
     }
@@ -1428,16 +1752,17 @@ export default function App() {
       return <InfoView icon={FileBarChart2} title="Reports" text="Reports will use the same project, people, equipment, visit, and document records already connected here." />;
     }
     if (activeNav === "settings") {
-      return <SettingsView profile={profile} session={session} isConfigured={isSupabaseConfigured} />;
+      return <SettingsView avatarUrl={avatarUrls[profile?.id]} form={profileForm} isConfigured={isSupabaseConfigured} loading={loading} onChange={setProfileForm} onSubmit={saveProfileSettings} profile={profile} session={session} />;
     }
     if (activeNav === "overview") {
-      return <OverviewView data={rowsSource} getVisitFiles={getVisitFiles} onArrive={startArrivalWorkflow} onComplete={startCompletionWorkflow} onOpenVisit={openVisitOverlay} profile={profile} projects={rowsSource.projects} todayVisits={todayVisits} />;
+      return <OverviewView data={rowsSource} getProfileName={getProfileName} getVisitFiles={getVisitFiles} onArrive={startArrivalWorkflow} onComplete={startCompletionWorkflow} onOpenVisit={openVisitOverlay} profile={profile} projects={rowsSource.projects} todayVisits={todayVisits} />;
     }
     return (
       <ScheduleView
         assignmentsReady={assignmentsSource.length > 0}
         equipmentRows={equipmentRows}
         peopleRows={peopleRows}
+        avatarUrls={avatarUrls}
         scheduleMode={scheduleMode}
         selectedDate={selectedDate}
         setScheduleMode={setScheduleMode}
@@ -1449,7 +1774,7 @@ export default function App() {
     );
   }
 
-  if (!session || !profile) {
+  if (!session || !profile?.is_active) {
     return renderAuthScreen();
   }
 
@@ -1465,7 +1790,7 @@ export default function App() {
         </div>
 
         <nav className="sideNav" aria-label="Application navigation">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             return (
               <button className={activeNav === item.id ? "sideNavItem active" : "sideNavItem"} key={item.id} type="button" onClick={() => setActiveNav(item.id)}>
@@ -1477,7 +1802,7 @@ export default function App() {
         </nav>
 
         <div className="sidebarUser">
-          <div className="avatar face">{makeInitials(currentUserName)}</div>
+          <Avatar profile={profile} url={avatarUrls[profile?.id]} />
           <div>
             <strong>{currentUserName}</strong>
             <span>{profile ? roleLabel(profile.role) : "Project Manager"}</span>
@@ -1508,7 +1833,7 @@ export default function App() {
               Sign out
             </button>
 
-            <div className="avatar face small">{makeInitials(currentUserName)}</div>
+            <Avatar profile={profile} small url={avatarUrls[profile?.id]} />
           </div>
         </header>
 
@@ -1580,7 +1905,7 @@ export default function App() {
             <dl className="projectFacts">
               <ProjectFact icon={ClipboardCheck} label="Job Number" value={selectedProject.job_number || "Not set"} />
               <ProjectFact icon={UserRound} label="Client" value={selectedProject.contact_name || "Not set"} />
-              <ProjectFact icon={UsersRound} label="Project Manager" value={selectedProject.project_manager ?? currentUserName} />
+              <ProjectFact icon={UsersRound} label="PM / Owner" value={getProfileName(selectedProject.manager_id ?? selectedProject.created_by, currentUserName)} />
               <ProjectFact icon={Calendar} label="Start Date" value={selectedProject.start_date ?? selectedDate} />
               <ProjectFact icon={Calendar} label="End Date" value={selectedProject.end_date ?? "Open"} />
               <ProjectFact icon={CircleGauge} label="Status" value={normalizeStatus(selectedProject.status)} badge />
@@ -1737,6 +2062,7 @@ export default function App() {
             canManage={canManage}
             currentVisit={currentVisit}
             files={projectAttachments}
+            getProfileName={getProfileName}
             onAddVisit={() => openVisitModal(selectedProject.id)}
             onClose={() => setDetailOverlay("")}
             onEditProject={() => editProject(selectedProject)}
@@ -1753,6 +2079,7 @@ export default function App() {
           <VisitDetailOverlay
             equipment={currentVisitEquipment}
             files={currentVisitFiles}
+            getProfileName={getProfileName}
             onArrive={() => startArrivalWorkflow(currentVisit)}
             onClose={() => setDetailOverlay("")}
             onComplete={() => startCompletionWorkflow(currentVisit)}
@@ -1763,6 +2090,14 @@ export default function App() {
             profiles={rowsSource.people}
             project={selectedProject}
             visit={currentVisit}
+          />
+        )}
+
+        {detailOverlay === "person" && selectedPerson && (
+          <PersonDetailOverlay
+            avatarUrl={avatarUrls[selectedPerson.id]}
+            onClose={() => setDetailOverlay("")}
+            person={selectedPerson}
           />
         )}
 
@@ -1799,6 +2134,9 @@ export default function App() {
               </FormField>
               <FormField label="Address">
                 <input required value={projectForm.address} onChange={(event) => setProjectForm({ ...projectForm, address: event.target.value })} />
+              </FormField>
+              <FormField label="PM / Owner">
+                <input readOnly value={getProfileName(projectForm.manager_id || profile?.id, currentUserName)} />
               </FormField>
               <FormField label="Contact name">
                 <input value={projectForm.contact_name} onChange={(event) => setProjectForm({ ...projectForm, contact_name: event.target.value })} />
@@ -1897,7 +2235,7 @@ export default function App() {
           </AppModal>
         )}
 
-        {modalType === "safety" && currentVisit && selectedProject && (
+        {modalType === "safety" && workflowVisit && workflowProject && (
           <AppModal title="Digital Safety Form" onClose={() => setModalType(null)} wide>
             <SafetyFormModal
               form={safetyForm}
@@ -1905,26 +2243,26 @@ export default function App() {
               loading={loading}
               onChange={setSafetyForm}
               onSubmit={saveSafetyForm}
-              project={selectedProject}
-              team={currentVisitPeople}
-              visit={currentVisit}
+              project={workflowProject}
+              team={workflowPeople}
+              visit={workflowVisit}
             />
           </AppModal>
         )}
 
-        {modalType === "beforePhotos" && currentVisit && selectedProject && (
+        {modalType === "beforePhotos" && workflowVisit && workflowProject && (
           <AppModal title="Before Work Photos" onClose={() => setModalType(null)}>
             <PhotoStepModal
               files={photoStep.files}
               label="Upload at least one photo before work starts."
               loading={loading}
-              onFiles={(files) => setPhotoStep({ kind: "before", visitId: currentVisit.id, files })}
+              onFiles={(files) => setPhotoStep({ kind: "before", visitId: workflowVisit.id, files })}
               onSubmit={saveBeforePhotos}
             />
           </AppModal>
         )}
 
-        {modalType === "completeVisit" && currentVisit && selectedProject && (
+        {modalType === "completeVisit" && workflowVisit && workflowProject && (
           <AppModal title="Complete Work" onClose={() => setModalType(null)}>
             <CompleteVisitModal form={completionForm} loading={loading} onChange={setCompletionForm} onSubmit={saveCompletion} />
           </AppModal>
@@ -2012,7 +2350,7 @@ function DetailOverlayShell({ children, onClose, title }) {
   );
 }
 
-function ProjectDetailOverlay({ canManage, currentVisit, files, onAddVisit, onClose, onEditProject, onEditVisit, onOpenAttachment, onOpenVisit, people, project, visits }) {
+function ProjectDetailOverlay({ canManage, currentVisit, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onOpenAttachment, onOpenVisit, people, project, visits }) {
   return (
     <DetailOverlayShell title={project.name} onClose={onClose}>
       <div className="detailHero">
@@ -2038,6 +2376,7 @@ function ProjectDetailOverlay({ canManage, currentVisit, files, onAddVisit, onCl
 
       <dl className="detailFacts">
         <ProjectFact icon={MapPin} label="Address" value={project.address || "Not set"} />
+        <ProjectFact icon={UsersRound} label="PM / Owner" value={getProfileName(project.manager_id ?? project.created_by)} />
         <ProjectFact icon={UserRound} label="Contact" value={project.contact_name || "Not set"} />
         <ProjectFact icon={ClipboardCheck} label="Phone" value={project.contact_phone || "Not set"} />
         <ProjectFact icon={CircleGauge} label="Status" value={normalizeStatus(project.status)} badge />
@@ -2084,7 +2423,7 @@ function ProjectDetailOverlay({ canManage, currentVisit, files, onAddVisit, onCl
   );
 }
 
-function VisitDetailOverlay({ equipment, files, onArrive, onClose, onComplete, onEdit, onOpenAttachment, onRemove, people, profiles, project, visit }) {
+function VisitDetailOverlay({ equipment, files, getProfileName, onArrive, onClose, onComplete, onEdit, onOpenAttachment, onRemove, people, profiles, project, visit }) {
   return (
     <DetailOverlayShell title={`${project.name} Ticket`} onClose={onClose}>
       <div className="ticketHeaderCard">
@@ -2108,6 +2447,7 @@ function VisitDetailOverlay({ equipment, files, onArrive, onClose, onComplete, o
       <dl className="detailFacts">
         <ProjectFact icon={MapPin} label="Address" value={project.address || "Not set"} />
         <ProjectFact icon={UserRound} label="Contact" value={`${project.contact_name || "Not set"} ${project.contact_phone || ""}`} />
+        <ProjectFact icon={ClipboardCheck} label="Assigned by" value={getProfileName(visit.assigned_by ?? visit.created_by)} />
         <ProjectFact icon={UsersRound} label="Team" value={people.map((person) => person.full_name || person.email).join(", ") || "No team assigned"} />
         <ProjectFact icon={Truck} label="Equipment" value={equipment.map((item) => item.name).join(", ") || "No equipment"} />
       </dl>
@@ -2132,6 +2472,43 @@ function VisitDetailOverlay({ equipment, files, onArrive, onClose, onComplete, o
       )}
 
       <AttachmentSections files={files} onOpen={onOpenAttachment} profiles={profiles} />
+    </DetailOverlayShell>
+  );
+}
+
+function PersonDetailOverlay({ avatarUrl, onClose, person }) {
+  const fullName = profileDisplayName(person, "Unnamed user");
+  const phone = person.phone || "";
+  const email = person.email || "";
+
+  return (
+    <DetailOverlayShell title={fullName} onClose={onClose}>
+      <div className="personHero">
+        <Avatar profile={person} url={avatarUrl} />
+        <div>
+          <span className="jobNumberPill">{roleLabel(person.role)}</span>
+          <h3>{fullName}</h3>
+          <p>{person.trade || "Team member"}</p>
+        </div>
+      </div>
+
+      <dl className="detailFacts">
+        <ProjectFact icon={UsersRound} label="Role" value={roleLabel(person.role)} />
+        <ProjectFact icon={ClipboardCheck} label="Trade" value={person.trade || "Not set"} />
+        <ProjectFact icon={Phone} label="Phone" value={phone ? <a className="contactFactLink" href={`tel:${phone.replace(/[^\d+]/g, "")}`}>{phone}</a> : "Not set"} />
+        <ProjectFact icon={Mail} label="Email" value={email ? <a className="contactFactLink" href={`mailto:${email}`}>{email}</a> : "Not set"} />
+      </dl>
+
+      <div className="detailActionRow contactActions">
+        <a className={phone ? "outlineLink" : "outlineLink disabled"} href={phone ? `tel:${phone.replace(/[^\d+]/g, "")}` : undefined}>
+          <Phone size={17} />
+          Call
+        </a>
+        <a className={email ? "outlineLink" : "outlineLink disabled"} href={email ? `mailto:${email}` : undefined}>
+          <Mail size={17} />
+          Email
+        </a>
+      </div>
     </DetailOverlayShell>
   );
 }
@@ -2180,6 +2557,7 @@ function AttachmentSections({ files, onOpen, profiles = [] }) {
 function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, team, visit }) {
   const signaturesReady = team.length > 0 && team.every((person) => form.signatures[person.id]?.trim());
   const canSubmit = form.hazards.length > 0 && signaturesReady;
+  const currentTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   function toggleHazard(hazard) {
     const set = new Set(form.hazards);
@@ -2193,7 +2571,7 @@ function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, 
       <div className="safetySummary">
         <strong>{project.name}</strong>
         <span>{project.address}</span>
-        <span>{formatDateLabel(visit.visit_date)}</span>
+        <span>{formatDateLabel(visit.visit_date)} · Current time {currentTime}</span>
       </div>
 
       <fieldset className="pickerList">
@@ -2216,18 +2594,17 @@ function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, 
           <div className="emptyPanelState">No team members assigned to this ticket.</div>
         ) : (
           team.map((person) => (
-            <FormField label={person.full_name || person.email || "Team member"} key={person.id}>
-              <input
-                placeholder="Type full name as digital signature"
-                value={form.signatures[person.id] || ""}
-                onChange={(event) =>
-                  onChange({
-                    ...form,
-                    signatures: { ...form.signatures, [person.id]: event.target.value },
-                  })
-                }
-              />
-            </FormField>
+            <SignaturePad
+              key={person.id}
+              label={person.full_name || person.email || "Team member"}
+              onChange={(dataUrl) =>
+                onChange({
+                  ...form,
+                  signatures: { ...form.signatures, [person.id]: dataUrl },
+                })
+              }
+              value={form.signatures[person.id] || ""}
+            />
           ))
         )}
       </div>
@@ -2242,18 +2619,96 @@ function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, 
   );
 }
 
-function PhotoStepModal({ files, label, loading, onFiles, onSubmit }) {
+function SignaturePad({ label, onChange, value }) {
+  const canvasRef = useRef(null);
+  const drawingRef = useRef(false);
+
+  function getPoint(event) {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const source = event.touches?.[0] ?? event;
+    return {
+      x: ((source.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((source.clientY - rect.top) / rect.height) * canvas.height,
+    };
+  }
+
+  function start(event) {
+    event.preventDefault();
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const point = getPoint(event);
+    drawingRef.current = true;
+    ctx.lineWidth = 3.2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#111827";
+    ctx.beginPath();
+    ctx.moveTo(point.x, point.y);
+  }
+
+  function move(event) {
+    if (!drawingRef.current) return;
+    event.preventDefault();
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const point = getPoint(event);
+    ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+  }
+
+  function end() {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    onChange(canvasRef.current.toDataURL("image/png"));
+  }
+
+  function clear() {
+    const canvas = canvasRef.current;
+    canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+    onChange("");
+  }
+
+  return (
+    <div className="signaturePad">
+      <div className="signaturePadHeader">
+        <strong>{label}</strong>
+        <button type="button" onClick={clear}>
+          Clear
+        </button>
+      </div>
+      <canvas
+        ref={canvasRef}
+        width="680"
+        height="180"
+        aria-label={`${label} digital signature`}
+        onMouseDown={start}
+        onMouseMove={move}
+        onMouseUp={end}
+        onMouseLeave={end}
+        onTouchStart={start}
+        onTouchMove={move}
+        onTouchEnd={end}
+      />
+      {!value && <span>Draw signature here</span>}
+    </div>
+  );
+}
+
+function PhotoStepModal({ files = [], label, loading, onFiles, onSubmit }) {
+  const selectedFiles = Array.isArray(files) ? files : typeof files?.[Symbol.iterator] === "function" ? [...files] : [];
+
   return (
     <form className="workflowForm" onSubmit={onSubmit}>
       <div className="emptyPanelState">{label}</div>
       <input accept="image/jpeg,image/png,image/webp" multiple required type="file" onChange={(event) => onFiles([...event.target.files])} />
       <div className="selectedFiles">
-        {files.map((file) => (
+        {selectedFiles.map((file) => (
           <span key={`${file.name}-${file.size}`}>{file.name}</span>
         ))}
       </div>
       <div className="formActions wide">
-        <button className="addButton" type="submit" disabled={loading || files.length === 0}>
+        <button className="addButton" type="submit" disabled={loading || selectedFiles.length === 0}>
           <Upload size={18} />
           Save Photos
         </button>
@@ -2285,7 +2740,7 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
   );
 }
 
-function ScheduleView({ assignmentsReady, equipmentRows, peopleRows, scheduleMode, selectedDate, setScheduleMode, setSelectedDate, onAdd, onDropAssignment, onSelect }) {
+function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows, scheduleMode, selectedDate, setScheduleMode, setSelectedDate, onAdd, onDropAssignment, onSelect }) {
   return (
     <>
       <div className="modeTabs">
@@ -2340,7 +2795,7 @@ function ScheduleView({ assignmentsReady, equipmentRows, peopleRows, scheduleMod
         <div className="nowPill">10:30 AM</div>
         {!assignmentsReady && <div className="emptyTimeline">No visits scheduled for this day.</div>}
 
-        <ResourceGroup title="People" count={peopleRows.length} icon={UsersRound} rows={peopleRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
+        <ResourceGroup avatarUrls={avatarUrls} title="People" count={peopleRows.length} icon={UsersRound} rows={peopleRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
         <ResourceGroup title="Equipment" count={equipmentRows.length} icon={Truck} rows={equipmentRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
       </div>
     </>
@@ -2359,7 +2814,7 @@ function SectionToolbar({ label, onAdd }) {
   );
 }
 
-function ProjectsView({ canManage, projects, onDelete, onEdit, onSelect }) {
+function ProjectsView({ canManage, getProfileName, projects, onDelete, onEdit, onSelect }) {
   return (
     <div className="listView">
       {projects.length === 0 && <div className="emptyState">No projects yet. Press Add to create the first project.</div>}
@@ -2369,6 +2824,7 @@ function ProjectsView({ canManage, projects, onDelete, onEdit, onSelect }) {
             <FolderKanban size={20} />
             <span>
               <strong>{project.name}</strong>
+              <small>PM / Owner: {getProfileName(project.manager_id ?? project.created_by)}</small>
               <small>{project.job_number ? `${project.job_number} · ${project.address}` : project.address}</small>
             </span>
             <em>{normalizeStatus(project.status)}</em>
@@ -2389,17 +2845,31 @@ function ProjectsView({ canManage, projects, onDelete, onEdit, onSelect }) {
   );
 }
 
-function PeopleView({ people, canManage, onRoleChange }) {
+function PeopleView({ avatarUrls = {}, people, canManage, onApprove, onRoleChange, onSelect, pendingPeople = [] }) {
   return (
     <div className="listView">
-      {people.length === 0 && <div className="emptyState">No employees yet.</div>}
+      {pendingPeople.length > 0 && (
+        <section className="pendingRequests">
+          <div className="panelSectionHeader">
+            <h3>Pending Requests</h3>
+            <span>{pendingPeople.length}</span>
+          </div>
+          {pendingPeople.map((person) => (
+            <PendingPersonRow avatarUrl={avatarUrls[person.id]} key={person.id} onApprove={onApprove} onSelect={onSelect} person={person} />
+          ))}
+        </section>
+      )}
+      {people.length === 0 && <div className="emptyState">No active employees yet.</div>}
       {people.map((person) => (
-        <div className="listRow" key={person.id}>
-          <div className="avatar face">{makeInitials(person.full_name)}</div>
-          <span>
-            <strong>{person.full_name || "Unnamed user"}</strong>
-            <small>{person.trade || person.phone || "Team member"}</small>
-          </span>
+        <div className="listRow peopleListRow" key={person.id}>
+          <button className="rowMainButton" type="button" onClick={() => onSelect?.(person)}>
+            <Avatar profile={person} url={avatarUrls[person.id]} />
+            <span>
+              <strong>{profileDisplayName(person, "Unnamed user")}</strong>
+              <small>{person.trade || "Team member"}</small>
+              <small>{person.phone || person.email || "No contact info"}</small>
+            </span>
+          </button>
           {canManage ? (
             <select value={person.role} onChange={(event) => onRoleChange(person, event.target.value)}>
               {roleOptions.map((role) => (
@@ -2456,7 +2926,35 @@ function DocumentsView({ files, onOpen, profiles, projects }) {
   );
 }
 
-function OverviewView({ getVisitFiles, onArrive, onComplete, onOpenVisit, projects, todayVisits }) {
+function PendingPersonRow({ avatarUrl, onApprove, onSelect, person }) {
+  const [role, setRole] = useState("builder");
+
+  return (
+    <div className="listRow peopleListRow pendingRow">
+      <button className="rowMainButton" type="button" onClick={() => onSelect?.(person)}>
+        <Avatar profile={person} url={avatarUrl} />
+        <span>
+          <strong>{profileDisplayName(person, "Unnamed user")}</strong>
+          <small>{person.email || "No email saved"}</small>
+          <small>{person.phone || "No phone saved"}</small>
+        </span>
+      </button>
+      <select value={role} onChange={(event) => setRole(event.target.value)}>
+        {roleOptions.map((option) => (
+          <option value={option} key={option}>
+            {roleLabel(option)}
+          </option>
+        ))}
+      </select>
+      <button className="addButton compactButton" type="button" onClick={() => onApprove?.(person, role)}>
+        <CheckCircle2 size={16} />
+        Approve
+      </button>
+    </div>
+  );
+}
+
+function OverviewView({ getProfileName, getVisitFiles, onArrive, onComplete, onOpenVisit, projects, todayVisits }) {
   const [weather, setWeather] = useState({ status: "idle", data: null });
   const firstVisit = todayVisits[0];
   const firstProject = firstVisit ? projects.find((project) => project.id === firstVisit.project_id) : null;
@@ -2507,6 +3005,7 @@ function OverviewView({ getVisitFiles, onArrive, onComplete, onOpenVisit, projec
               <ProjectFact icon={MapPin} label="Address" value={project?.address || "Not set"} />
               <ProjectFact icon={CloudSun} label="Weather" value={weather.status === "ready" ? `${weather.data.temperature}°C, ${weather.data.condition}` : weather.status === "loading" ? "Loading..." : "Not available"} />
               <ProjectFact icon={UserRound} label="Site Contact" value={`${project?.contact_name || "Not set"} ${project?.contact_phone || ""}`} />
+              <ProjectFact icon={ClipboardCheck} label="Assigned by" value={getProfileName(visit.assigned_by ?? visit.created_by)} />
               <ProjectFact icon={ClipboardCheck} label="Checklist" value={`Safety ${hasSafety ? "done" : "needed"} · Before ${hasBefore ? "done" : "needed"} · After ${hasAfter ? "done" : "needed"}`} />
             </dl>
 
@@ -2553,7 +3052,7 @@ function InfoView({ icon: Icon, title, text }) {
   );
 }
 
-function SettingsView({ profile, session, isConfigured }) {
+function SettingsView({ avatarUrl, form, isConfigured, loading, onChange, onSubmit, profile, session }) {
   return (
     <div className="listView">
       <div className="listRow">
@@ -2563,13 +3062,39 @@ function SettingsView({ profile, session, isConfigured }) {
           <small>{isConfigured ? "Connected with environment variables" : "Not configured"}</small>
         </span>
       </div>
-      <div className="listRow">
-        <UserRound size={20} />
-        <span>
-          <strong>{profile?.full_name || session?.user?.email || "Not signed in"}</strong>
-          <small>{profile ? roleLabel(profile.role) : "No profile yet"}</small>
-        </span>
-      </div>
+      <form className="settingsProfileForm" onSubmit={onSubmit}>
+        <div className="settingsAvatarBlock">
+          <Avatar profile={profile} url={avatarUrl} />
+          <span>
+            <strong>{profile?.full_name || session?.user?.email || "Not signed in"}</strong>
+            <small>{profile ? roleLabel(profile.role) : "No profile yet"}</small>
+          </span>
+        </div>
+        <div className="twoColumns">
+          <FormField label="First name">
+            <input required value={form.first_name} onChange={(event) => onChange({ ...form, first_name: event.target.value })} />
+          </FormField>
+          <FormField label="Last name">
+            <input required value={form.last_name} onChange={(event) => onChange({ ...form, last_name: event.target.value })} />
+          </FormField>
+        </div>
+        <FormField label="Phone">
+          <input autoComplete="tel" required type="tel" value={form.phone} onChange={(event) => onChange({ ...form, phone: event.target.value })} />
+        </FormField>
+        <FormField label="Avatar photo">
+          <input accept="image/jpeg,image/png,image/webp" type="file" onChange={(event) => onChange({ ...form, avatarFile: event.target.files?.[0] ?? null, removeAvatar: false })} />
+        </FormField>
+        <label className="checkLine">
+          <input type="checkbox" checked={form.removeAvatar} onChange={(event) => onChange({ ...form, removeAvatar: event.target.checked, avatarFile: null })} />
+          Remove avatar and use no-name icon
+        </label>
+        <div className="formActions">
+          <button className="addButton" type="submit" disabled={loading}>
+            <Save size={18} />
+            Save profile
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -2605,7 +3130,72 @@ function AppModal({ children, onClose, title, wide = false }) {
   );
 }
 
-function AuthGate({ authEmail = "", authMode = "signin", authPassword = "", loading = false, notice = "", onEmailChange, onModeChange, onPasswordChange, onSubmit }) {
+function PendingAccessScreen({ notice, onSignOut, profile }) {
+  return (
+    <main className="authGate">
+      <section className="authVisual" aria-hidden="true">
+        <div className="authBrandCard">
+          <div className="brandMark">B</div>
+          <span>BuildCore Construction</span>
+        </div>
+        <div className="authPreview pendingPreview">
+          <div className="authPreviewHeader">
+            <span />
+            <span />
+            <span />
+          </div>
+          <strong>Pending Request</strong>
+          <p>Owner, Project Manager, or Office Manager must approve this account and assign a role.</p>
+        </div>
+      </section>
+
+      <section className="authPanel" aria-label="Pending access">
+        <div className="authCard">
+          <div className="authLogo">
+            <div className="brandMark">B</div>
+            <div>
+              <strong>BuildCore</strong>
+              <span>Access request</span>
+            </div>
+          </div>
+          <div className="authCopy">
+            <h1>Waiting for approval</h1>
+            <p>{profileDisplayName(profile, "Your account")} is saved as a pending employee request. The workspace will open after approval.</p>
+          </div>
+          {notice && <div className="authNotice">{notice}</div>}
+          <div className="pendingProfileCard">
+            <strong>{profileDisplayName(profile, "Unnamed user")}</strong>
+            <span>{profile.email || "Email saved in Supabase Auth"}</span>
+            <span>{profile.phone || "Phone pending"}</span>
+          </div>
+          <button className="outlineButton fullWidth" type="button" onClick={onSignOut}>
+            <LogOut size={17} />
+            Sign out
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function AuthGate({
+  authEmail = "",
+  authFirstName = "",
+  authLastName = "",
+  authMode = "signin",
+  authPassword = "",
+  authPhone = "",
+  loading = false,
+  notice = "",
+  onAvatarChange,
+  onEmailChange,
+  onFirstNameChange,
+  onLastNameChange,
+  onModeChange,
+  onPasswordChange,
+  onPhoneChange,
+  onSubmit,
+}) {
   const canSubmit = typeof onSubmit === "function";
   const isChecking = loading && !canSubmit;
 
@@ -2663,6 +3253,22 @@ function AuthGate({ authEmail = "", authMode = "signin", authPassword = "", load
             </div>
           ) : (
             <form className="authForm" onSubmit={onSubmit}>
+              {authMode === "signup" && (
+                <div className="authNameGrid">
+                  <FormField label="First name">
+                    <input autoComplete="given-name" required value={authFirstName} onChange={(event) => onFirstNameChange?.(event.target.value)} />
+                  </FormField>
+                  <FormField label="Last name">
+                    <input autoComplete="family-name" required value={authLastName} onChange={(event) => onLastNameChange?.(event.target.value)} />
+                  </FormField>
+                  <FormField label="Phone">
+                    <input autoComplete="tel" required type="tel" value={authPhone} onChange={(event) => onPhoneChange?.(event.target.value)} />
+                  </FormField>
+                  <FormField label="Avatar photo (optional)">
+                    <input accept="image/jpeg,image/png,image/webp" type="file" onChange={(event) => onAvatarChange?.(event.target.files?.[0] ?? null)} />
+                  </FormField>
+                </div>
+              )}
               <FormField label="Email">
                 <input autoComplete="email" required type="email" value={authEmail} onChange={(event) => onEmailChange?.(event.target.value)} />
               </FormField>
@@ -2693,7 +3299,7 @@ function AuthGate({ authEmail = "", authMode = "signin", authPassword = "", load
   );
 }
 
-function ResourceGroup({ title, count, icon: Icon, rows, onDropAssignment, onSelect }) {
+function ResourceGroup({ avatarUrls = {}, title, count, icon: Icon, rows, onDropAssignment, onSelect }) {
   return (
     <div className="resourceGroup">
       <div className="groupLabel">
@@ -2708,7 +3314,7 @@ function ResourceGroup({ title, count, icon: Icon, rows, onDropAssignment, onSel
         <div className="resourceRow" key={row.id}>
           <div className="resourceIdentity">
             {row.kind === "person" ? (
-              <div className="avatar face">{row.avatar ?? makeInitials(row.full_name)}</div>
+              <Avatar profile={row} url={avatarUrls[row.id]} />
             ) : (
               <div className={`equipmentAvatar ${row.icon ?? "machine"}`}>{equipmentIcon(row.type)}</div>
             )}
