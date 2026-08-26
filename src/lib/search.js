@@ -1,5 +1,5 @@
 const searchableFields = {
-  project: ["name", "address", "contact_name", "contact_email", "contact_phone", "description"],
+  project: ["job_number", "name", "address", "contact_name", "contact_email", "contact_phone", "description"],
   person: ["full_name", "role", "trade", "phone"],
   equipment: ["name", "type", "unit_number", "status"],
   visit: ["visit_date", "start_time", "end_time", "work_scope", "office_notes", "status"],

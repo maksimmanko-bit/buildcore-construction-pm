@@ -455,6 +455,119 @@ h1 {
   color: #64748b;
 }
 
+.searchTrigger {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 17px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font-weight: 850;
+}
+
+.searchOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  place-items: start center;
+  padding: 8vh 20px 20px;
+}
+
+.searchBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.34);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.searchPanel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 12px;
+  width: min(760px, 100%);
+  max-height: min(76vh, 720px);
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: 0 28px 80px rgba(17, 24, 39, 0.24);
+  -webkit-backdrop-filter: blur(28px) saturate(1.16);
+  backdrop-filter: blur(28px) saturate(1.16);
+  animation: searchPanelIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.searchPanelInput {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 10px;
+  min-height: 62px;
+  padding: 0 9px 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.searchPanelInput input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 760;
+}
+
+.searchPanelInput button {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 11px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--ink);
+}
+
+.searchPanelResults {
+  display: grid;
+  gap: 8px;
+  max-height: calc(min(76vh, 720px) - 98px);
+  overflow: auto;
+  padding: 2px;
+}
+
+.searchEmptyState {
+  display: grid;
+  min-height: 110px;
+  place-items: center;
+  padding: 22px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 14px;
+  color: var(--muted);
+  font-weight: 800;
+  text-align: center;
+}
+
+@keyframes searchPanelIn {
+  from {
+    transform: translateY(-12px) scale(0.98);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
 .searchResults {
   position: absolute;
   top: calc(100% + 10px);
@@ -577,6 +690,10 @@ h1 {
   grid-template-columns: minmax(0, 1fr) minmax(340px, 406px);
   gap: 34px;
   align-items: start;
+}
+
+.contentGrid.noProjectPanel {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .scheduleArea {
@@ -905,11 +1022,27 @@ h1 {
 }
 
 .projectPanel {
+  position: relative;
   padding: 22px;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.88);
   box-shadow: var(--card-shadow);
+}
+
+.panelCloseButton {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.56);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--ink);
 }
 
 .projectImageWrap {
@@ -962,6 +1095,21 @@ h1 {
 
 .projectTitleBlock {
   margin: 30px 6px 24px;
+}
+
+.jobNumberPill {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 28px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 0 10px;
+  border: 1px solid rgba(207, 46, 46, 0.18);
+  border-radius: 999px;
+  background: rgba(207, 46, 46, 0.08);
+  color: var(--brand-red);
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .projectTitleBlock h2 {
@@ -1139,6 +1287,92 @@ h1 {
 .descriptionBlock p {
   color: #1f2937;
   line-height: 1.6;
+}
+
+.projectVisitsBlock {
+  display: grid;
+  gap: 12px;
+  padding: 22px 6px 0;
+}
+
+.panelSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panelSectionHeader h3 {
+  font-size: 16px;
+}
+
+.panelSectionHeader button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.projectVisitList {
+  display: grid;
+  gap: 8px;
+}
+
+.projectVisitItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 62px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--ink);
+  text-align: left;
+}
+
+.projectVisitItem.active {
+  border-color: rgba(207, 46, 46, 0.34);
+  background: rgba(207, 46, 46, 0.08);
+}
+
+.projectVisitItem span,
+.projectVisitItem strong,
+.projectVisitItem small {
+  min-width: 0;
+}
+
+.projectVisitItem strong,
+.projectVisitItem small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectVisitItem small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.emptyPanelState {
+  padding: 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 11px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .panelActions {
@@ -1865,6 +2099,35 @@ canvas {
     flex-wrap: wrap;
   }
 
+  .searchTrigger span {
+    display: none;
+  }
+
+  .searchTrigger {
+    width: 48px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .searchOverlay {
+    padding: 12px;
+    place-items: start center;
+  }
+
+  .searchPanel {
+    max-height: calc(100vh - 24px);
+    border-radius: 16px;
+  }
+
+  .searchPanelInput {
+    min-height: 56px;
+    grid-template-columns: 24px minmax(0, 1fr) 38px;
+  }
+
+  .searchPanelInput input {
+    font-size: 15px;
+  }
+
   .globalSearch {
     width: min(100%, 420px);
   }
@@ -1949,6 +2212,8 @@ button,
 .timelineCard,
 .modal,
 .globalSearch,
+.searchTrigger,
+.searchPanel,
 .documentUploader,
 .attachmentManager,
 .attachmentCard,
@@ -2099,6 +2364,7 @@ textarea:focus-visible {
 .photoAction:hover,
 .viewProjectButton:hover,
 .sessionButton:hover,
+.searchTrigger:hover,
 .outlineButton:hover,
 .squareButton:hover,
 .iconButton.soft:hover {
@@ -2116,6 +2382,7 @@ textarea:focus-visible {
 .squareButton,
 .iconButton.soft,
 .sessionButton,
+.searchTrigger,
 .dateButton,
 .dateStepper button,
 .documentUploader,

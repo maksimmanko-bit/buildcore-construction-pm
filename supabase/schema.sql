@@ -56,6 +56,7 @@ create table if not exists public.owner_invites (
 create table if not exists public.projects (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies(id) on delete cascade,
+  job_number text,
   name text not null,
   address text not null,
   contact_name text,
@@ -474,11 +475,12 @@ stable
 security definer
 set search_path = public
 as $$
-  select concat('project-', p.id), 'project', p.name, p.address,
-    left(coalesce(p.description, ''), 220), null::text
+  select concat('project-', p.id), 'project', p.name, coalesce(p.job_number, '') || ' · ' || p.address,
+    left(coalesce(p.job_number, '') || ' ' || coalesce(p.description, ''), 220), null::text
   from public.projects p
   where p.company_id = public.current_company_id()
-    and (p.name ilike '%' || search_query || '%'
+    and (p.job_number ilike '%' || search_query || '%'
+      or p.name ilike '%' || search_query || '%'
       or p.address ilike '%' || search_query || '%'
       or p.contact_name ilike '%' || search_query || '%'
       or p.contact_email ilike '%' || search_query || '%'

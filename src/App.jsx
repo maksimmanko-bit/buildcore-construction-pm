@@ -43,6 +43,7 @@ const demo = {
   projects: [
     {
       id: "project-1",
+      job_number: "BC-2401",
       name: "Riverside Building",
       address: "300 Assiniboine Ave, Winnipeg, MB",
       contact_name: "RiverView Development",
@@ -59,6 +60,7 @@ const demo = {
     },
     {
       id: "project-2",
+      job_number: "BC-2402",
       name: "Greenwood Complex",
       address: "Route 90, Winnipeg, MB",
       contact_name: "Greenwood Properties",
@@ -74,6 +76,7 @@ const demo = {
     },
     {
       id: "project-3",
+      job_number: "BC-2403",
       name: "Lakeside Villa",
       address: "Lakeview Dr, Brandon, MB",
       contact_name: "Lakeside Homes",
@@ -89,6 +92,7 @@ const demo = {
     },
     {
       id: "project-4",
+      job_number: "BC-2404",
       name: "Oakridge Tower",
       address: "Oakridge St, Winnipeg, MB",
       contact_name: "Oakridge Group",
@@ -179,6 +183,7 @@ const demoAssignments = [
 ];
 
 const emptyProjectForm = {
+  job_number: "",
   name: "",
   address: "",
   contact_name: "",
@@ -347,16 +352,19 @@ function FormField({ label, children }) {
 
 export default function App() {
   const globalSearchRef = useRef(null);
+  const searchInputRef = useRef(null);
   const [activeNav, setActiveNav] = useState("schedule");
   const [scheduleMode, setScheduleMode] = useState("day");
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [data, setData] = useState({ ...demo, visits: [] });
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
-  const [selectedProjectId, setSelectedProjectId] = useState("project-1");
-  const [selectedAssignmentId, setSelectedAssignmentId] = useState("a1");
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState("");
+  const [selectedVisitId, setSelectedVisitId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [authMode, setAuthMode] = useState("signin");
   const [authEmail, setAuthEmail] = useState("");
@@ -368,6 +376,7 @@ export default function App() {
   const [modalType, setModalType] = useState(null);
   const [loading, setLoading] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState(null);
+  const [editingVisitId, setEditingVisitId] = useState(null);
   const [companyForm, setCompanyForm] = useState({ company_name: "BuildCore Construction", full_name: "", phone: "" });
   const [projectForm, setProjectForm] = useState(emptyProjectForm);
   const [equipmentForm, setEquipmentForm] = useState(emptyEquipmentForm);
@@ -410,7 +419,7 @@ export default function App() {
         supabase.from("projects").select("*").order("created_at", { ascending: false }),
         supabase.from("profiles").select("*").eq("is_active", true).order("full_name"),
         supabase.from("equipment").select("*").order("name"),
-        supabase.from("visit_schedule_view").select("*").eq("visit_date", selectedDate).order("start_time"),
+        supabase.from("visit_schedule_view").select("*").order("visit_date", { ascending: false }).order("start_time"),
         supabase.from("visit_files").select("*").order("created_at", { ascending: false }),
       ]);
 
@@ -427,15 +436,13 @@ export default function App() {
         files: filesResult.data ?? [],
       });
 
-      if (nextProjects.length && !nextProjects.some((project) => project.id === selectedProjectId)) {
-        setSelectedProjectId(nextProjects[0].id);
-      }
+      if (selectedProjectId && !nextProjects.some((project) => project.id === selectedProjectId)) setSelectedProjectId("");
     } catch (error) {
       setNotice(error.message);
     } finally {
       setLoading(false);
     }
-  }, [selectedDate, selectedProjectId, session]);
+  }, [selectedProjectId, session]);
 
   useEffect(() => {
     if (!supabase) return undefined;
@@ -468,7 +475,9 @@ export default function App() {
   const liveAssignments = useMemo(() => {
     if (!isLive) return demoAssignments;
 
-    return (data.visits ?? []).flatMap((visit) => {
+    return (data.visits ?? [])
+      .filter((visit) => visit.visit_date === selectedDate)
+      .flatMap((visit) => {
       const project = projectLookup.get(visit.project_id);
       const base = {
         visitId: visit.id,
@@ -488,7 +497,7 @@ export default function App() {
         ...(visit.equipment_ids ?? []).map((equipmentId) => ({ ...base, id: `${visit.id}-${equipmentId}`, type: "equipment", resourceId: equipmentId })),
       ];
     });
-  }, [data.visits, isLive, projectLookup]);
+  }, [data.visits, isLive, projectLookup, selectedDate]);
 
   useEffect(() => {
     const query = searchQuery.trim();
@@ -523,17 +532,25 @@ export default function App() {
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, []);
 
+  useEffect(() => {
+    if (!isSearchOpen) return;
+    const handle = window.setTimeout(() => searchInputRef.current?.focus(), 80);
+    return () => window.clearTimeout(handle);
+  }, [isSearchOpen]);
+
   const rowsSource = isLive ? data : demo;
   const assignmentsSource = isLive ? liveAssignments : demoAssignments;
-  const selectedProject = rowsSource.projects.find((project) => project.id === selectedProjectId) ?? rowsSource.projects[0] ?? demo.projects[0];
-  const selectedAssignment = assignmentsSource.find((item) => item.id === selectedAssignmentId) ?? assignmentsSource[0];
-  const activeVisitId = isLive && selectedAssignment?.visitId ? selectedAssignment.visitId : null;
-  const currentVisit = {
-    id: activeVisitId,
-    project_id: selectedProject.id,
-  };
+  const selectedProject = selectedProjectId ? rowsSource.projects.find((project) => project.id === selectedProjectId) : null;
+  const selectedAssignment = assignmentsSource.find((item) => item.id === selectedAssignmentId) ?? null;
+  const selectedProjectVisits = selectedProject
+    ? (rowsSource.visits ?? [])
+        .filter((visit) => visit.project_id === selectedProject.id)
+        .sort((a, b) => `${b.visit_date} ${b.start_time}`.localeCompare(`${a.visit_date} ${a.start_time}`))
+    : [];
+  const selectedVisit = selectedVisitId ? selectedProjectVisits.find((visit) => visit.id === selectedVisitId) ?? null : null;
+  const currentVisit = selectedVisit ?? selectedProjectVisits[0] ?? null;
   const projectAttachments = (rowsSource.files ?? [])
-    .filter((file) => file.project_id === selectedProject.id || file.projectId === selectedProject.id)
+    .filter((file) => selectedProject && (file.project_id === selectedProject.id || file.projectId === selectedProject.id))
     .slice(0, 6);
 
   useEffect(() => {
@@ -609,7 +626,9 @@ export default function App() {
     await supabase.auth.signOut();
     setProfile(null);
     setData({ ...demo, visits: [] });
-    setSelectedProjectId("project-1");
+    setSelectedProjectId("");
+    setSelectedVisitId("");
+    setSelectedAssignmentId("");
   }
 
   async function createCompany(event) {
@@ -637,6 +656,7 @@ export default function App() {
     setLoading(true);
 
     const payload = {
+      job_number: projectForm.job_number,
       name: projectForm.name,
       address: projectForm.address,
       contact_name: projectForm.contact_name,
@@ -682,6 +702,7 @@ export default function App() {
 
     setEditingProjectId(project.id);
     setProjectForm({
+      job_number: project.job_number ?? "",
       name: project.name ?? "",
       address: project.address ?? "",
       contact_name: project.contact_name ?? "",
@@ -712,7 +733,8 @@ export default function App() {
     }
 
     setNotice("Project deleted.");
-    setSelectedProjectId(rowsSource.projects.find((item) => item.id !== project.id)?.id ?? "");
+    setSelectedProjectId("");
+    setSelectedVisitId("");
     refreshData();
   }
 
@@ -743,20 +765,28 @@ export default function App() {
     if (!supabase || !profile) return;
 
     setLoading(true);
-    const { data: visit, error: visitError } = await supabase
-      .from("visits")
-      .insert({
-        company_id: profile.company_id,
-        project_id: visitForm.project_id,
-        visit_date: visitForm.visit_date,
-        start_time: visitForm.start_time,
-        end_time: visitForm.end_time,
-        is_first_visit: visitForm.is_first_visit,
-        work_scope: visitForm.work_scope,
-        created_by: profile.id,
-      })
-      .select()
-      .single();
+    const visitPayload = {
+      project_id: visitForm.project_id,
+      visit_date: visitForm.visit_date,
+      start_time: visitForm.start_time,
+      end_time: visitForm.end_time,
+      is_first_visit: visitForm.is_first_visit,
+      work_scope: visitForm.work_scope,
+    };
+
+    const visitQuery = editingVisitId
+      ? supabase.from("visits").update(visitPayload).eq("id", editingVisitId).select().single()
+      : supabase
+          .from("visits")
+          .insert({
+            ...visitPayload,
+            company_id: profile.company_id,
+            created_by: profile.id,
+          })
+          .select()
+          .single();
+
+    const { data: visit, error: visitError } = await visitQuery;
 
     if (visitError) {
       setLoading(false);
@@ -764,26 +794,40 @@ export default function App() {
       return;
     }
 
+    if (editingVisitId) {
+      const clearPeople = await supabase.from("visit_people").delete().eq("visit_id", visit.id);
+      const clearEquipment = await supabase.from("visit_equipment").delete().eq("visit_id", visit.id);
+
+      if (clearPeople.error || clearEquipment.error) {
+        setLoading(false);
+        setNotice(clearPeople.error?.message || clearEquipment.error?.message);
+        refreshData();
+        return;
+      }
+    }
+
     const peopleRowsToInsert = visitForm.people_ids.map((profileId) => ({ visit_id: visit.id, profile_id: profileId }));
     const equipmentRowsToInsert = visitForm.equipment_ids.map((equipmentId) => ({ visit_id: visit.id, equipment_id: equipmentId }));
-
     const peopleResult = peopleRowsToInsert.length ? await supabase.from("visit_people").insert(peopleRowsToInsert) : { error: null };
     const equipmentResult = equipmentRowsToInsert.length ? await supabase.from("visit_equipment").insert(equipmentRowsToInsert) : { error: null };
     const error = peopleResult.error || equipmentResult.error;
 
     if (error) {
-      await supabase.from("visits").delete().eq("id", visit.id);
+      if (!editingVisitId) await supabase.from("visits").delete().eq("id", visit.id);
       setLoading(false);
       setNotice(error.message);
+      refreshData();
       return;
     }
 
     setLoading(false);
     setVisitForm({ ...emptyVisitForm, visit_date: selectedDate, project_id: rowsSource.projects[0]?.id ?? "" });
+    setEditingVisitId(null);
     setModalType(null);
     setSelectedDate(visit.visit_date);
     setSelectedProjectId(visit.project_id);
-    setNotice("Visit scheduled. Conflict checks passed.");
+    setSelectedVisitId(visit.id);
+    setNotice(editingVisitId ? "Visit changes saved." : "Visit scheduled. Conflict checks passed.");
     refreshData();
   }
 
@@ -801,7 +845,7 @@ export default function App() {
   }
 
   async function updateVisitStatus(status) {
-    if (!supabase || !selectedAssignment?.visitId) {
+    if (!supabase || !currentVisit?.id) {
       setNotice("Sign in and select a live visit first.");
       return;
     }
@@ -810,7 +854,7 @@ export default function App() {
       status === "on_site"
         ? { status, arrived_at: new Date().toISOString() }
         : { status, completed_at: new Date().toISOString() };
-    const { error } = await supabase.from("visits").update(patch).eq("id", selectedAssignment.visitId);
+    const { error } = await supabase.from("visits").update(patch).eq("id", currentVisit.id);
 
     if (error) {
       setNotice(error.message);
@@ -822,21 +866,22 @@ export default function App() {
   }
 
   async function deleteVisit() {
-    if (!supabase || !selectedAssignment?.visitId || !canManage) {
+    if (!supabase || !currentVisit?.id || !canManage) {
       setNotice("Select a live visit and sign in as Owner, PM, or Office Manager.");
       return;
     }
 
-    const confirmed = window.confirm(`Remove visit "${selectedAssignment.title}" from the schedule?`);
+    const confirmed = window.confirm(`Remove visit "${selectedProject?.name ?? "Project"}" from the schedule?`);
     if (!confirmed) return;
 
-    const { error } = await supabase.from("visits").delete().eq("id", selectedAssignment.visitId);
+    const { error } = await supabase.from("visits").delete().eq("id", currentVisit.id);
     if (error) {
       setNotice(error.message);
       return;
     }
 
     setSelectedAssignmentId("");
+    setSelectedVisitId("");
     setNotice("Visit removed from schedule.");
     refreshData();
   }
@@ -943,18 +988,65 @@ export default function App() {
     } else if (activeNav === "equipment") setModalType("equipment");
     else if (activeNav === "people") setModalType("people");
     else {
+      setEditingVisitId(null);
       setVisitForm({
         ...emptyVisitForm,
         visit_date: selectedDate,
-        project_id: rowsSource.projects[0]?.id ?? "",
+        project_id: selectedProject?.id ?? rowsSource.projects[0]?.id ?? "",
       });
       setModalType("visit");
     }
   }
 
+  function openVisitModal(projectId = selectedProject?.id) {
+    if (!canManage) {
+      setNotice("Only Owner, PM, or Office Manager can schedule visits.");
+      return;
+    }
+
+    setEditingVisitId(null);
+    setVisitForm({
+      ...emptyVisitForm,
+      visit_date: selectedDate,
+      project_id: projectId ?? "",
+    });
+    setModalType("visit");
+  }
+
+  function selectProject(project) {
+    setSelectedProjectId(project.id);
+    setSelectedAssignmentId("");
+    const nextVisit = (rowsSource.visits ?? [])
+      .filter((visit) => visit.project_id === project.id)
+      .sort((a, b) => `${b.visit_date} ${b.start_time}`.localeCompare(`${a.visit_date} ${a.start_time}`))[0];
+    setSelectedVisitId(nextVisit?.id ?? "");
+  }
+
   function selectAssignment(assignment) {
     setSelectedAssignmentId(assignment.id);
     setSelectedProjectId(assignment.projectId);
+    setSelectedVisitId(assignment.visitId ?? "");
+  }
+
+  function editVisit(visit) {
+    if (!canManage) {
+      setNotice("Only Owner, PM, or Office Manager can edit visits.");
+      return;
+    }
+
+    setEditingVisitId(visit.id);
+    setVisitForm({
+      project_id: visit.project_id ?? selectedProject?.id ?? "",
+      visit_date: visit.visit_date ?? selectedDate,
+      start_time: String(visit.start_time ?? "08:00").slice(0, 5),
+      end_time: String(visit.end_time ?? "16:00").slice(0, 5),
+      work_scope: visit.work_scope ?? "",
+      is_first_visit: Boolean(visit.is_first_visit),
+      people_ids: visit.people_ids ?? [],
+      equipment_ids: visit.equipment_ids ?? [],
+    });
+    setSelectedVisitId(visit.id);
+    setModalType("visit");
   }
 
   async function openAttachment(attachment) {
@@ -966,12 +1058,52 @@ export default function App() {
     }
   }
 
+  async function downloadAttachment(attachment) {
+    try {
+      const urls = attachment.viewUrl ? attachment : await createAttachmentUrls(attachment);
+      if (!urls.viewUrl) throw new Error("Download link is not available.");
+
+      const link = document.createElement("a");
+      link.href = urls.viewUrl;
+      link.download = attachment.file_name || "download";
+      link.rel = "noreferrer";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setNotice(`Downloading ${attachment.file_name || "file"}...`);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  }
+
   function handleSearchSelect(result) {
     setSearchQuery("");
     setSearchResults([]);
+    setIsSearchOpen(false);
     if (result.type === "project") {
       setSelectedProjectId(result.id.replace("project-", ""));
       setActiveNav("projects");
+    } else if (result.type === "visit") {
+      const visitId = result.id.replace("visit-", "");
+      const visit = rowsSource.visits.find((item) => item.id === visitId);
+      if (visit) {
+        setSelectedVisitId(visit.id);
+        setSelectedProjectId(visit.project_id);
+        setSelectedDate(visit.visit_date);
+        setActiveNav("schedule");
+      }
+    } else if (result.type === "file") {
+      const fileId = result.id.replace("file-", "");
+      const file = rowsSource.files?.find((item) => item.id === fileId);
+      if (file) {
+        const kind = file.file_kind ?? file.fileKind;
+        if (kind === "pdf" || kind === "excel" || kind === "xlsx") downloadAttachment(file);
+        else openAttachment(file);
+      }
+    } else if (result.type === "person") {
+      setActiveNav("people");
+    } else if (result.type === "equipment") {
+      setActiveNav("equipment");
     }
   }
 
@@ -1037,7 +1169,7 @@ export default function App() {
       return (
         <>
           <SectionToolbar label="Projects" onAdd={openAddModal} />
-          <ProjectsView canManage={canManage} projects={rowsSource.projects} onDelete={deleteProject} onEdit={editProject} onSelect={(project) => setSelectedProjectId(project.id)} />
+          <ProjectsView canManage={canManage} projects={rowsSource.projects} onDelete={deleteProject} onEdit={editProject} onSelect={selectProject} />
         </>
       );
     }
@@ -1130,36 +1262,10 @@ export default function App() {
           </div>
 
           <div className="headerActions">
-            <div className="globalSearch" ref={globalSearchRef}>
+            <button className="searchTrigger" type="button" onClick={() => setIsSearchOpen(true)}>
               <Search size={18} />
-              <input
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    setSearchQuery("");
-                    setSearchResults([]);
-                  }
-                }}
-              />
-
-              {searchResults.length > 0 && (
-                <div className="searchResults">
-                  {searchResults.map((result) => (
-                    <button className="searchResult" key={result.id} type="button" onClick={() => handleSearchSelect(result)}>
-                      <span className="searchIcon">{renderSearchIcon(result)}</span>
-                      <span>
-                        <strong>{highlightText(result.title, searchQuery)}</strong>
-                        <small>{highlightText(result.subtitle, searchQuery)}</small>
-                        <em>{highlightText(result.snippet, searchQuery)}</em>
-                        {renderSearchBadges(result)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+              <span>Search</span>
+            </button>
 
             <button className="iconButton soft" type="button" title="Notifications" onClick={() => setNotice("No new notifications.")}>
               <Bell size={20} />
@@ -1174,13 +1280,25 @@ export default function App() {
           </div>
         </header>
 
-        <section className="contentGrid">
+        <section className={selectedProject ? "contentGrid" : "contentGrid noProjectPanel"}>
           <section className="scheduleArea">
             {loading && <div className="loadingBar" />}
             {renderMainContent()}
           </section>
 
+          {selectedProject && (
           <aside className="projectPanel">
+            <button
+              className="panelCloseButton"
+              type="button"
+              title="Close project panel"
+              onClick={() => {
+                setSelectedProjectId("");
+                setSelectedVisitId("");
+              }}
+            >
+              <X size={18} />
+            </button>
             <div className="projectImageWrap">
               <img src={getProjectPhoto(selectedProject.name)} alt="" />
               <span className="projectStatusBadge">{normalizeStatus(selectedProject.status)}</span>
@@ -1190,6 +1308,7 @@ export default function App() {
             </div>
 
             <div className="projectTitleBlock">
+              <span className="jobNumberPill">{selectedProject.job_number || "No job number"}</span>
               <h2>{selectedProject.name}</h2>
               <p>{selectedProject.category ?? "Construction Project"}</p>
             </div>
@@ -1227,6 +1346,7 @@ export default function App() {
             </div>
 
             <dl className="projectFacts">
+              <ProjectFact icon={ClipboardCheck} label="Job Number" value={selectedProject.job_number || "Not set"} />
               <ProjectFact icon={UserRound} label="Client" value={selectedProject.contact_name || "Not set"} />
               <ProjectFact icon={UsersRound} label="Project Manager" value={selectedProject.project_manager ?? currentUserName} />
               <ProjectFact icon={Calendar} label="Start Date" value={selectedProject.start_date ?? selectedDate} />
@@ -1249,16 +1369,57 @@ export default function App() {
               <p>{selectedProject.description || "No description yet."}</p>
             </div>
 
+            <div className="projectVisitsBlock">
+              <div className="panelSectionHeader">
+                <h3>Visits</h3>
+                <button type="button" onClick={() => openVisitModal(selectedProject.id)}>
+                  <Plus size={15} />
+                  Add
+                </button>
+              </div>
+              {selectedProjectVisits.length === 0 ? (
+                <div className="emptyPanelState">No visits scheduled for this project.</div>
+              ) : (
+                <div className="projectVisitList">
+                  {selectedProjectVisits.slice(0, 8).map((visit) => (
+                    <button
+                      className={currentVisit?.id === visit.id ? "projectVisitItem active" : "projectVisitItem"}
+                      key={visit.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedVisitId(visit.id);
+                        setSelectedDate(visit.visit_date);
+                      }}
+                    >
+                      <span>
+                        <strong>{formatDateLabel(visit.visit_date)}</strong>
+                        <small>
+                          {String(visit.start_time).slice(0, 5)} - {String(visit.end_time).slice(0, 5)} · {normalizeStatus(visit.status)}
+                        </small>
+                      </span>
+                      <Edit3
+                        size={16}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          editVisit(visit);
+                        }}
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="visitActions">
-              <button type="button" onClick={() => updateVisitStatus("on_site")}>
+              <button type="button" disabled={!currentVisit?.id} onClick={() => updateVisitStatus("on_site")}>
                 <ClipboardCheck size={18} />
                 Arrived
               </button>
-              <button type="button" onClick={() => updateVisitStatus("completed")}>
+              <button type="button" disabled={!currentVisit?.id} onClick={() => updateVisitStatus("completed")}>
                 <CheckCircle2 size={18} />
                 Complete
               </button>
-              <button className="dangerAction" type="button" onClick={deleteVisit}>
+              <button className="dangerAction" type="button" disabled={!currentVisit?.id} onClick={deleteVisit}>
                 <Trash2 size={18} />
                 Remove
               </button>
@@ -1270,7 +1431,7 @@ export default function App() {
                 companyId={rowsSource.companyId}
                 profileId={profile?.id}
                 projectId={selectedProject.id}
-                visitId={currentVisit.id}
+                visitId={currentVisit?.id ?? null}
                 onOpen={openAttachment}
                 onUploaded={(message) => {
                   setNotice(message);
@@ -1289,7 +1450,55 @@ export default function App() {
               <ChevronRight size={20} />
             </button>
           </aside>
+          )}
         </section>
+
+        {isSearchOpen && (
+          <div className="searchOverlay" ref={globalSearchRef}>
+            <div className="searchBackdrop" onClick={() => setIsSearchOpen(false)} />
+            <section className="searchPanel" aria-label="Global search">
+              <div className="searchPanelInput">
+                <Search size={22} />
+                <input
+                  ref={searchInputRef}
+                  placeholder="Search projects, visits, people, equipment, PDF, Excel..."
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      setSearchQuery("");
+                      setSearchResults([]);
+                      setIsSearchOpen(false);
+                    }
+                  }}
+                />
+                <button type="button" title="Close search" onClick={() => setIsSearchOpen(false)}>
+                  <X size={19} />
+                </button>
+              </div>
+
+              <div className="searchPanelResults">
+                {searchQuery.trim().length < 2 ? (
+                  <div className="searchEmptyState">Type at least 2 characters to search across projects, visits, PDFs, and Excel files.</div>
+                ) : searchResults.length > 0 ? (
+                  searchResults.map((result) => (
+                    <button className="searchResult" key={result.id} type="button" onClick={() => handleSearchSelect(result)}>
+                      <span className="searchIcon">{renderSearchIcon(result)}</span>
+                      <span>
+                        <strong>{highlightText(result.title, searchQuery)}</strong>
+                        <small>{highlightText(result.subtitle, searchQuery)}</small>
+                        <em>{highlightText(result.snippet, searchQuery)}</em>
+                        {renderSearchBadges(result)}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="searchEmptyState">Nothing found yet.</div>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
 
         {modalType === "onboarding" && (
           <AppModal title="Create company" onClose={() => setModalType(null)}>
@@ -1316,6 +1525,9 @@ export default function App() {
         {modalType === "project" && (
           <AppModal title={editingProjectId ? "Edit project" : "Add project"} onClose={() => setModalType(null)}>
             <form className="stackForm twoColumns" onSubmit={saveProject}>
+              <FormField label="Job number">
+                <input required value={projectForm.job_number} onChange={(event) => setProjectForm({ ...projectForm, job_number: event.target.value })} />
+              </FormField>
               <FormField label="Project name">
                 <input required value={projectForm.name} onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })} />
               </FormField>
@@ -1379,7 +1591,7 @@ export default function App() {
         )}
 
         {modalType === "visit" && (
-          <AppModal title="Schedule visit" onClose={() => setModalType(null)}>
+          <AppModal title={editingVisitId ? "Edit visit" : "Schedule visit"} onClose={() => setModalType(null)}>
             <form className="stackForm twoColumns" onSubmit={saveVisit}>
               <FormField label="Project">
                 <select required value={visitForm.project_id} onChange={(event) => setVisitForm({ ...visitForm, project_id: event.target.value })}>
@@ -1412,7 +1624,7 @@ export default function App() {
               <div className="formActions wide">
                 <button className="addButton" type="submit" disabled={loading || !visitForm.project_id}>
                   <Save size={18} />
-                  Save visit
+                  {editingVisitId ? "Save changes" : "Save visit"}
                 </button>
               </div>
             </form>
@@ -1431,7 +1643,7 @@ export default function App() {
           </AppModal>
         )}
 
-        {showAnnotator && (
+        {showAnnotator && selectedProject && (
           <AppModal title="Visit photo markup" onClose={() => setShowAnnotator(false)} wide>
             <div className="viewerFrame">
               <PhotoAnnotator
@@ -1442,7 +1654,7 @@ export default function App() {
                       await uploadAnnotatedVisitPhoto({
                         companyId: rowsSource.companyId,
                         projectId: selectedProject.id,
-                        visitId: currentVisit.id,
+                        visitId: currentVisit?.id ?? null,
                         dataUrl,
                         annotationJson,
                       });
@@ -1568,7 +1780,7 @@ function ProjectsView({ canManage, projects, onDelete, onEdit, onSelect }) {
             <FolderKanban size={20} />
             <span>
               <strong>{project.name}</strong>
-              <small>{project.address}</small>
+              <small>{project.job_number ? `${project.job_number} · ${project.address}` : project.address}</small>
             </span>
             <em>{normalizeStatus(project.status)}</em>
           </button>
