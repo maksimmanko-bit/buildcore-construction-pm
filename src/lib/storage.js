@@ -44,6 +44,56 @@ export async function uploadAnnotatedVisitPhoto({ companyId, projectId, visitId,
   return storagePath;
 }
 
+export async function replaceVisitPhotoWithAnnotation({ attachment, dataUrl, annotationJson, actorId }) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  if (!attachment?.id || !attachment?.bucket_id || !attachment?.storage_path) throw new Error("Missing photo details.");
+
+  const blob = dataUrlToBlob(dataUrl);
+  const history = Array.isArray(attachment.annotation_history) ? attachment.annotation_history : [];
+  const nextHistory = [
+    {
+      at: new Date().toISOString(),
+      by: actorId || null,
+      action: "annotation_saved",
+      objectCount: annotationJson?.objects?.length ?? 0,
+    },
+    ...history,
+  ];
+
+  const { error: uploadError } = await supabase.storage.from(attachment.bucket_id).upload(attachment.storage_path, blob, {
+    contentType: "image/jpeg",
+    upsert: true,
+  });
+
+  if (uploadError) throw uploadError;
+
+  const { data, error: updateError } = await supabase
+    .from("visit_files")
+    .update({
+      annotation_json: annotationJson,
+      annotation_history: nextHistory,
+      mime_type: "image/jpeg",
+      file_kind: "photo",
+    })
+    .eq("id", attachment.id)
+    .select()
+    .single();
+
+  if (updateError) throw updateError;
+  return data;
+}
+
+export async function deleteVisitFile(attachment) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  if (!attachment?.id || !attachment?.bucket_id || !attachment?.storage_path) throw new Error("Missing file details.");
+
+  const { error: removeError } = await supabase.storage.from(attachment.bucket_id).remove([attachment.storage_path]);
+  if (removeError) throw removeError;
+
+  const { error: deleteError } = await supabase.from("visit_files").delete().eq("id", attachment.id);
+  if (deleteError) throw deleteError;
+}
+
 export function getAttachmentBucket(file) {
   return file.type.startsWith("image/") ? "visit-photos" : "project-documents";
 }

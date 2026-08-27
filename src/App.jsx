@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Activity,
   Bell,
   Calendar,
+  Camera,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleGauge,
   ClipboardCheck,
+  Download,
   Edit3,
   FileBarChart2,
   FileSpreadsheet,
@@ -33,12 +36,14 @@ import {
   UserRound,
   UsersRound,
   X,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import DocumentUploader from "./components/DocumentUploader.jsx";
 import PhotoAnnotator from "./components/PhotoAnnotator.jsx";
 import { isSupabaseConfigured, supabase } from "./lib/supabase.js";
-import { createAttachmentUrls, createProfileAvatarUrl, uploadAnnotatedVisitPhoto, uploadProfileAvatar, uploadVisitGeneratedFile, uploadVisitPhoto } from "./lib/storage.js";
+import { createAttachmentUrls, createProfileAvatarUrl, deleteVisitFile, replaceVisitPhotoWithAnnotation, uploadProfileAvatar, uploadVisitGeneratedFile, uploadVisitPhoto } from "./lib/storage.js";
 import { localGlobalSearch } from "./lib/search.js";
 import { getGoogleMapsUrl, getWeatherForAddress } from "./lib/weather.js";
 
@@ -274,17 +279,19 @@ function profileDisplayName(person, fallback = "Not set") {
   return firstLast || person.full_name || person.email || fallback;
 }
 
-function getPersonWorkStatus({ date, personId, projects = [], visits = [] }) {
-  const dayVisits = visits.filter((visit) => visit.visit_date === date && visit.people_ids?.includes(personId) && visit.status !== "cancelled");
+function getPersonWorkStatus({ date, person, personId, projects = [], visits = [] }) {
+  const resolvedPersonId = personId ?? person?.id;
+  const dayVisits = visits.filter((visit) => visit.visit_date === date && visit.people_ids?.includes(resolvedPersonId) && visit.status !== "cancelled");
   const activeVisit = dayVisits.find((visit) => visit.status === "on_site");
-  const plannedVisit = dayVisits.find((visit) => visit.status === "planned");
   const completedVisit = dayVisits.find((visit) => visit.status === "completed");
+  const plannedVisit = dayVisits.find((visit) => visit.status === "planned");
   const visit = activeVisit || plannedVisit || completedVisit;
   const project = visit ? projects.find((item) => item.id === visit.project_id) : null;
 
   if (activeVisit) return { label: "Active", tone: "active", detail: project?.name || "On site" };
-  if (plannedVisit) return { label: "Scheduled", tone: "scheduled", detail: project?.name || "Project visit" };
+  if (person?.availability_status === "not_available") return { label: "Not Available", tone: "notAvailable", detail: "Manually unavailable" };
   if (completedVisit) return { label: "Available", tone: "available", detail: "Finished today" };
+  if (plannedVisit) return { label: "Available", tone: "available", detail: project?.name || "Scheduled today" };
   return { label: "Available", tone: "available", detail: "No assignment" };
 }
 
@@ -414,6 +421,7 @@ export default function App() {
   const searchInputRef = useRef(null);
   const [activeNav, setActiveNav] = useState("schedule");
   const [scheduleMode, setScheduleMode] = useState("day");
+  const [scheduleDensity, setScheduleDensity] = useState("comfortable");
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [data, setData] = useState({ ...demo, visits: [] });
@@ -435,8 +443,10 @@ export default function App() {
   const [authPhone, setAuthPhone] = useState("");
   const [authAvatarFile, setAuthAvatarFile] = useState(null);
   const [authReady, setAuthReady] = useState(false);
-  const [showAnnotator, setShowAnnotator] = useState(false);
   const [selectedAttachment, setSelectedAttachment] = useState(null);
+  const [viewerItems, setViewerItems] = useState([]);
+  const [photoZoom, setPhotoZoom] = useState(1);
+  const [isAnnotatingPhoto, setIsAnnotatingPhoto] = useState(false);
   const [projectWeather, setProjectWeather] = useState({ status: "idle", address: "", data: null });
   const [modalType, setModalType] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -451,6 +461,7 @@ export default function App() {
   const [photoStep, setPhotoStep] = useState({ kind: "", visitId: "", files: [] });
   const [completionForm, setCompletionForm] = useState({ notes: "", files: [] });
   const [profileForm, setProfileForm] = useState({ first_name: "", last_name: "", phone: "", avatarFile: null, removeAvatar: false });
+  const [personForm, setPersonForm] = useState({ first_name: "", last_name: "", phone: "", role: "builder", trade: "", availability_status: "available" });
   const [avatarUrls, setAvatarUrls] = useState({});
 
   const isLive = Boolean(session && profile?.is_active);
@@ -510,15 +521,16 @@ export default function App() {
         ? supabase.from("profiles").select("*").order("is_active", { ascending: true }).order("full_name")
         : supabase.from("profiles").select("*").eq("is_active", true).order("full_name");
 
-      const [projectsResult, peopleResult, equipmentResult, visitsResult, filesResult] = await Promise.all([
+      const [projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult] = await Promise.all([
         supabase.from("projects").select("*").order("created_at", { ascending: false }),
         peopleQuery,
         supabase.from("equipment").select("*").order("name"),
         supabase.from("visit_schedule_view").select("*").order("visit_date", { ascending: false }).order("start_time"),
         supabase.from("visit_files").select("*").order("created_at", { ascending: false }),
+        supabase.from("visit_activity").select("*").order("created_at", { ascending: false }).limit(500),
       ]);
 
-      const failed = [projectsResult, peopleResult, equipmentResult, visitsResult, filesResult].find((result) => result.error);
+      const failed = [projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult].find((result) => result.error);
       if (failed) throw failed.error;
 
       const nextProjects = projectsResult.data ?? [];
@@ -531,6 +543,7 @@ export default function App() {
         equipment: equipmentResult.data ?? [],
         visits: visitsResult.data ?? [],
         files: filesResult.data ?? [],
+        activities: activityResult.data ?? [],
       });
 
       if (selectedProjectId && !nextProjects.some((project) => project.id === selectedProjectId)) setSelectedProjectId("");
@@ -703,6 +716,7 @@ export default function App() {
   const currentVisitFiles = (rowsSource.files ?? []).filter((file) => currentVisit?.id && file.visit_id === currentVisit.id);
   const currentVisitPeople = currentVisit ? rowsSource.people.filter((person) => currentVisit.people_ids?.includes(person.id)) : [];
   const currentVisitEquipment = currentVisit ? rowsSource.equipment.filter((item) => currentVisit.equipment_ids?.includes(item.id)) : [];
+  const selectedProjectActivities = selectedProject ? (rowsSource.activities ?? []).filter((item) => item.project_id === selectedProject.id) : [];
   const workflowVisit = workflowVisitId ? (rowsSource.visits ?? []).find((visit) => visit.id === workflowVisitId) ?? currentVisit : currentVisit;
   const workflowProject = workflowVisit ? rowsSource.projects.find((project) => project.id === workflowVisit.project_id) ?? selectedProject : selectedProject;
   const workflowPeople = workflowVisit ? rowsSource.people.filter((person) => workflowVisit.people_ids?.includes(person.id)) : currentVisitPeople;
@@ -742,8 +756,8 @@ export default function App() {
     ...person,
     kind: "person",
     subtitle: roleLabel(person.role),
-    resourceStatus: getPersonWorkStatus({ date: selectedDate, personId: person.id, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
-    peopleStatus: getPersonWorkStatus({ date: todayValue, personId: person.id, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
+    resourceStatus: getPersonWorkStatus({ date: selectedDate, person: person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
+    peopleStatus: getPersonWorkStatus({ date: todayValue, person: person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
     assignments: assignmentsSource.filter((item) => item.type === "person" && item.resourceId === person.id),
   }));
 
@@ -1073,7 +1087,7 @@ export default function App() {
     if (!supabase || !canManage) return;
 
     setLoading(true);
-    const { error } = await supabase.from("profiles").update({ role, is_active: true }).eq("id", person.id);
+    const { error } = await supabase.from("profiles").update({ role, is_active: true, availability_status: "available" }).eq("id", person.id);
     setLoading(false);
 
     if (error) {
@@ -1082,6 +1096,62 @@ export default function App() {
     }
 
     setNotice(`${profileDisplayName(person, "Employee")} approved as ${roleLabel(role)}.`);
+    refreshData();
+  }
+
+  function editPerson(person) {
+    if (!canManage) {
+      setNotice("Only Owner, PM, or Office Manager can edit employees.");
+      return;
+    }
+
+    const [first = "", ...rest] = String(person.first_name || person.full_name || "").split(" ").filter(Boolean);
+    setSelectedPersonId(person.id);
+    setPersonForm({
+      first_name: person.first_name || first,
+      last_name: person.last_name || rest.join(" "),
+      phone: person.phone || "",
+      role: person.role || "builder",
+      trade: person.trade || "",
+      availability_status: person.availability_status || "available",
+    });
+    setModalType("personEdit");
+  }
+
+  async function savePerson(event) {
+    event.preventDefault();
+    if (!supabase || !canManage || !selectedPerson) return;
+
+    const firstName = personForm.first_name.trim();
+    const lastName = personForm.last_name.trim();
+    const phone = personForm.phone.trim();
+    if (!firstName || !lastName || !phone) {
+      setNotice("First name, last name, and phone number are required.");
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        first_name: firstName,
+        last_name: lastName,
+        full_name: `${firstName} ${lastName}`.trim(),
+        phone,
+        role: personForm.role,
+        trade: personForm.trade.trim(),
+        availability_status: personForm.availability_status,
+      })
+      .eq("id", selectedPerson.id);
+    setLoading(false);
+
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+
+    setNotice("Employee profile saved.");
+    setModalType(null);
     refreshData();
   }
 
@@ -1170,6 +1240,24 @@ export default function App() {
 
   function getVisitFiles(visit) {
     return (rowsSource.files ?? []).filter((file) => visit?.id && file.visit_id === visit.id);
+  }
+
+  async function logVisitActivity(visit, activityType, message, metadata = {}) {
+    if (!supabase || !profile || !visit?.id) return;
+    const projectId = visit.project_id ?? selectedProject?.id;
+    if (!projectId || !rowsSource.companyId) return;
+
+    const { error } = await supabase.from("visit_activity").insert({
+      company_id: rowsSource.companyId,
+      project_id: projectId,
+      visit_id: visit.id,
+      actor_id: profile.id,
+      activity_type: activityType,
+      message,
+      metadata,
+    });
+
+    if (error) setNotice(error.message);
   }
 
   function openProjectOverlay(project, mode = "project") {
@@ -1334,6 +1422,10 @@ export default function App() {
         fileType: "safety_form",
         searchText: searchableText,
       });
+      await logVisitActivity(activeVisit, "safety_form_saved", `${currentUserName} saved the digital safety form.`, {
+        hazards: safetyForm.hazards,
+        team: names,
+      });
       await refreshData();
       setWorkflowVisitId(activeVisit.id);
       setPhotoStep({ kind: "before", visitId: activeVisit.id, files: [] });
@@ -1372,7 +1464,14 @@ export default function App() {
           searchText: `Before photo uploaded by ${currentUserName} at ${new Date().toISOString()}`,
         });
       }
+      await logVisitActivity(activeVisit, "before_photos_uploaded", `${currentUserName} uploaded ${photoStep.files.length} before photo${photoStep.files.length === 1 ? "" : "s"}.`, {
+        count: photoStep.files.length,
+      });
       await updateVisitStatusById(activeVisit.id, "on_site");
+      await logVisitActivity(activeVisit, "arrived", `${currentUserName} arrived and started work.`, {
+        arrivedAt: new Date().toISOString(),
+      });
+      await refreshData();
       setModalType(null);
       setWorkflowVisitId("");
       setPhotoStep({ kind: "", visitId: "", files: [] });
@@ -1410,7 +1509,15 @@ export default function App() {
           searchText: `After photo uploaded by ${currentUserName} at ${new Date().toISOString()}. ${completionForm.notes}`,
         });
       }
+      await logVisitActivity(activeVisit, "after_photos_uploaded", `${currentUserName} uploaded ${completionForm.files.length} after photo${completionForm.files.length === 1 ? "" : "s"}.`, {
+        count: completionForm.files.length,
+      });
       await updateVisitStatusById(activeVisit.id, "completed", { completion_notes: completionForm.notes });
+      await logVisitActivity(activeVisit, "completed", `${currentUserName} completed the visit.`, {
+        completedAt: new Date().toISOString(),
+        notes: completionForm.notes,
+      });
+      await refreshData();
       setModalType(null);
       setWorkflowVisitId("");
       setCompletionForm({ notes: "", files: [] });
@@ -1610,9 +1717,79 @@ export default function App() {
   async function openAttachment(attachment) {
     try {
       const urls = attachment.viewUrl ? attachment : await createAttachmentUrls(attachment);
-      setSelectedAttachment({ ...attachment, ...urls });
+      const opened = { ...attachment, ...urls };
+      const isPhoto = opened.file_kind === "photo" || opened.mime_type?.startsWith("image/");
+
+      if (isPhoto) {
+        const siblingPhotos = (rowsSource.files ?? [])
+          .filter((file) => (file.file_kind === "photo" || file.mime_type?.startsWith("image/")) && file.project_id === opened.project_id && (!opened.visit_id || file.visit_id === opened.visit_id))
+          .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+        const hydrated = await Promise.all(
+          siblingPhotos.map(async (file) => {
+            if (file.id === opened.id) return opened;
+            const nextUrls = await createAttachmentUrls(file);
+            return { ...file, ...nextUrls };
+          }),
+        );
+        setViewerItems(hydrated);
+        setPhotoZoom(1);
+        setIsAnnotatingPhoto(false);
+      } else {
+        setViewerItems([]);
+      }
+
+      setSelectedAttachment(opened);
     } catch (error) {
       setNotice(error.message);
+    }
+  }
+
+  async function annotateSelectedAttachment({ dataUrl, annotationJson }) {
+    if (!selectedAttachment || !profile) return;
+    setLoading(true);
+    try {
+      const saved = await replaceVisitPhotoWithAnnotation({
+        attachment: selectedAttachment,
+        dataUrl,
+        annotationJson,
+        actorId: profile.id,
+      });
+      const urls = await createAttachmentUrls(saved);
+      const updated = { ...saved, ...urls };
+      setSelectedAttachment(updated);
+      setViewerItems((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      const visit = (rowsSource.visits ?? []).find((item) => item.id === saved.visit_id);
+      await logVisitActivity(visit, "photo_annotated", `${currentUserName} annotated ${saved.file_name}.`, { fileId: saved.id });
+      await refreshData();
+      setIsAnnotatingPhoto(false);
+      setNotice("Annotation saved and original photo replaced.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function removeSelectedAttachment() {
+    if (!selectedAttachment) return;
+    const confirmed = window.confirm(`Delete "${selectedAttachment.file_name || "photo"}"?`);
+    if (!confirmed) return;
+
+    setLoading(true);
+    try {
+      const removed = selectedAttachment;
+      await deleteVisitFile(removed);
+      const visit = (rowsSource.visits ?? []).find((item) => item.id === removed.visit_id);
+      await logVisitActivity(visit, "file_deleted", `${currentUserName} deleted ${removed.file_name}.`, { fileId: removed.id });
+      const nextItems = viewerItems.filter((item) => item.id !== removed.id);
+      setViewerItems(nextItems);
+      setSelectedAttachment(nextItems[0] ?? null);
+      await refreshData();
+      setNotice("Photo deleted.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -1780,8 +1957,10 @@ export default function App() {
         peopleRows={peopleRows}
         avatarUrls={avatarUrls}
         scheduleMode={scheduleMode}
+        scheduleDensity={scheduleDensity}
         selectedDate={selectedDate}
         setScheduleMode={setScheduleMode}
+        setScheduleDensity={setScheduleDensity}
         setSelectedDate={setSelectedDate}
         onAdd={openAddModal}
         onDropAssignment={moveVisitAssignment}
@@ -2087,6 +2266,7 @@ export default function App() {
             onOpenVisit={openVisitOverlay}
             people={rowsSource.people}
             project={selectedProject}
+            activities={selectedProjectActivities}
             visits={selectedProjectVisits}
           />
         )}
@@ -2112,6 +2292,8 @@ export default function App() {
         {detailOverlay === "person" && selectedPerson && (
           <PersonDetailOverlay
             avatarUrl={avatarUrls[selectedPerson.id]}
+            canManage={canManage}
+            onEdit={() => editPerson(selectedPerson)}
             onClose={() => setDetailOverlay("")}
             person={selectedPerson}
           />
@@ -2296,40 +2478,75 @@ export default function App() {
           </AppModal>
         )}
 
-        {showAnnotator && selectedProject && (
-          <AppModal title="Visit photo markup" onClose={() => setShowAnnotator(false)} wide>
-            <div className="viewerFrame">
-              <PhotoAnnotator
-                imageUrl={samplePhoto()}
-                onSave={async ({ dataUrl, annotationJson }) => {
-                  try {
-                    if (supabase && session && profile) {
-                      await uploadAnnotatedVisitPhoto({
-                        companyId: rowsSource.companyId,
-                        projectId: selectedProject.id,
-                        visitId: currentVisit?.id ?? null,
-                        dataUrl,
-                        annotationJson,
-                      });
-                      setNotice("Annotated photo saved to Supabase Storage.");
-                    } else {
-                      setNotice("Annotated photo is ready. Sign in to save it to Supabase Storage.");
-                    }
-                    setShowAnnotator(false);
-                  } catch (error) {
-                    setNotice(error.message);
-                  }
-                }}
-              />
-            </div>
+        {modalType === "personEdit" && selectedPerson && (
+          <AppModal title="Edit employee" onClose={() => setModalType(null)}>
+            <form className="stackForm twoColumns" onSubmit={savePerson}>
+              <FormField label="First name">
+                <input required value={personForm.first_name} onChange={(event) => setPersonForm({ ...personForm, first_name: event.target.value })} />
+              </FormField>
+              <FormField label="Last name">
+                <input required value={personForm.last_name} onChange={(event) => setPersonForm({ ...personForm, last_name: event.target.value })} />
+              </FormField>
+              <FormField label="Phone">
+                <input required value={personForm.phone} onChange={(event) => setPersonForm({ ...personForm, phone: event.target.value })} />
+              </FormField>
+              <FormField label="Role">
+                <select value={personForm.role} onChange={(event) => setPersonForm({ ...personForm, role: event.target.value })}>
+                  {roleOptions.map((option) => (
+                    <option value={option} key={option}>
+                      {roleLabel(option)}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+              <FormField label="Trade">
+                <input placeholder="Carpenter, Operator, Electrician..." value={personForm.trade} onChange={(event) => setPersonForm({ ...personForm, trade: event.target.value })} />
+              </FormField>
+              <FormField label="Availability">
+                <select value={personForm.availability_status} onChange={(event) => setPersonForm({ ...personForm, availability_status: event.target.value })}>
+                  <option value="available">Available</option>
+                  <option value="not_available">Not Available</option>
+                </select>
+              </FormField>
+              <div className="formActions wide">
+                <button className="addButton" type="submit" disabled={loading}>
+                  <Save size={18} />
+                  Save employee
+                </button>
+              </div>
+            </form>
           </AppModal>
         )}
 
         {selectedAttachment && (
-          <AppModal title={selectedAttachment.file_name || "Attachment"} onClose={() => setSelectedAttachment(null)} wide>
-            <div className="attachmentViewer">
+          <AppModal
+            title={selectedAttachment.file_name || "Attachment"}
+            onClose={() => {
+              setSelectedAttachment(null);
+              setViewerItems([]);
+              setIsAnnotatingPhoto(false);
+              setPhotoZoom(1);
+            }}
+            wide
+          >
+            <div className={isAnnotatingPhoto ? "attachmentViewer annotating" : "attachmentViewer"}>
               {selectedAttachment.file_kind === "photo" || selectedAttachment.mime_type?.startsWith("image/") ? (
-                <img src={selectedAttachment.viewUrl} alt={selectedAttachment.file_name || "Attachment"} />
+                <PhotoViewer
+                  attachment={selectedAttachment}
+                  canDelete={canManage || selectedAttachment.uploaded_by === profile?.id}
+                  isAnnotating={isAnnotatingPhoto}
+                  items={viewerItems}
+                  loading={loading}
+                  onAnnotate={() => setIsAnnotatingPhoto(true)}
+                  onCancelAnnotate={() => setIsAnnotatingPhoto(false)}
+                  onDelete={removeSelectedAttachment}
+                  onDownload={() => downloadAttachment(selectedAttachment)}
+                  onSaveAnnotation={annotateSelectedAttachment}
+                  onSelect={setSelectedAttachment}
+                  onZoom={setPhotoZoom}
+                  profiles={rowsSource.people}
+                  zoom={photoZoom}
+                />
               ) : selectedAttachment.file_kind === "pdf" || selectedAttachment.mime_type === "application/pdf" ? (
                 <iframe title={selectedAttachment.file_name || "PDF"} src={selectedAttachment.viewUrl} />
               ) : (
@@ -2366,7 +2583,7 @@ function DetailOverlayShell({ children, onClose, title }) {
   );
 }
 
-function ProjectDetailOverlay({ canManage, currentVisit, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onOpenAttachment, onOpenVisit, people, project, visits }) {
+function ProjectDetailOverlay({ activities = [], canManage, currentVisit, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onOpenAttachment, onOpenVisit, people, project, visits }) {
   return (
     <DetailOverlayShell title={project.name} onClose={onClose}>
       <div className="detailHero">
@@ -2434,8 +2651,56 @@ function ProjectDetailOverlay({ canManage, currentVisit, files, getProfileName, 
         )}
       </div>
 
+      <ActivityFeed activities={activities} getProfileName={getProfileName} visits={visits} />
+
       <AttachmentSections files={files} onOpen={onOpenAttachment} profiles={people} />
     </DetailOverlayShell>
+  );
+}
+
+function ActivityFeed({ activities = [], getProfileName, visits = [] }) {
+  const visitById = new Map(visits.map((visit) => [visit.id, visit]));
+  const iconMap = {
+    arrived: CheckCircle2,
+    completed: ClipboardCheck,
+    safety_form_saved: FileText,
+    before_photos_uploaded: Camera,
+    after_photos_uploaded: Camera,
+    photo_annotated: Edit3,
+    file_deleted: Trash2,
+  };
+
+  return (
+    <section className="activityFeed detailSection">
+      <div className="panelSectionHeader">
+        <h3>Activity Feed</h3>
+        <span>{activities.length}</span>
+      </div>
+      {activities.length === 0 ? (
+        <div className="emptyPanelState">No activity recorded yet.</div>
+      ) : (
+        <div className="activityList">
+          {activities.slice(0, 14).map((item) => {
+            const Icon = iconMap[item.activity_type] || Activity;
+            const visit = visitById.get(item.visit_id);
+            return (
+              <article className="activityItem" key={item.id}>
+                <span className="activityIcon">
+                  <Icon size={16} />
+                </span>
+                <div>
+                  <strong>{item.message}</strong>
+                  <small>
+                    {getProfileName(item.actor_id, "System")} В· {new Date(item.created_at).toLocaleString()}
+                    {visit ? ` В· ${formatDateLabel(visit.visit_date)}` : ""}
+                  </small>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -2492,7 +2757,7 @@ function VisitDetailOverlay({ equipment, files, getProfileName, onArrive, onClos
   );
 }
 
-function PersonDetailOverlay({ avatarUrl, onClose, person }) {
+function PersonDetailOverlay({ avatarUrl, canManage, onClose, onEdit, person }) {
   const fullName = profileDisplayName(person, "Unnamed user");
   const phone = person.phone || "";
   const email = person.email || "";
@@ -2505,17 +2770,25 @@ function PersonDetailOverlay({ avatarUrl, onClose, person }) {
           <span className="jobNumberPill">{roleLabel(person.role)}</span>
           <h3>{fullName}</h3>
           <p>{person.trade || "Team member"}</p>
+          {person.peopleStatus && <em className={`resourceStatusChip ${person.peopleStatus.tone}`}>{person.peopleStatus.label}</em>}
         </div>
       </div>
 
       <dl className="detailFacts">
         <ProjectFact icon={UsersRound} label="Role" value={roleLabel(person.role)} />
         <ProjectFact icon={ClipboardCheck} label="Trade" value={person.trade || "Not set"} />
+        <ProjectFact icon={CircleGauge} label="Availability" value={person.peopleStatus?.label || "Available"} badge />
         <ProjectFact icon={Phone} label="Phone" value={phone ? <a className="contactFactLink" href={`tel:${phone.replace(/[^\d+]/g, "")}`}>{phone}</a> : "Not set"} />
         <ProjectFact icon={Mail} label="Email" value={email ? <a className="contactFactLink" href={`mailto:${email}`}>{email}</a> : "Not set"} />
       </dl>
 
       <div className="detailActionRow contactActions">
+        {canManage && (
+          <button className="outlineButton" type="button" onClick={onEdit}>
+            <Edit3 size={17} />
+            Edit
+          </button>
+        )}
         <a className={phone ? "outlineLink" : "outlineLink disabled"} href={phone ? `tel:${phone.replace(/[^\d+]/g, "")}` : undefined}>
           <Phone size={17} />
           Call
@@ -2531,25 +2804,29 @@ function PersonDetailOverlay({ avatarUrl, onClose, person }) {
 
 function AttachmentSections({ files, onOpen, profiles = [] }) {
   const groups = [
-    ["safety_form", "Safety Form"],
-    ["before_photo", "Before Photos"],
-    ["completion_photo", "After Photos"],
-    ["project_document", "Documents"],
-    ["annotated_photo", "Annotated Photos"],
+    { id: "safety", label: "Safety Forms", icon: FileText, items: files.filter((file) => file.file_type === "safety_form") },
+    { id: "before", label: "Before Photos", icon: Camera, items: files.filter((file) => file.file_type === "before_photo") },
+    { id: "after", label: "After Photos", icon: Camera, items: files.filter((file) => file.file_type === "completion_photo") },
+    { id: "pdf", label: "PDFs", icon: FileText, items: files.filter((file) => file.file_kind === "pdf" && file.file_type !== "safety_form") },
+    { id: "excel", label: "Excel", icon: FileSpreadsheet, items: files.filter((file) => file.file_kind === "excel") },
   ];
 
   return (
     <div className="attachmentSections">
-      {groups.map(([type, label]) => {
-        const items = files.filter((file) => file.file_type === type);
+      {groups.map((group) => {
+        const Icon = group.icon;
         return (
-          <section className="attachmentSection" key={type}>
-            <h3>{label}</h3>
-            {items.length === 0 ? (
+          <section className={`attachmentSection ${group.id}`} key={group.id}>
+            <h3>
+              <Icon size={17} />
+              {group.label}
+              <span>{group.items.length}</span>
+            </h3>
+            {group.items.length === 0 ? (
               <div className="emptyPanelState">No files yet</div>
             ) : (
               <div className="attachmentStrip">
-                {items.map((file) => {
+                {group.items.map((file) => {
                   const uploader = profiles.find((profile) => profile.id === file.uploaded_by);
                   return (
                     <button className={file.file_kind === "photo" ? "attachmentCard photo" : "attachmentCard document"} key={file.id} type="button" onClick={() => onOpen(file)}>
@@ -2756,7 +3033,15 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
   );
 }
 
-function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows, scheduleMode, selectedDate, setScheduleMode, setSelectedDate, onAdd, onDropAssignment, onSelect }) {
+function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows, scheduleDensity, scheduleMode, selectedDate, setScheduleDensity, setScheduleMode, setSelectedDate, onAdd, onDropAssignment, onSelect }) {
+  const [dragPreview, setDragPreview] = useState(null);
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const nowHour = now.getHours() + now.getMinutes() / 60;
+  const showNow = selectedDate === today && nowHour >= scheduleStartHour && nowHour <= scheduleEndHour;
+  const nowRatio = Math.max(0, Math.min(1, (nowHour - scheduleStartHour) / (scheduleEndHour - scheduleStartHour)));
+  const nowLabel = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
   return (
     <>
       <div className="modeTabs">
@@ -2784,6 +3069,14 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
 
         <div className="toolbarSpacer" />
 
+        <div className="densityTabs" aria-label="Schedule density">
+          {["comfortable", "compact"].map((density) => (
+            <button className={scheduleDensity === density ? "active" : ""} key={density} type="button" onClick={() => setScheduleDensity(density)}>
+              {density === "comfortable" ? "Comfort" : "Compact"}
+            </button>
+          ))}
+        </div>
+
         <button className="outlineButton" type="button" onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}>
           Today
         </button>
@@ -2797,7 +3090,7 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
         </button>
       </div>
 
-      <div className="timelineCard">
+      <div className={`timelineCard density-${scheduleDensity}`} style={{ "--now-ratio": nowRatio }}>
         <div className="timelineHeader">
           <div className="allDay">All Day</div>
           {timeLabels.map((label) => (
@@ -2807,12 +3100,16 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
           ))}
         </div>
 
-        <div className="nowLine" />
-        <div className="nowPill">10:30 AM</div>
+        {showNow && (
+          <>
+            <div className="nowLine" />
+            <div className="nowPill">{nowLabel}</div>
+          </>
+        )}
         {!assignmentsReady && <div className="emptyTimeline">No visits scheduled for this day.</div>}
 
-        <ResourceGroup avatarUrls={avatarUrls} title="People" count={peopleRows.length} icon={UsersRound} rows={peopleRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
-        <ResourceGroup title="Equipment" count={equipmentRows.length} icon={Truck} rows={equipmentRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
+        <ResourceGroup avatarUrls={avatarUrls} dragPreview={dragPreview} setDragPreview={setDragPreview} title="People" count={peopleRows.length} icon={UsersRound} rows={peopleRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
+        <ResourceGroup dragPreview={dragPreview} setDragPreview={setDragPreview} title="Equipment" count={equipmentRows.length} icon={Truck} rows={equipmentRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
       </div>
     </>
   );
@@ -2884,12 +3181,12 @@ function PeopleView({ avatarUrls = {}, people, onApprove, onSelect, pendingPeopl
               <strong>{profileDisplayName(person, "Unnamed user")}</strong>
               <small className="personMetaLine">
                 <span>{roleLabel(person.role)}</span>
-                {person.peopleStatus?.tone === "active" && <em className="resourceStatusChip active">Active</em>}
+                {person.peopleStatus && <em className={`resourceStatusChip ${person.peopleStatus.tone}`}>{person.peopleStatus.label}</em>}
               </small>
               <small>{person.phone || person.email || "No contact info"}</small>
             </span>
           </button>
-          <em>{person.peopleStatus?.label || roleLabel(person.role)}</em>
+          <em>{person.trade || roleLabel(person.role)}</em>
         </div>
       ))}
     </div>
@@ -2915,6 +3212,48 @@ function EquipmentView({ equipment }) {
 }
 
 function DocumentsView({ files, onOpen, profiles, projects }) {
+  const groups = [
+    { id: "safety", label: "Safety Forms", icon: FileText, items: files.filter((file) => file.file_type === "safety_form") },
+    { id: "before", label: "Before Photos", icon: Camera, items: files.filter((file) => file.file_type === "before_photo") },
+    { id: "after", label: "After Photos", icon: Camera, items: files.filter((file) => file.file_type === "completion_photo") },
+    { id: "pdf", label: "PDFs", icon: FileText, items: files.filter((file) => file.file_kind === "pdf" && file.file_type !== "safety_form") },
+    { id: "excel", label: "Excel", icon: FileSpreadsheet, items: files.filter((file) => file.file_kind === "excel") },
+    { id: "other", label: "Other", icon: FileText, items: files.filter((file) => !["safety_form", "before_photo", "completion_photo"].includes(file.file_type) && !["pdf", "excel", "photo"].includes(file.file_kind)) },
+  ].filter((group) => group.items.length > 0);
+
+  return (
+    <div className="documentsView groupedDocuments">
+      {files.length === 0 && <div className="emptyState">No documents or photos saved yet.</div>}
+      {groups.map((group) => {
+        const Icon = group.icon;
+        return (
+          <section className={`documentGroup ${group.id}`} key={group.id}>
+            <div className="documentGroupHeader">
+              <Icon size={18} />
+              <h3>{group.label}</h3>
+              <span>{group.items.length}</span>
+            </div>
+            {group.items.map((file) => {
+              const project = projects.find((item) => item.id === file.project_id);
+              const uploader = profiles.find((item) => item.id === file.uploaded_by);
+              return (
+                <button className="documentRow" key={file.id} type="button" onClick={() => onOpen(file)}>
+                  <span className="searchIcon">{file.file_kind === "photo" ? <ImagePlus size={18} /> : file.file_kind === "excel" ? <FileSpreadsheet size={18} /> : <FileText size={18} />}</span>
+                  <span>
+                    <strong>{file.file_name}</strong>
+                    <small>{project?.name || "Project"} / {file.file_type?.replaceAll("_", " ")} / {uploader?.full_name || uploader?.email || "Unknown"} / {new Date(file.created_at).toLocaleString()}</small>
+                  </span>
+                </button>
+              );
+            })}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function DocumentsViewLegacy({ files, onOpen, profiles, projects }) {
   return (
     <div className="documentsView">
       {files.length === 0 && <div className="emptyState">No documents or photos saved yet.</div>}
@@ -3308,7 +3647,7 @@ function AuthGate({
   );
 }
 
-function ResourceGroup({ avatarUrls = {}, title, count, icon: Icon, rows, onDropAssignment, onSelect }) {
+function ResourceGroup({ avatarUrls = {}, dragPreview, setDragPreview, title, count, icon: Icon, rows, onDropAssignment, onSelect }) {
   return (
     <div className="resourceGroup">
       <div className="groupLabel">
@@ -3339,14 +3678,34 @@ function ResourceGroup({ avatarUrls = {}, title, count, icon: Icon, rows, onDrop
 
           <div
             className="rowTrack"
-            onDragOver={(event) => event.preventDefault()}
+            onDragLeave={() => setDragPreview?.(null)}
+            onDragOver={(event) => {
+              event.preventDefault();
+              const raw = event.dataTransfer.getData("application/json");
+              if (!raw) return;
+              const assignment = JSON.parse(raw);
+              const rect = event.currentTarget.getBoundingClientRect();
+              const percent = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+              const duration = Math.max(0.25, assignment.end - assignment.start);
+              const rawStart = scheduleStartHour + percent * (scheduleEndHour - scheduleStartHour);
+              const start = Math.min(scheduleEndHour - duration, Math.max(scheduleStartHour, Math.round(rawStart * 4) / 4));
+              const end = start + duration;
+              setDragPreview?.({
+                rowId: row.id,
+                left: ((start - scheduleStartHour) / (scheduleEndHour - scheduleStartHour)) * 100,
+                width: ((end - start) / (scheduleEndHour - scheduleStartHour)) * 100,
+                label: `${toTimeValue(start)} - ${toTimeValue(end)}`,
+              });
+            }}
             onDrop={(event) => {
               event.preventDefault();
               const raw = event.dataTransfer.getData("application/json");
               if (!raw) return;
+              setDragPreview?.(null);
               onDropAssignment?.({ assignment: JSON.parse(raw), row, clientX: event.clientX, trackElement: event.currentTarget });
             }}
           >
+            {dragPreview?.rowId === row.id && <div className="dragPreview" style={{ left: `${dragPreview.left}%`, width: `${dragPreview.width}%` }}>{dragPreview.label}</div>}
             {row.assignments.map((assignment) => (
               <ScheduleBlock assignment={assignment} key={assignment.id} onSelect={onSelect} />
             ))}
@@ -3358,8 +3717,9 @@ function ResourceGroup({ avatarUrls = {}, title, count, icon: Icon, rows, onDrop
 }
 
 function ScheduleBlock({ assignment, onSelect }) {
-  const left = Math.max(0, ((assignment.start - 7) / 11) * 100);
-  const width = Math.min(100 - left, ((assignment.end - assignment.start) / 11) * 100);
+  const span = scheduleEndHour - scheduleStartHour;
+  const left = Math.max(0, ((assignment.start - scheduleStartHour) / span) * 100);
+  const width = Math.min(100 - left, ((assignment.end - assignment.start) / span) * 100);
 
   return (
     <button
@@ -3380,6 +3740,89 @@ function ScheduleBlock({ assignment, onSelect }) {
       <span>{assignment.subtitle}</span>
       {assignment.timeText && <small>{assignment.timeText}</small>}
     </button>
+  );
+}
+
+function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading, onAnnotate, onCancelAnnotate, onDelete, onDownload, onSaveAnnotation, onSelect, onZoom, profiles = [], zoom }) {
+  const uploader = profiles.find((person) => person.id === attachment.uploaded_by);
+  const history = Array.isArray(attachment.annotation_history) ? attachment.annotation_history : [];
+
+  if (isAnnotating) {
+    return (
+      <div className="photoAnnotatorPanel">
+        <div className="viewerTopBar">
+          <div>
+            <strong>Annotate photo</strong>
+            <small>Draw, add shapes or text, then save to replace the original.</small>
+          </div>
+          <button className="outlineButton" type="button" onClick={onCancelAnnotate}>
+            <X size={17} />
+            Cancel
+          </button>
+        </div>
+        <PhotoAnnotator imageUrl={attachment.viewUrl} onSave={onSaveAnnotation} />
+      </div>
+    );
+  }
+
+  return (
+    <section className="photoViewer">
+      <div className="viewerTopBar">
+        <div>
+          <strong>{attachment.file_name}</strong>
+          <small>{uploader?.full_name || uploader?.email || "Unknown"} / {new Date(attachment.created_at).toLocaleString()}</small>
+        </div>
+        <div className="viewerControls">
+          <button type="button" title="Zoom out" onClick={() => onZoom(Math.max(0.65, zoom - 0.15))}>
+            <ZoomOut size={17} />
+          </button>
+          <span>{Math.round(zoom * 100)}%</span>
+          <button type="button" title="Zoom in" onClick={() => onZoom(Math.min(2.4, zoom + 0.15))}>
+            <ZoomIn size={17} />
+          </button>
+          <button type="button" title="Download" onClick={onDownload}>
+            <Download size={17} />
+          </button>
+          <button type="button" title="Annotate" onClick={onAnnotate}>
+            <Edit3 size={17} />
+          </button>
+          {canDelete && (
+            <button className="dangerIcon" type="button" title="Delete photo" disabled={loading} onClick={onDelete}>
+              <Trash2 size={17} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="photoStage">
+        <img src={attachment.viewUrl} alt={attachment.file_name || "Visit photo"} style={{ transform: `scale(${zoom})` }} />
+      </div>
+
+      <div className="filmstrip">
+        {items.map((item) => (
+          <button className={item.id === attachment.id ? "active" : ""} key={item.id} type="button" onClick={() => onSelect(item)}>
+            <img src={item.thumbnailUrl || item.viewUrl} alt="" />
+          </button>
+        ))}
+      </div>
+
+      <div className="annotationHistory">
+        <h3>Annotation History</h3>
+        {history.length === 0 ? (
+          <div className="emptyPanelState">No annotations saved yet.</div>
+        ) : (
+          history.map((entry, index) => (
+            <div className="historyRow" key={`${entry.at}-${index}`}>
+              <Edit3 size={15} />
+              <span>
+                <strong>{entry.action?.replaceAll("_", " ") || "Annotation saved"}</strong>
+                <small>{new Date(entry.at).toLocaleString()} / {entry.objectCount ?? 0} object(s)</small>
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
   );
 }
 

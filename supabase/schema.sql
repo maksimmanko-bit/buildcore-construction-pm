@@ -43,8 +43,10 @@ create table if not exists public.profiles (
   role public.app_role not null default 'builder',
   trade text,
   phone text,
+  availability_status text not null default 'available',
   is_active boolean not null default true,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint profiles_availability_status_check check (availability_status in ('available', 'not_available'))
 );
 
 create table if not exists public.owner_invites (
@@ -137,6 +139,7 @@ create table if not exists public.visit_files (
   file_kind text not null default 'photo',
   mime_type text,
   annotation_json jsonb,
+  annotation_history jsonb not null default '[]'::jsonb,
   search_text text,
   search_vector tsvector generated always as (to_tsvector('english', coalesce(file_name, '') || ' ' || coalesce(search_text, ''))) stored,
   created_at timestamptz not null default now()
@@ -146,6 +149,21 @@ create index if not exists projects_company_idx on public.projects(company_id);
 create index if not exists equipment_company_idx on public.equipment(company_id);
 create index if not exists visits_company_date_idx on public.visits(company_id, visit_date);
 create index if not exists visit_files_search_idx on public.visit_files using gin(search_vector);
+
+create table if not exists public.visit_activity (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  project_id uuid not null references public.projects(id) on delete cascade,
+  visit_id uuid not null references public.visits(id) on delete cascade,
+  actor_id uuid references public.profiles(id),
+  activity_type text not null,
+  message text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists visit_activity_visit_idx on public.visit_activity(visit_id, created_at desc);
+create index if not exists visit_activity_project_idx on public.visit_activity(project_id, created_at desc);
 
 create or replace function public.current_profile()
 returns public.profiles
@@ -409,6 +427,29 @@ as $$
   select public.current_role() in ('owner', 'project_manager', 'office_manager');
 $$;
 
+create or replace function public.protect_profile_self_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() = new.id and not public.can_manage() then
+    if new.company_id is distinct from old.company_id
+      or new.role is distinct from old.role
+      or new.is_active is distinct from old.is_active
+      or new.trade is distinct from old.trade
+      or new.availability_status is distinct from old.availability_status
+      or new.claimed_by is distinct from old.claimed_by
+      or new.claimed_at is distinct from old.claimed_at then
+      raise exception 'Only managers can update role, trade, access, and availability fields.';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
@@ -423,6 +464,11 @@ drop trigger if exists touch_projects_updated_at on public.projects;
 create trigger touch_projects_updated_at
 before update on public.projects
 for each row execute function public.touch_updated_at();
+
+drop trigger if exists protect_profile_self_update_trigger on public.profiles;
+create trigger protect_profile_self_update_trigger
+before update on public.profiles
+for each row execute function public.protect_profile_self_update();
 
 create or replace view public.visit_schedule_view
 with (security_invoker = true) as
@@ -633,6 +679,7 @@ alter table public.visits enable row level security;
 alter table public.visit_people enable row level security;
 alter table public.visit_equipment enable row level security;
 alter table public.visit_files enable row level security;
+alter table public.visit_activity enable row level security;
 
 drop policy if exists "company members read company" on public.companies;
 create policy "company members read company" on public.companies
@@ -754,6 +801,27 @@ for update to authenticated
 using (company_id = public.current_company_id() and public.can_manage())
 with check (company_id = public.current_company_id() and public.can_manage());
 
+drop policy if exists "members update own visit files" on public.visit_files;
+create policy "members update own visit files" on public.visit_files
+for update to authenticated
+using (company_id = public.current_company_id() and (uploaded_by = auth.uid() or public.can_manage()))
+with check (company_id = public.current_company_id() and (uploaded_by = auth.uid() or public.can_manage()));
+
+drop policy if exists "members delete own visit files" on public.visit_files;
+create policy "members delete own visit files" on public.visit_files
+for delete to authenticated
+using (company_id = public.current_company_id() and (uploaded_by = auth.uid() or public.can_manage()));
+
+drop policy if exists "members read visit activity" on public.visit_activity;
+create policy "members read visit activity" on public.visit_activity
+for select to authenticated
+using (company_id = public.current_company_id());
+
+drop policy if exists "members add visit activity" on public.visit_activity;
+create policy "members add visit activity" on public.visit_activity
+for insert to authenticated
+with check (company_id = public.current_company_id());
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
   ('visit-photos', 'visit-photos', false, 52428800, array['image/jpeg', 'image/png', 'image/webp']),
@@ -793,6 +861,26 @@ with check (
   bucket_id in ('visit-photos', 'project-documents', 'profile-avatars')
   and split_part(name, '/', 1)::uuid = public.current_company_id()
   and public.can_manage()
+);
+
+drop policy if exists "company members update storage objects" on storage.objects;
+create policy "company members update storage objects" on storage.objects
+for update to authenticated
+using (
+  bucket_id in ('visit-photos', 'project-documents', 'profile-avatars')
+  and split_part(name, '/', 1)::uuid = public.current_company_id()
+)
+with check (
+  bucket_id in ('visit-photos', 'project-documents', 'profile-avatars')
+  and split_part(name, '/', 1)::uuid = public.current_company_id()
+);
+
+drop policy if exists "company members delete storage objects" on storage.objects;
+create policy "company members delete storage objects" on storage.objects
+for delete to authenticated
+using (
+  bucket_id in ('visit-photos', 'project-documents', 'profile-avatars')
+  and split_part(name, '/', 1)::uuid = public.current_company_id()
 );
 
 insert into public.owner_invites (email, company_name, full_name, is_active)

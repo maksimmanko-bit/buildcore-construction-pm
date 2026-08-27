@@ -3234,3 +3234,385 @@ textarea:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+.scheduleArea > * {
+  animation: pageShiftIn 0.34s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pageShiftIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.detailPanel,
+.searchPanel,
+.modal {
+  animation: springOverlayIn 0.44s cubic-bezier(0.18, 1.22, 0.24, 1);
+}
+
+.modalBackdrop {
+  z-index: 70;
+}
+
+.modalBackdrop .modal {
+  position: relative;
+  z-index: 71;
+}
+
+@keyframes springOverlayIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.densityTabs {
+  display: inline-flex;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.densityTabs button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.densityTabs button.active {
+  background: #111827;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+}
+
+.timelineHeader {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+}
+
+.timelineCard {
+  scroll-behavior: smooth;
+}
+
+.timelineCard.density-compact .resourceRow {
+  min-height: 66px;
+}
+
+.timelineCard.density-compact .resourceIdentity {
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.timelineCard.density-compact .avatar,
+.timelineCard.density-compact .equipmentAvatar {
+  width: 38px;
+  height: 38px;
+  font-size: 11px;
+}
+
+.timelineCard.density-compact .scheduleBlock {
+  top: 8px;
+  bottom: 8px;
+  gap: 2px;
+  padding: 0 10px;
+  border-radius: 10px;
+}
+
+.nowLine,
+.nowPill {
+  left: calc(var(--resource-col) + var(--now-ratio) * (100% - var(--resource-col)));
+}
+
+.resourceStatusChip.notAvailable {
+  border-color: rgba(239, 68, 68, 0.18);
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.dragPreview {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  min-width: 92px;
+  border: 1px dashed rgba(23, 105, 255, 0.7);
+  border-radius: 12px;
+  background: rgba(23, 105, 255, 0.09);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 900;
+  pointer-events: none;
+}
+
+.groupedDocuments {
+  display: grid;
+  gap: 18px;
+}
+
+.documentGroup {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.045);
+}
+
+.documentGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.92), rgba(255, 255, 255, 0.72));
+}
+
+.documentGroupHeader h3 {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+}
+
+.documentGroupHeader span,
+.attachmentSection h3 span {
+  display: inline-grid;
+  min-width: 26px;
+  min-height: 26px;
+  place-items: center;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.attachmentSection h3 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.attachmentSection h3 span {
+  margin-left: auto;
+}
+
+.activityFeed {
+  margin-top: 18px;
+}
+
+.activityList {
+  display: grid;
+  gap: 10px;
+}
+
+.activityItem {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.8);
+}
+
+.activityIcon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 11px;
+  background: #eef2ff;
+  color: #1d4ed8;
+}
+
+.activityItem strong,
+.activityItem small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activityItem small {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.photoViewer,
+.photoAnnotatorPanel {
+  display: grid;
+  gap: 14px;
+  width: min(1040px, 100%);
+}
+
+.viewerTopBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.82);
+}
+
+.viewerTopBar strong,
+.viewerTopBar small {
+  display: block;
+}
+
+.viewerTopBar small {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.viewerControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.viewerControls button {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fff;
+  color: #0f172a;
+}
+
+.viewerControls span {
+  min-width: 54px;
+  text-align: center;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.photoStage {
+  display: grid;
+  place-items: center;
+  height: min(60vh, 620px);
+  overflow: hidden;
+  border-radius: 18px;
+  background: #090e18;
+}
+
+.photoStage img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: center center;
+}
+
+.filmstrip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 2px 8px;
+}
+
+.filmstrip button {
+  flex: 0 0 86px;
+  height: 62px;
+  overflow: hidden;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: #e2e8f0;
+}
+
+.filmstrip button.active {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px rgba(23, 105, 255, 0.12);
+}
+
+.filmstrip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.annotationHistory {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.annotationHistory h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.historyRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  color: #334155;
+}
+
+.historyRow span,
+.historyRow strong,
+.historyRow small {
+  display: block;
+}
+
+.historyRow small {
+  color: #64748b;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .calendarToolbar {
+    align-items: stretch;
+  }
+
+  .densityTabs {
+    order: 2;
+    width: 100%;
+  }
+
+  .densityTabs button {
+    flex: 1;
+  }
+
+  .viewerTopBar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .viewerControls {
+    justify-content: flex-start;
+  }
+}
