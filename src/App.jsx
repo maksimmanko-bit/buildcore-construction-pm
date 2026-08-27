@@ -551,6 +551,7 @@ export default function App() {
 
   const isLive = Boolean(session && profile?.is_active);
   const canManage = Boolean(profile?.is_active && ["owner", "project_manager", "office_manager"].includes(profile?.role));
+  const canDeleteTickets = Boolean(profile?.is_active && profile?.role !== "builder");
   const visibleNavItems = canManage ? navItems : navItems.filter((item) => !["people", "equipment"].includes(item.id));
   const currentUserName = profile?.full_name || session?.user?.email || "James Carter";
 
@@ -1633,24 +1634,28 @@ export default function App() {
     }
   }
 
-  async function deleteVisit() {
-    if (!supabase || !currentVisit?.id || !canManage) {
-      setNotice("Select a live visit and sign in as Owner, PM, or Office Manager.");
+  async function deleteVisit(visitToDelete = currentVisit) {
+    if (!supabase || !visitToDelete?.id || !canDeleteTickets) {
+      setNotice("Select a live visit and sign in with a non-Builder role.");
       return;
     }
 
-    const confirmed = window.confirm(`Remove visit "${selectedProject?.name ?? "Project"}" from the schedule?`);
+    const project = rowsSource.projects.find((item) => item.id === visitToDelete.project_id) ?? selectedProject;
+    const confirmed = window.confirm(`Remove ticket for "${project?.name ?? "Project"}" on ${formatDateLabel(visitToDelete.visit_date)}?\n\nThis will also remove its Activity Feed history.`);
     if (!confirmed) return;
 
-    const { error } = await supabase.from("visits").delete().eq("id", currentVisit.id);
+    const { error } = await supabase.from("visits").delete().eq("id", visitToDelete.id);
     if (error) {
       setNotice(error.message);
       return;
     }
 
     setSelectedAssignmentId("");
-    setSelectedVisitId("");
-    setNotice("Visit removed from schedule.");
+    if (selectedVisitId === visitToDelete.id) setSelectedVisitId("");
+    if (workflowVisitId === visitToDelete.id) setWorkflowVisitId("");
+    if (photoStep.visitId === visitToDelete.id) setPhotoStep({ kind: "", visitId: "", files: [] });
+    if (detailOverlay === "visit") setDetailOverlay(project ? "project" : "");
+    setNotice("Ticket and Activity Feed removed.");
     refreshData();
   }
 
@@ -2098,6 +2103,7 @@ export default function App() {
         equipmentRows={equipmentRows}
         peopleRows={peopleRows}
         avatarUrls={avatarUrls}
+        canDeleteTickets={canDeleteTickets}
         projects={rowsSource.projects}
         scheduleMode={scheduleMode}
         selectedDate={selectedDate}
@@ -2106,6 +2112,7 @@ export default function App() {
         visits={rowsSource.visits ?? []}
         onAdd={openAddModal}
         onDropAssignment={moveVisitAssignment}
+        onRemoveVisit={deleteVisit}
         onSelect={selectAssignment}
       />
     );
@@ -2276,29 +2283,35 @@ export default function App() {
               ) : (
                 <div className="projectVisitList">
                   {selectedProjectVisits.slice(0, 8).map((visit) => (
-                    <button
-                      className={currentVisit?.id === visit.id ? "projectVisitItem active" : "projectVisitItem"}
-                      key={visit.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedVisitId(visit.id);
-                        setSelectedDate(visit.visit_date);
-                      }}
-                    >
-                      <span>
-                        <strong>{formatDateLabel(visit.visit_date)}</strong>
-                        <small>
-                          {String(visit.start_time).slice(0, 5)} - {String(visit.end_time).slice(0, 5)} · {normalizeStatus(visit.status)}
-                        </small>
-                      </span>
-                      <Edit3
-                        size={16}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          editVisit(visit);
+                    <div className={currentVisit?.id === visit.id ? "projectVisitItem active" : "projectVisitItem"} key={visit.id}>
+                      <button
+                        className="projectVisitMain"
+                        type="button"
+                        onClick={() => {
+                          setSelectedVisitId(visit.id);
+                          setSelectedDate(visit.visit_date);
                         }}
-                      />
-                    </button>
+                      >
+                        <span>
+                          <strong>{formatDateLabel(visit.visit_date)}</strong>
+                          <small>
+                            {String(visit.start_time).slice(0, 5)} - {String(visit.end_time).slice(0, 5)} · {normalizeStatus(visit.status)}
+                          </small>
+                        </span>
+                      </button>
+                      <div className="visitMiniActions">
+                        {canManage && (
+                          <button type="button" title="Edit ticket" onClick={() => editVisit(visit)}>
+                            <Edit3 size={16} />
+                          </button>
+                        )}
+                        {canDeleteTickets && (
+                          <button className="dangerMini" type="button" title="Remove ticket" onClick={() => deleteVisit(visit)}>
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
@@ -2313,10 +2326,12 @@ export default function App() {
                 <CheckCircle2 size={18} />
                 Complete
               </button>
-              <button className="dangerAction" type="button" disabled={!currentVisit?.id} onClick={deleteVisit}>
-                <Trash2 size={18} />
-                Remove
-              </button>
+              {canDeleteTickets && (
+                <button className="dangerAction" type="button" disabled={!currentVisit?.id} onClick={() => deleteVisit(currentVisit)}>
+                  <Trash2 size={18} />
+                  Remove
+                </button>
+              )}
             </div>
 
             <div className="panelActions">
@@ -2396,6 +2411,7 @@ export default function App() {
 
         {detailOverlay === "project" && selectedProject && (
           <ProjectDetailOverlay
+            canDeleteTickets={canDeleteTickets}
             canManage={canManage}
             currentVisit={currentVisit}
             files={projectAttachments}
@@ -2406,6 +2422,7 @@ export default function App() {
             onEditVisit={editVisit}
             onOpenAttachment={openAttachment}
             onOpenVisit={openVisitOverlay}
+            onRemoveVisit={deleteVisit}
             people={rowsSource.people}
             project={selectedProject}
             activities={selectedProjectActivities}
@@ -2415,6 +2432,7 @@ export default function App() {
 
         {detailOverlay === "visit" && selectedProject && currentVisit && (
           <VisitDetailOverlay
+            canDeleteTickets={canDeleteTickets}
             equipment={currentVisitEquipment}
             files={currentVisitFiles}
             getProfileName={getProfileName}
@@ -2746,7 +2764,7 @@ function DetailOverlayShell({ children, onClose, title }) {
   );
 }
 
-function ProjectDetailOverlay({ activities = [], canManage, currentVisit, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onOpenAttachment, onOpenVisit, people, project, visits }) {
+function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, currentVisit, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onOpenAttachment, onOpenVisit, onRemoveVisit, people, project, visits }) {
   return (
     <DetailOverlayShell title={project.name} onClose={onClose}>
       <div className="detailHero projectDetailHeroTextOnly">
@@ -2790,24 +2808,29 @@ function ProjectDetailOverlay({ activities = [], canManage, currentVisit, files,
         ) : (
           <div className="detailVisitGrid">
             {visits.map((visit) => (
-              <button className={currentVisit?.id === visit.id ? "detailVisitCard active" : "detailVisitCard"} key={visit.id} type="button" onClick={() => onOpenVisit(visit)}>
-                <span>
-                  <strong>{formatDateLabel(visit.visit_date)}</strong>
-                  <small>
-                    {String(visit.start_time).slice(0, 5)} - {String(visit.end_time).slice(0, 5)}
-                  </small>
-                </span>
-                <em>{normalizeVisitStatus(visit.status)}</em>
-                {canManage && (
-                  <Edit3
-                    size={16}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onEditVisit(visit);
-                    }}
-                  />
-                )}
-              </button>
+              <div className={currentVisit?.id === visit.id ? "detailVisitCard active" : "detailVisitCard"} key={visit.id}>
+                <button className="detailVisitMain" type="button" onClick={() => onOpenVisit(visit)}>
+                  <span>
+                    <strong>{formatDateLabel(visit.visit_date)}</strong>
+                    <small>
+                      {String(visit.start_time).slice(0, 5)} - {String(visit.end_time).slice(0, 5)}
+                    </small>
+                  </span>
+                  <em>{normalizeVisitStatus(visit.status)}</em>
+                </button>
+                <div className="visitMiniActions">
+                  {canManage && (
+                    <button type="button" title="Edit ticket" onClick={() => onEditVisit(visit)}>
+                      <Edit3 size={16} />
+                    </button>
+                  )}
+                  {canDeleteTickets && (
+                    <button className="dangerMini" type="button" title="Remove ticket" onClick={() => onRemoveVisit(visit)}>
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
         )}
@@ -2866,7 +2889,7 @@ function ActivityFeed({ activities = [], getProfileName, visits = [] }) {
   );
 }
 
-function VisitDetailOverlay({ equipment, files, getProfileName, onArrive, onClose, onComplete, onEdit, onOpenAttachment, onRemove, people, profiles, project, visit }) {
+function VisitDetailOverlay({ canDeleteTickets, equipment, files, getProfileName, onArrive, onClose, onComplete, onEdit, onOpenAttachment, onRemove, people, profiles, project, visit }) {
   return (
     <DetailOverlayShell title={`${project.name} Ticket`} onClose={onClose}>
       <div className="ticketHeaderCard">
@@ -2880,10 +2903,12 @@ function VisitDetailOverlay({ equipment, files, getProfileName, onArrive, onClos
             <Edit3 size={17} />
             Edit
           </button>
-          <button className="dangerAction" type="button" onClick={onRemove}>
-            <Trash2 size={17} />
-            Remove
-          </button>
+          {canDeleteTickets && (
+            <button className="dangerAction" type="button" onClick={() => onRemove(visit)}>
+              <Trash2 size={17} />
+              Remove
+            </button>
+          )}
         </div>
       </div>
 
@@ -3201,7 +3226,7 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
   );
 }
 
-function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows, projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onDropAssignment, onSelect }) {
+function ScheduleView({ assignmentsReady, avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onDropAssignment, onRemoveVisit, onSelect }) {
   const [dragPreview, setDragPreview] = useState(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(selectedDate);
@@ -3298,8 +3323,8 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
           )}
           {!assignmentsReady && <div className="emptyTimeline">No visits scheduled for this day.</div>}
 
-          <ResourceGroup avatarUrls={avatarUrls} dragPreview={dragPreview} setDragPreview={setDragPreview} title="People" count={peopleRows.length} icon={UsersRound} rows={peopleRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
-          <ResourceGroup dragPreview={dragPreview} setDragPreview={setDragPreview} title="Equipment" count={equipmentRows.length} icon={Truck} rows={equipmentRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
+          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} setDragPreview={setDragPreview} title="People" count={peopleRows.length} icon={UsersRound} rows={peopleRows} selectedDate={selectedDate} visits={visits} onDropAssignment={onDropAssignment} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
+          <ResourceGroup canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} setDragPreview={setDragPreview} title="Equipment" count={equipmentRows.length} icon={Truck} rows={equipmentRows} selectedDate={selectedDate} visits={visits} onDropAssignment={onDropAssignment} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
         </div>
       ) : (
         <CalendarTileGrid equipment={equipmentRows} mode={scheduleMode} people={peopleRows} projects={projects} selectedDate={selectedDate} today={today} visits={visits} onSelectDay={openDay} />
@@ -3699,6 +3724,7 @@ function OverviewView({ getProfileName, getVisitFiles, onArrive, onComplete, onO
             <p>{visit.work_scope || "Today's scheduled work"}</p>
 
             <dl className="detailFacts compact">
+              <ProjectFact icon={Calendar} label="Ticket Date" value={formatDateLabel(visit.visit_date)} />
               <ProjectFact
                 icon={MapPin}
                 label="Address"
@@ -4033,7 +4059,7 @@ function AuthGate({
   );
 }
 
-function ResourceGroup({ avatarUrls = {}, dragPreview, setDragPreview, title, count, icon: Icon, rows, onDropAssignment, onSelect }) {
+function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onDropAssignment, onRemoveVisit, onSelect }) {
   return (
     <div className="resourceGroup">
       <div className="groupLabel">
@@ -4092,9 +4118,14 @@ function ResourceGroup({ avatarUrls = {}, dragPreview, setDragPreview, title, co
             }}
           >
             {dragPreview?.rowId === row.id && <div className="dragPreview" style={{ left: `${dragPreview.left}%`, width: `${dragPreview.width}%` }}>{dragPreview.label}</div>}
-            {row.assignments.map((assignment) => (
-              <ScheduleBlock assignment={assignment} key={assignment.id} onSelect={onSelect} />
-            ))}
+            {row.assignments.map((assignment) => {
+              const visit = visits.find((item) => item.id === assignment.visitId) ?? {
+                id: assignment.visitId,
+                project_id: assignment.projectId,
+                visit_date: selectedDate,
+              };
+              return <ScheduleBlock assignment={assignment} canDeleteTickets={canDeleteTickets} key={assignment.id} onRemove={() => onRemoveVisit?.(visit)} onSelect={onSelect} />;
+            })}
           </div>
         </div>
       ))}
@@ -4102,30 +4133,51 @@ function ResourceGroup({ avatarUrls = {}, dragPreview, setDragPreview, title, co
   );
 }
 
-function ScheduleBlock({ assignment, onSelect }) {
+function ScheduleBlock({ assignment, canDeleteTickets, onRemove, onSelect }) {
   const span = scheduleEndHour - scheduleStartHour;
   const left = Math.max(0, ((assignment.start - scheduleStartHour) / span) * 100);
   const width = Math.min(100 - left, ((assignment.end - assignment.start) / span) * 100);
+  const openAssignment = () => onSelect(assignment);
 
   return (
-    <button
+    <div
       className={`scheduleBlock ${assignment.color} ${assignment.status ?? ""}`}
       draggable={Boolean(assignment.visitId)}
+      role="button"
       style={{ left: `${left}%`, width: `${width}%` }}
-      type="button"
-      onClick={() => onSelect(assignment)}
+      tabIndex={0}
+      onClick={openAssignment}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("application/json", JSON.stringify(assignment));
       }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        openAssignment();
+      }}
     >
       <span className="scheduleBlockTop">
         <strong>{assignment.title}</strong>
-        {assignment.status && <em>{normalizeVisitStatus(assignment.status)}</em>}
       </span>
       <span>{assignment.subtitle}</span>
       {assignment.timeText && <small>{assignment.timeText}</small>}
-    </button>
+      {assignment.status && <em className="scheduleBlockStatus">{normalizeVisitStatus(assignment.status)}</em>}
+      {canDeleteTickets && assignment.visitId && (
+        <button
+          className="scheduleDeleteButton"
+          type="button"
+          title="Remove ticket"
+          draggable={false}
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemove?.();
+          }}
+        >
+          <Trash2 size={14} />
+        </button>
+      )}
+    </div>
   );
 }
 

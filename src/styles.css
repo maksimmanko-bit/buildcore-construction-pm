@@ -789,7 +789,7 @@ h1 {
 
 .detailVisitCard {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   min-height: 74px;
@@ -798,6 +798,19 @@ h1 {
   border-radius: 13px;
   background: rgba(255, 255, 255, 0.75);
   color: var(--ink);
+  text-align: left;
+}
+
+.detailVisitMain {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
   text-align: left;
 }
 
@@ -823,6 +836,39 @@ h1 {
 .detailVisitCard small {
   margin-top: 5px;
   color: var(--muted);
+}
+
+.visitMiniActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.visitMiniActions button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #334155;
+}
+
+.visitMiniActions button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(23, 105, 255, 0.24);
+  color: #1d4ed8;
+}
+
+.visitMiniActions .dangerMini {
+  color: #b91c1c;
+}
+
+.visitMiniActions .dangerMini:hover {
+  border-color: rgba(185, 28, 28, 0.22);
+  background: rgba(254, 226, 226, 0.72);
+  color: #991b1b;
 }
 
 .ticketStatus {
@@ -1553,10 +1599,10 @@ h1 {
 }
 
 .resourceTitleLine {
-  display: flex;
+  display: grid;
   min-width: 0;
-  align-items: center;
-  gap: 8px;
+  align-items: start;
+  gap: 5px;
 }
 
 .resourceTitleLine strong {
@@ -1569,6 +1615,8 @@ h1 {
 .resourceStatusChip {
   display: inline-grid;
   flex: 0 0 auto;
+  justify-self: start;
+  max-width: 100%;
   min-height: 24px;
   place-items: center;
   padding: 0 9px;
@@ -1662,10 +1710,10 @@ h1 {
   top: 12px;
   bottom: 12px;
   display: grid;
-  align-content: center;
-  gap: 5px;
+  align-content: start;
+  gap: 3px;
   min-width: 120px;
-  padding: 0 14px;
+  padding: 7px 34px 7px 14px;
   overflow: hidden;
   border: 1px solid rgba(15, 23, 42, 0.07);
   border-radius: 12px;
@@ -1698,26 +1746,30 @@ h1 {
 .scheduleBlock strong,
 .scheduleBlock span,
 .scheduleBlock small,
-.scheduleBlockTop em {
+.scheduleBlockStatus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .scheduleBlockTop {
-  display: flex;
+  display: block;
   min-width: 0;
-  align-items: center;
-  gap: 8px;
 }
 
 .scheduleBlockTop strong {
+  display: block;
   min-width: 0;
+  line-height: 1.15;
 }
 
-.scheduleBlockTop em {
-  flex: 0 1 auto;
-  max-width: 82px;
+.scheduleBlockStatus {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 17px;
+  align-items: center;
+  margin-top: 1px;
   padding: 3px 7px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.58);
@@ -1725,6 +1777,36 @@ h1 {
   font-size: 10px;
   font-style: normal;
   font-weight: 900;
+  line-height: 1;
+}
+
+.scheduleDeleteButton {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(185, 28, 28, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.64);
+  color: #b91c1c;
+  opacity: 0;
+  transition:
+    opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.scheduleBlock:hover .scheduleDeleteButton,
+.scheduleDeleteButton:focus-visible {
+  opacity: 1;
+}
+
+.scheduleDeleteButton:hover {
+  background: rgba(254, 226, 226, 0.88);
+  transform: translateY(-1px);
 }
 
 .scheduleBlock strong {
@@ -2075,7 +2157,7 @@ h1 {
 
 .projectVisitItem {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 24px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -2085,6 +2167,16 @@ h1 {
   border-radius: 11px;
   background: rgba(255, 255, 255, 0.74);
   color: var(--ink);
+  text-align: left;
+}
+
+.projectVisitMain {
+  display: grid;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
   text-align: left;
 }
 
