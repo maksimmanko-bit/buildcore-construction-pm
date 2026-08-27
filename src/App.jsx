@@ -217,6 +217,7 @@ const emptyVisitForm = {
   start_time: "07:00",
   end_time: "17:00",
   work_scope: "",
+  work_scopes: [""],
   is_first_visit: false,
   people_ids: [],
   equipment_ids: [],
@@ -373,6 +374,11 @@ function collectBusinessDates(startDate, count) {
   return dates;
 }
 
+function normalizeWorkScopes(scopes, count, fallback = "") {
+  const values = Array.isArray(scopes) ? scopes : [];
+  return Array.from({ length: Math.max(1, count) }, (_, index) => values[index] ?? (index === 0 ? fallback : ""));
+}
+
 function getWeekDates(value) {
   const date = new Date(`${value}T12:00:00`);
   const day = date.getDay();
@@ -387,15 +393,18 @@ function getWeekDates(value) {
 
 function getMonthDates(value) {
   const date = new Date(`${value}T12:00:00`);
-  const first = new Date(date.getFullYear(), date.getMonth(), 1, 12);
-  const startDay = first.getDay();
-  first.setDate(first.getDate() - (startDay === 0 ? 6 : startDay - 1));
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  return Array.from({ length: 42 }, (_, index) => {
-    const next = new Date(first);
-    next.setDate(first.getDate() + index);
+  return Array.from({ length: daysInMonth }, (_, index) => {
+    const next = new Date(year, month, index + 1, 12);
     return next.toISOString().slice(0, 10);
   });
+}
+
+function formatMonthTitle(value) {
+  return new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(new Date(`${value}T12:00:00`));
 }
 
 function formatShortDate(value) {
@@ -498,7 +507,6 @@ export default function App() {
   const searchInputRef = useRef(null);
   const [activeNav, setActiveNav] = useState("schedule");
   const [scheduleMode, setScheduleMode] = useState("day");
-  const [scheduleDensity, setScheduleDensity] = useState("comfortable");
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [data, setData] = useState({ ...demo, visits: [] });
@@ -854,6 +862,8 @@ export default function App() {
     ...equipment,
     pickerStatus: getEquipmentWorkStatus({ date: visitForm.visit_date, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
   }));
+  const visitFormDates = editingVisitId ? [visitForm.visit_date] : collectBusinessDates(visitForm.visit_date, visitForm.duration_days);
+  const visitWorkScopes = normalizeWorkScopes(visitForm.work_scopes, visitFormDates.length, visitForm.work_scope);
 
   async function applyPendingSignupProfile(nextProfile) {
     if (!supabase || !nextProfile?.id || !nextProfile.company_id || !session?.user?.email) return;
@@ -1093,11 +1103,17 @@ export default function App() {
       project_id: visitForm.project_id,
       start_time: visitForm.start_time,
       end_time: visitForm.end_time,
-      work_scope: visitForm.work_scope,
     };
 
     const createdVisitIds = [];
     const generatedDates = editingVisitId ? [visitForm.visit_date] : collectBusinessDates(visitForm.visit_date, visitForm.duration_days);
+    const workScopes = normalizeWorkScopes(visitForm.work_scopes, generatedDates.length, visitForm.work_scope).map((scope) => scope.trim());
+
+    if (workScopes.some((scope) => !scope)) {
+      setLoading(false);
+      setNotice("Add a Work Scope for every scheduled work day.");
+      return;
+    }
 
     try {
       let firstVisit = null;
@@ -1106,6 +1122,7 @@ export default function App() {
         const visitPayload = {
           ...baseVisitPayload,
           visit_date: visitDate,
+          work_scope: workScopes[index],
           is_first_visit: Boolean(visitForm.is_first_visit && index === 0),
         };
 
@@ -1794,6 +1811,7 @@ export default function App() {
       start_time: String(visit.start_time ?? "07:00").slice(0, 5),
       end_time: String(visit.end_time ?? "17:00").slice(0, 5),
       work_scope: visit.work_scope ?? "",
+      work_scopes: [visit.work_scope ?? ""],
       is_first_visit: Boolean(visit.is_first_visit),
       people_ids: visit.people_ids ?? [],
       equipment_ids: visit.equipment_ids ?? [],
@@ -1936,6 +1954,42 @@ export default function App() {
     });
   }
 
+  function updateVisitStartDate(value) {
+    setVisitForm((current) => {
+      const nextDates = editingVisitId ? [value] : collectBusinessDates(value, current.duration_days);
+      return {
+        ...current,
+        visit_date: value,
+        work_scopes: normalizeWorkScopes(current.work_scopes, nextDates.length, current.work_scope),
+      };
+    });
+  }
+
+  function updateVisitDuration(value) {
+    const durationDays = Math.min(60, Math.max(1, Number(value) || 1));
+    setVisitForm((current) => {
+      const nextDates = collectBusinessDates(current.visit_date, durationDays);
+      return {
+        ...current,
+        duration_days: durationDays,
+        work_scopes: normalizeWorkScopes(current.work_scopes, nextDates.length, current.work_scope),
+      };
+    });
+  }
+
+  function updateVisitWorkScope(index, value) {
+    setVisitForm((current) => {
+      const dates = editingVisitId ? [current.visit_date] : collectBusinessDates(current.visit_date, current.duration_days);
+      const nextScopes = normalizeWorkScopes(current.work_scopes, dates.length, current.work_scope);
+      nextScopes[index] = value;
+      return {
+        ...current,
+        work_scope: index === 0 ? value : current.work_scope,
+        work_scopes: nextScopes,
+      };
+    });
+  }
+
   function renderSearchIcon(result) {
     const fileKind = result.file_kind ?? result.fileKind;
     if (result.type === "file" && fileKind === "pdf") return <FileText className="pdfIcon" size={18} />;
@@ -2046,10 +2100,8 @@ export default function App() {
         avatarUrls={avatarUrls}
         projects={rowsSource.projects}
         scheduleMode={scheduleMode}
-        scheduleDensity={scheduleDensity}
         selectedDate={selectedDate}
         setScheduleMode={setScheduleMode}
-        setScheduleDensity={setScheduleDensity}
         setSelectedDate={setSelectedDate}
         visits={rowsSource.visits ?? []}
         onAdd={openAddModal}
@@ -2496,7 +2548,7 @@ export default function App() {
                 </select>
               </FormField>
               <FormField label="Date">
-                <input required type="date" value={visitForm.visit_date} onChange={(event) => setVisitForm({ ...visitForm, visit_date: event.target.value })} />
+                <input required type="date" value={visitForm.visit_date} onChange={(event) => updateVisitStartDate(event.target.value)} />
               </FormField>
               <FormField label="Work days">
                 <input
@@ -2506,7 +2558,7 @@ export default function App() {
                   required
                   type="number"
                   value={visitForm.duration_days}
-                  onChange={(event) => setVisitForm({ ...visitForm, duration_days: Math.min(60, Math.max(1, Number(event.target.value) || 1)) })}
+                  onChange={(event) => updateVisitDuration(event.target.value)}
                 />
               </FormField>
               <FormField label="Start time">
@@ -2515,12 +2567,17 @@ export default function App() {
               <FormField label="End time">
                 <input required type="time" value={visitForm.end_time} onChange={(event) => setVisitForm({ ...visitForm, end_time: event.target.value })} />
               </FormField>
-              <FormField label="Work scope">
-                <textarea value={visitForm.work_scope} onChange={(event) => setVisitForm({ ...visitForm, work_scope: event.target.value })} />
-              </FormField>
+              <div className="workScopeList">
+                {visitFormDates.map((date, index) => (
+                  <FormField label={visitFormDates.length > 1 ? `Work Scope Day ${index + 1}` : "Work Scope"} key={`${date}-${index}`}>
+                    <span className="scopeDatePill">{formatDateLabel(date)}</span>
+                    <textarea required value={visitWorkScopes[index] ?? ""} placeholder={`Describe work for ${formatShortDate(date)}`} onChange={(event) => updateVisitWorkScope(index, event.target.value)} />
+                  </FormField>
+                ))}
+              </div>
               {!editingVisitId && (
                 <div className="formHint">
-                  {collectBusinessDates(visitForm.visit_date, visitForm.duration_days).join(", ")}
+                  {visitFormDates.join(", ")}
                 </div>
               )}
               <label className="checkLine">
@@ -3144,8 +3201,10 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
   );
 }
 
-function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows, projects = [], scheduleDensity, scheduleMode, selectedDate, setScheduleDensity, setScheduleMode, setSelectedDate, visits = [], onAdd, onDropAssignment, onSelect }) {
+function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows, projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onDropAssignment, onSelect }) {
   const [dragPreview, setDragPreview] = useState(null);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [pickerMonth, setPickerMonth] = useState(selectedDate);
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const nowHour = now.getHours() + now.getMinutes() / 60;
@@ -3161,6 +3220,10 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
     setScheduleMode("day");
   };
   const jumpToToday = () => openDay(new Date().toISOString().slice(0, 10));
+  const toggleCalendar = () => {
+    setPickerMonth(selectedDate);
+    setIsCalendarOpen((value) => !value);
+  };
 
   return (
     <>
@@ -3182,28 +3245,34 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
           </button>
         </div>
 
-        <button className="dateButton" type="button" onClick={jumpToToday}>
+        <div className="dateDisplay" aria-label="Selected schedule date">
           <Calendar size={18} />
-          {formatDateLabel(selectedDate)}
-        </button>
+          <span>{formatDateLabel(selectedDate)}</span>
+        </div>
 
         <div className="toolbarSpacer" />
-
-        <div className="densityTabs" aria-label="Schedule density">
-          {["comfortable", "compact"].map((density) => (
-            <button className={scheduleDensity === density ? "active" : ""} key={density} type="button" onClick={() => setScheduleDensity(density)}>
-              {density === "comfortable" ? "Comfort" : "Compact"}
-            </button>
-          ))}
-        </div>
 
         <button className="outlineButton" type="button" onClick={jumpToToday}>
           Today
         </button>
-        <button className="squareButton" type="button" title="Open calendar" onClick={() => document.querySelector(".hiddenDateInput")?.showPicker?.()}>
-          <Calendar size={18} />
-        </button>
-        <input className="hiddenDateInput" type="date" value={selectedDate} onChange={(event) => openDay(event.target.value)} />
+        <div className="calendarPickerWrap">
+          <button className="squareButton" type="button" title="Open calendar" onClick={toggleCalendar}>
+            <Calendar size={18} />
+          </button>
+          {isCalendarOpen && (
+            <MiniCalendarPicker
+              monthDate={pickerMonth}
+              selectedDate={selectedDate}
+              today={today}
+              onClose={() => setIsCalendarOpen(false)}
+              onMonthChange={setPickerMonth}
+              onSelect={(date) => {
+                openDay(date);
+                setIsCalendarOpen(false);
+              }}
+            />
+          )}
+        </div>
         <button className="addButton" type="button" onClick={onAdd}>
           <Plus size={18} />
           Add
@@ -3211,7 +3280,7 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
       </div>
 
       {scheduleMode === "day" ? (
-        <div className={`timelineCard density-${scheduleDensity}`} style={{ "--now-ratio": nowRatio, "--time-count": timeLabels.length, "--time-span": scheduleEndHour - scheduleStartHour }}>
+        <div className="timelineCard" style={{ "--now-ratio": nowRatio, "--time-count": timeLabels.length, "--time-span": scheduleEndHour - scheduleStartHour }}>
           <div className="timelineHeader">
             <div className="allDay">All Day</div>
             {timeLabels.map((label) => (
@@ -3239,9 +3308,47 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
   );
 }
 
+function MiniCalendarPicker({ monthDate, onClose, onMonthChange, onSelect, selectedDate, today }) {
+  const days = getMonthDates(monthDate);
+  const firstDay = new Date(`${days[0]}T12:00:00`).getDay();
+  const leadingSlots = firstDay === 0 ? 6 : firstDay - 1;
+
+  return (
+    <div className="miniCalendarPopover">
+      <div className="miniCalendarHeader">
+        <button type="button" title="Previous month" onClick={() => onMonthChange(shiftMonth(monthDate, -1))}>
+          <ChevronLeft size={17} />
+        </button>
+        <strong>{formatMonthTitle(monthDate)}</strong>
+        <button type="button" title="Next month" onClick={() => onMonthChange(shiftMonth(monthDate, 1))}>
+          <ChevronRight size={17} />
+        </button>
+      </div>
+      <div className="miniCalendarWeekdays">
+        {["M", "T", "W", "T", "F", "S", "S"].map((label, index) => (
+          <span key={`${label}-${index}`}>{label}</span>
+        ))}
+      </div>
+      <div className="miniCalendarGrid">
+        {Array.from({ length: leadingSlots }).map((_, index) => (
+          <span className="miniCalendarBlank" key={`blank-${index}`} />
+        ))}
+        {days.map((date) => (
+          <button className={`${date === selectedDate ? "selected" : ""} ${date === today ? "today" : ""}`} key={date} type="button" onClick={() => onSelect(date)}>
+            {new Date(`${date}T12:00:00`).getDate()}
+          </button>
+        ))}
+      </div>
+      <div className="miniCalendarFooter">
+        <button type="button" onClick={() => onSelect(today)}>Today</button>
+        <button type="button" onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
+}
+
 function CalendarTileGrid({ equipment = [], mode, people = [], projects = [], selectedDate, today, visits = [], onSelectDay }) {
   const days = mode === "week" ? getWeekDates(selectedDate) : getMonthDates(selectedDate);
-  const selectedMonth = new Date(`${selectedDate}T12:00:00`).getMonth();
 
   return (
     <section className={`calendarTileGrid ${mode}`}>
@@ -3251,6 +3358,8 @@ function CalendarTileGrid({ equipment = [], mode, people = [], projects = [], se
         </div>
       ))}
       {days.map((date) => {
+        const index = days.indexOf(date);
+        const column = mode === "month" ? (new Date(`${date}T12:00:00`).getDay() + 6) % 7 : index;
         const dayVisits = visits.filter((visit) => visit.visit_date === date && visit.status !== "cancelled");
         const assignedIds = new Set(dayVisits.flatMap((visit) => visit.people_ids ?? []));
         const assignedEquipmentIds = new Set(dayVisits.flatMap((visit) => visit.equipment_ids ?? []));
@@ -3269,11 +3378,12 @@ function CalendarTileGrid({ equipment = [], mode, people = [], projects = [], se
           const project = projects.find((projectItem) => projectItem.id === visit?.project_id);
           return `${item.name} (${project?.name || "Scheduled"})`;
         });
-        const isMuted = mode === "month" && new Date(`${date}T12:00:00`).getMonth() !== selectedMonth;
         const isWeekend = isWeekendDate(date);
+        const edgeClass = column >= 5 ? "edgeRight" : column <= 1 ? "edgeLeft" : "";
+        const tileStyle = mode === "month" && index === 0 ? { gridColumnStart: column + 1 } : undefined;
 
         return (
-          <button className={`calendarDayTile ${date === selectedDate ? "selected" : ""} ${date === today ? "today" : ""} ${isMuted ? "muted" : ""} ${isWeekend ? "weekend" : ""}`} key={date} type="button" onClick={() => onSelectDay(date)}>
+          <button className={`calendarDayTile ${date === selectedDate ? "selected" : ""} ${date === today ? "today" : ""} ${edgeClass} ${isWeekend ? "weekend" : ""}`} key={date} type="button" style={tileStyle} onClick={() => onSelectDay(date)}>
             <span className="calendarDayTop">
               <strong>{new Date(`${date}T12:00:00`).getDate()}</strong>
               <small>{formatShortDate(date)}</small>
