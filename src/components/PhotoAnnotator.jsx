@@ -15,6 +15,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
   const fabricRef = useRef(null);
   const [tool, setTool] = useState("select");
   const [color, setColor] = useState("#cf2e2e");
+  const [textDraft, setTextDraft] = useState("Note");
 
   useEffect(() => {
     if (!canvasElement.current) return undefined;
@@ -28,6 +29,8 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
 
     canvas.freeDrawingBrush = new PencilBrush(canvas);
     fabricRef.current = canvas;
+    const preventMenu = (event) => event.preventDefault();
+    canvas.upperCanvasEl?.addEventListener("contextmenu", preventMenu);
 
     FabricImage.fromURL(imageUrl, { crossOrigin: "anonymous" }).then((img) => {
       const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
@@ -43,20 +46,30 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
       canvas.requestRenderAll();
     });
 
-    return () => canvas.dispose();
+    return () => {
+      canvas.upperCanvasEl?.removeEventListener("contextmenu", preventMenu);
+      canvas.dispose();
+    };
   }, [imageUrl]);
 
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return undefined;
 
-    canvas.isDrawingMode = tool === "draw";
+    canvas.isDrawingMode = false;
     canvas.selection = tool === "select";
     if (!canvas.freeDrawingBrush) canvas.freeDrawingBrush = new PencilBrush(canvas);
     canvas.freeDrawingBrush.color = color;
     canvas.freeDrawingBrush.width = 5;
+    canvas.defaultCursor = tool === "draw" ? "crosshair" : tool === "select" ? "default" : "copy";
 
-    const handleClick = (event) => {
+    const handleDown = (event) => {
+      if (tool === "draw") {
+        canvas.isDrawingMode = event.e.button === 2;
+        return;
+      }
+
+      if (event.e.button !== 0) return;
       const point = canvas.getPointer(event.e);
 
       if (tool === "rect") {
@@ -71,6 +84,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
             strokeWidth: 4,
           }),
         );
+        setTool("select");
       }
 
       if (tool === "circle") {
@@ -84,11 +98,14 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
             strokeWidth: 4,
           }),
         );
+        setTool("select");
       }
 
       if (tool === "text") {
+        const text = textDraft.trim();
+        if (!text) return;
         canvas.add(
-          new IText("Note", {
+          new IText(text, {
             left: point.x,
             top: point.y,
             fill: color,
@@ -98,14 +115,25 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
             padding: 8,
           }),
         );
+        setTool("select");
       }
 
       canvas.requestRenderAll();
     };
 
-    canvas.on("mouse:down", handleClick);
-    return () => canvas.off("mouse:down", handleClick);
-  }, [tool, color]);
+    const handleUp = () => {
+      canvas.isDrawingMode = false;
+    };
+
+    canvas.on("mouse:down", handleDown);
+    canvas.on("mouse:up", handleUp);
+    canvas.on("mouse:out", handleUp);
+    return () => {
+      canvas.off("mouse:down", handleDown);
+      canvas.off("mouse:up", handleUp);
+      canvas.off("mouse:out", handleUp);
+    };
+  }, [tool, color, textDraft]);
 
   function undo() {
     const canvas = fabricRef.current;
@@ -138,6 +166,15 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
           );
         })}
         <input aria-label="Annotation color" className="colorInput" type="color" value={color} onChange={(event) => setColor(event.target.value)} />
+        {tool === "text" && (
+          <input
+            aria-label="Text annotation"
+            className="annotationTextInput"
+            placeholder="Type text, then click photo"
+            value={textDraft}
+            onChange={(event) => setTextDraft(event.target.value)}
+          />
+        )}
         <button className="iconButton" type="button" title="Undo" onClick={undo}>
           <Undo2 size={18} />
         </button>

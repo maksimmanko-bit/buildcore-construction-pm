@@ -213,6 +213,7 @@ const emptyEquipmentForm = { name: "", type: "", unit_number: "", notes: "" };
 const emptyVisitForm = {
   project_id: "",
   visit_date: new Date().toISOString().slice(0, 10),
+  duration_days: 1,
   start_time: "08:00",
   end_time: "16:00",
   work_scope: "",
@@ -330,6 +331,64 @@ function shiftDate(value, amount) {
   const date = new Date(`${value}T12:00:00`);
   date.setDate(date.getDate() + amount);
   return date.toISOString().slice(0, 10);
+}
+
+function shiftMonth(value, amount) {
+  const date = new Date(`${value}T12:00:00`);
+  const day = date.getDate();
+  date.setDate(1);
+  date.setMonth(date.getMonth() + amount);
+  const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  date.setDate(Math.min(day, lastDay));
+  return date.toISOString().slice(0, 10);
+}
+
+function isWeekendDate(value) {
+  const day = new Date(`${value}T12:00:00`).getDay();
+  return day === 0 || day === 6;
+}
+
+function collectBusinessDates(startDate, count) {
+  const dates = [];
+  const next = new Date(`${startDate}T12:00:00`);
+  const target = Math.max(1, Number(count) || 1);
+
+  while (dates.length < target) {
+    const value = next.toISOString().slice(0, 10);
+    if (!isWeekendDate(value)) dates.push(value);
+    next.setDate(next.getDate() + 1);
+  }
+
+  return dates;
+}
+
+function getWeekDates(value) {
+  const date = new Date(`${value}T12:00:00`);
+  const day = date.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + mondayOffset);
+  return Array.from({ length: 7 }, (_, index) => {
+    const next = new Date(date);
+    next.setDate(date.getDate() + index);
+    return next.toISOString().slice(0, 10);
+  });
+}
+
+function getMonthDates(value) {
+  const date = new Date(`${value}T12:00:00`);
+  const first = new Date(date.getFullYear(), date.getMonth(), 1, 12);
+  const startDay = first.getDay();
+  first.setDate(first.getDate() - (startDay === 0 ? 6 : startDay - 1));
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const next = new Date(first);
+    next.setDate(first.getDate() + index);
+    return next.toISOString().slice(0, 10);
+  });
+}
+
+function formatShortDate(value) {
+  return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric" }).format(new Date(`${value}T12:00:00`));
 }
 
 function normalizeStatus(status) {
@@ -1003,71 +1062,73 @@ export default function App() {
     if (!supabase || !profile) return;
 
     setLoading(true);
-    const visitPayload = {
+    const baseVisitPayload = {
       project_id: visitForm.project_id,
-      visit_date: visitForm.visit_date,
       start_time: visitForm.start_time,
       end_time: visitForm.end_time,
-      is_first_visit: visitForm.is_first_visit,
       work_scope: visitForm.work_scope,
     };
 
-    const visitQuery = editingVisitId
-      ? supabase.from("visits").update(visitPayload).eq("id", editingVisitId).select().single()
-      : supabase
-          .from("visits")
-          .insert({
-            ...visitPayload,
-            company_id: profile.company_id,
-            created_by: profile.id,
-            assigned_by: profile.id,
-          })
-          .select()
-          .single();
+    const createdVisitIds = [];
+    const generatedDates = editingVisitId ? [visitForm.visit_date] : collectBusinessDates(visitForm.visit_date, visitForm.duration_days);
 
-    const { data: visit, error: visitError } = await visitQuery;
+    try {
+      let firstVisit = null;
 
-    if (visitError) {
-      setLoading(false);
-      setNotice(visitError.message);
-      return;
-    }
+      for (const [index, visitDate] of generatedDates.entries()) {
+        const visitPayload = {
+          ...baseVisitPayload,
+          visit_date: visitDate,
+          is_first_visit: Boolean(visitForm.is_first_visit && index === 0),
+        };
 
-    if (editingVisitId) {
-      const clearPeople = await supabase.from("visit_people").delete().eq("visit_id", visit.id);
-      const clearEquipment = await supabase.from("visit_equipment").delete().eq("visit_id", visit.id);
+        const visitQuery = editingVisitId
+          ? supabase.from("visits").update(visitPayload).eq("id", editingVisitId).select().single()
+          : supabase
+              .from("visits")
+              .insert({
+                ...visitPayload,
+                company_id: profile.company_id,
+                created_by: profile.id,
+                assigned_by: profile.id,
+              })
+              .select()
+              .single();
 
-      if (clearPeople.error || clearEquipment.error) {
-        setLoading(false);
-        setNotice(clearPeople.error?.message || clearEquipment.error?.message);
-        refreshData();
-        return;
+        const { data: visit, error: visitError } = await visitQuery;
+        if (visitError) throw visitError;
+        if (!firstVisit) firstVisit = visit;
+        if (!editingVisitId) createdVisitIds.push(visit.id);
+
+        if (editingVisitId) {
+          const clearPeople = await supabase.from("visit_people").delete().eq("visit_id", visit.id);
+          const clearEquipment = await supabase.from("visit_equipment").delete().eq("visit_id", visit.id);
+          if (clearPeople.error || clearEquipment.error) throw clearPeople.error || clearEquipment.error;
+        }
+
+        const peopleRowsToInsert = visitForm.people_ids.map((profileId) => ({ visit_id: visit.id, profile_id: profileId }));
+        const equipmentRowsToInsert = visitForm.equipment_ids.map((equipmentId) => ({ visit_id: visit.id, equipment_id: equipmentId }));
+        const peopleResult = peopleRowsToInsert.length ? await supabase.from("visit_people").insert(peopleRowsToInsert) : { error: null };
+        const equipmentResult = equipmentRowsToInsert.length ? await supabase.from("visit_equipment").insert(equipmentRowsToInsert) : { error: null };
+        const assignmentError = peopleResult.error || equipmentResult.error;
+        if (assignmentError) throw assignmentError;
       }
-    }
 
-    const peopleRowsToInsert = visitForm.people_ids.map((profileId) => ({ visit_id: visit.id, profile_id: profileId }));
-    const equipmentRowsToInsert = visitForm.equipment_ids.map((equipmentId) => ({ visit_id: visit.id, equipment_id: equipmentId }));
-    const peopleResult = peopleRowsToInsert.length ? await supabase.from("visit_people").insert(peopleRowsToInsert) : { error: null };
-    const equipmentResult = equipmentRowsToInsert.length ? await supabase.from("visit_equipment").insert(equipmentRowsToInsert) : { error: null };
-    const error = peopleResult.error || equipmentResult.error;
-
-    if (error) {
-      if (!editingVisitId) await supabase.from("visits").delete().eq("id", visit.id);
+      setLoading(false);
+      setVisitForm({ ...emptyVisitForm, visit_date: selectedDate, project_id: rowsSource.projects[0]?.id ?? "" });
+      setEditingVisitId(null);
+      setModalType(null);
+      setSelectedDate(firstVisit.visit_date);
+      setSelectedProjectId(firstVisit.project_id);
+      setSelectedVisitId(firstVisit.id);
+      setNotice(editingVisitId ? "Visit changes saved." : `${generatedDates.length} visit${generatedDates.length === 1 ? "" : "s"} scheduled. Weekends skipped.`);
+      refreshData();
+    } catch (error) {
+      if (!editingVisitId && createdVisitIds.length > 0) await supabase.from("visits").delete().in("id", createdVisitIds);
       setLoading(false);
       setNotice(error.message);
       refreshData();
-      return;
     }
-
-    setLoading(false);
-    setVisitForm({ ...emptyVisitForm, visit_date: selectedDate, project_id: rowsSource.projects[0]?.id ?? "" });
-    setEditingVisitId(null);
-    setModalType(null);
-    setSelectedDate(visit.visit_date);
-    setSelectedProjectId(visit.project_id);
-    setSelectedVisitId(visit.id);
-    setNotice(editingVisitId ? "Visit changes saved." : "Visit scheduled. Conflict checks passed.");
-    refreshData();
   }
 
   async function updateRole(person, role) {
@@ -1703,6 +1764,7 @@ export default function App() {
     setVisitForm({
       project_id: visit.project_id ?? selectedProject?.id ?? "",
       visit_date: visit.visit_date ?? selectedDate,
+      duration_days: 1,
       start_time: String(visit.start_time ?? "08:00").slice(0, 5),
       end_time: String(visit.end_time ?? "16:00").slice(0, 5),
       work_scope: visit.work_scope ?? "",
@@ -1956,12 +2018,14 @@ export default function App() {
         equipmentRows={equipmentRows}
         peopleRows={peopleRows}
         avatarUrls={avatarUrls}
+        projects={rowsSource.projects}
         scheduleMode={scheduleMode}
         scheduleDensity={scheduleDensity}
         selectedDate={selectedDate}
         setScheduleMode={setScheduleMode}
         setScheduleDensity={setScheduleDensity}
         setSelectedDate={setSelectedDate}
+        visits={rowsSource.visits ?? []}
         onAdd={openAddModal}
         onDropAssignment={moveVisitAssignment}
         onSelect={selectAssignment}
@@ -2408,6 +2472,17 @@ export default function App() {
               <FormField label="Date">
                 <input required type="date" value={visitForm.visit_date} onChange={(event) => setVisitForm({ ...visitForm, visit_date: event.target.value })} />
               </FormField>
+              <FormField label="Work days">
+                <input
+                  disabled={Boolean(editingVisitId)}
+                  min="1"
+                  max="60"
+                  required
+                  type="number"
+                  value={visitForm.duration_days}
+                  onChange={(event) => setVisitForm({ ...visitForm, duration_days: Math.min(60, Math.max(1, Number(event.target.value) || 1)) })}
+                />
+              </FormField>
               <FormField label="Start time">
                 <input required type="time" value={visitForm.start_time} onChange={(event) => setVisitForm({ ...visitForm, start_time: event.target.value })} />
               </FormField>
@@ -2417,6 +2492,11 @@ export default function App() {
               <FormField label="Work scope">
                 <textarea value={visitForm.work_scope} onChange={(event) => setVisitForm({ ...visitForm, work_scope: event.target.value })} />
               </FormField>
+              {!editingVisitId && (
+                <div className="formHint">
+                  {collectBusinessDates(visitForm.visit_date, visitForm.duration_days).join(", ")}
+                </div>
+              )}
               <label className="checkLine">
                 <input type="checkbox" checked={visitForm.is_first_visit} onChange={(event) => setVisitForm({ ...visitForm, is_first_visit: event.target.checked })} />
                 First site visit
@@ -3033,7 +3113,7 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
   );
 }
 
-function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows, scheduleDensity, scheduleMode, selectedDate, setScheduleDensity, setScheduleMode, setSelectedDate, onAdd, onDropAssignment, onSelect }) {
+function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows, projects = [], scheduleDensity, scheduleMode, selectedDate, setScheduleDensity, setScheduleMode, setSelectedDate, visits = [], onAdd, onDropAssignment, onSelect }) {
   const [dragPreview, setDragPreview] = useState(null);
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
@@ -3041,6 +3121,14 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
   const showNow = selectedDate === today && nowHour >= scheduleStartHour && nowHour <= scheduleEndHour;
   const nowRatio = Math.max(0, Math.min(1, (nowHour - scheduleStartHour) / (scheduleEndHour - scheduleStartHour)));
   const nowLabel = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const shiftCurrentView = (amount) => {
+    if (scheduleMode === "month") setSelectedDate(shiftMonth(selectedDate, amount));
+    else setSelectedDate(shiftDate(selectedDate, scheduleMode === "week" ? amount * 7 : amount));
+  };
+  const openDay = (date) => {
+    setSelectedDate(date);
+    setScheduleMode("day");
+  };
 
   return (
     <>
@@ -3054,10 +3142,10 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
 
       <div className="calendarToolbar">
         <div className="dateStepper">
-          <button type="button" title="Previous day" onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}>
+          <button type="button" title="Previous" onClick={() => shiftCurrentView(-1)}>
             <ChevronLeft size={19} />
           </button>
-          <button type="button" title="Next day" onClick={() => setSelectedDate(shiftDate(selectedDate, 1))}>
+          <button type="button" title="Next" onClick={() => shiftCurrentView(1)}>
             <ChevronRight size={19} />
           </button>
         </div>
@@ -3090,28 +3178,88 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
         </button>
       </div>
 
-      <div className={`timelineCard density-${scheduleDensity}`} style={{ "--now-ratio": nowRatio }}>
-        <div className="timelineHeader">
-          <div className="allDay">All Day</div>
-          {timeLabels.map((label) => (
-            <div className="timeLabel" key={label}>
-              {label}
-            </div>
-          ))}
+      {scheduleMode === "day" ? (
+        <div className={`timelineCard density-${scheduleDensity}`} style={{ "--now-ratio": nowRatio }}>
+          <div className="timelineHeader">
+            <div className="allDay">All Day</div>
+            {timeLabels.map((label) => (
+              <div className="timeLabel" key={label}>
+                {label}
+              </div>
+            ))}
+          </div>
+
+          {showNow && (
+            <>
+              <div className="nowLine" />
+              <div className="nowPill">{nowLabel}</div>
+            </>
+          )}
+          {!assignmentsReady && <div className="emptyTimeline">No visits scheduled for this day.</div>}
+
+          <ResourceGroup avatarUrls={avatarUrls} dragPreview={dragPreview} setDragPreview={setDragPreview} title="People" count={peopleRows.length} icon={UsersRound} rows={peopleRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
+          <ResourceGroup dragPreview={dragPreview} setDragPreview={setDragPreview} title="Equipment" count={equipmentRows.length} icon={Truck} rows={equipmentRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
         </div>
-
-        {showNow && (
-          <>
-            <div className="nowLine" />
-            <div className="nowPill">{nowLabel}</div>
-          </>
-        )}
-        {!assignmentsReady && <div className="emptyTimeline">No visits scheduled for this day.</div>}
-
-        <ResourceGroup avatarUrls={avatarUrls} dragPreview={dragPreview} setDragPreview={setDragPreview} title="People" count={peopleRows.length} icon={UsersRound} rows={peopleRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
-        <ResourceGroup dragPreview={dragPreview} setDragPreview={setDragPreview} title="Equipment" count={equipmentRows.length} icon={Truck} rows={equipmentRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
-      </div>
+      ) : (
+        <CalendarTileGrid mode={scheduleMode} people={peopleRows} projects={projects} selectedDate={selectedDate} today={today} visits={visits} onSelectDay={openDay} />
+      )}
     </>
+  );
+}
+
+function CalendarTileGrid({ mode, people = [], projects = [], selectedDate, today, visits = [], onSelectDay }) {
+  const days = mode === "week" ? getWeekDates(selectedDate) : getMonthDates(selectedDate);
+  const selectedMonth = new Date(`${selectedDate}T12:00:00`).getMonth();
+
+  return (
+    <section className={`calendarTileGrid ${mode}`}>
+      {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => (
+        <div className="calendarWeekday" key={label}>
+          {label}
+        </div>
+      ))}
+      {days.map((date) => {
+        const dayVisits = visits.filter((visit) => visit.visit_date === date && visit.status !== "cancelled");
+        const assignedIds = new Set(dayVisits.flatMap((visit) => visit.people_ids ?? []));
+        const assignedPeople = people.filter((person) => assignedIds.has(person.id));
+        const availablePeople = people.filter((person) => !assignedIds.has(person.id) && person.availability_status !== "not_available");
+        const unavailablePeople = people.filter((person) => person.availability_status === "not_available");
+        const isMuted = mode === "month" && new Date(`${date}T12:00:00`).getMonth() !== selectedMonth;
+        const isWeekend = isWeekendDate(date);
+
+        return (
+          <button className={`calendarDayTile ${date === selectedDate ? "selected" : ""} ${date === today ? "today" : ""} ${isMuted ? "muted" : ""} ${isWeekend ? "weekend" : ""}`} key={date} type="button" onClick={() => onSelectDay(date)}>
+            <span className="calendarDayTop">
+              <strong>{new Date(`${date}T12:00:00`).getDate()}</strong>
+              <small>{formatShortDate(date)}</small>
+            </span>
+            <span className="calendarDayStats">
+              <em>{dayVisits.length} ticket{dayVisits.length === 1 ? "" : "s"}</em>
+              <em>{availablePeople.length} free</em>
+            </span>
+            <span className="calendarDayProjects">
+              {dayVisits.slice(0, 3).map((visit) => {
+                const project = projects.find((item) => item.id === visit.project_id);
+                return <i key={visit.id}>{project?.name || "Project"}</i>;
+              })}
+            </span>
+            <span className="dayHoverPanel">
+              <strong>{formatDateLabel(date)}</strong>
+              <small>Assigned</small>
+              <span>{assignedPeople.map((person) => profileDisplayName(person)).join(", ") || "No one assigned"}</span>
+              <small>Available</small>
+              <span>{availablePeople.map((person) => profileDisplayName(person)).join(", ") || "No available people"}</span>
+              {unavailablePeople.length > 0 && (
+                <>
+                  <small>Not Available</small>
+                  <span>{unavailablePeople.map((person) => profileDisplayName(person)).join(", ")}</span>
+                </>
+              )}
+            </span>
+          </button>
+        );
+      })}
+    </section>
   );
 }
 
@@ -3337,6 +3485,8 @@ function OverviewView({ getProfileName, getVisitFiles, onArrive, onComplete, onO
         const hasSafety = files.some((file) => file.file_type === "safety_form");
         const hasBefore = files.some((file) => file.file_type === "before_photo");
         const hasAfter = files.some((file) => file.file_type === "completion_photo");
+        const sitePhone = project?.contact_phone || "";
+        const callablePhone = sitePhone.replace(/[^\d+]/g, "");
 
         return (
           <section className="todayTicket" key={visit.id}>
@@ -3350,9 +3500,39 @@ function OverviewView({ getProfileName, getVisitFiles, onArrive, onComplete, onO
             <p>{visit.work_scope || "Today's scheduled work"}</p>
 
             <dl className="detailFacts compact">
-              <ProjectFact icon={MapPin} label="Address" value={project?.address || "Not set"} />
+              <ProjectFact
+                icon={MapPin}
+                label="Address"
+                value={
+                  project?.address ? (
+                    <span className="factInlineActions">
+                      <span>{project.address}</span>
+                      <a href={getGoogleMapsUrl(project.address)} target="_blank" rel="noreferrer">
+                        <MapPin size={14} />
+                        Maps
+                      </a>
+                    </span>
+                  ) : (
+                    "Not set"
+                  )
+                }
+              />
               <ProjectFact icon={CloudSun} label="Weather" value={weather.status === "ready" ? `${weather.data.temperature}°C, ${weather.data.condition}` : weather.status === "loading" ? "Loading..." : "Not available"} />
-              <ProjectFact icon={UserRound} label="Site Contact" value={`${project?.contact_name || "Not set"} ${project?.contact_phone || ""}`} />
+              <ProjectFact
+                icon={UserRound}
+                label="Site Contact"
+                value={
+                  <span className="factInlineActions">
+                    <span>{project?.contact_name || "Not set"}</span>
+                    {sitePhone && (
+                      <a href={`tel:${callablePhone}`}>
+                        <Phone size={14} />
+                        {sitePhone}
+                      </a>
+                    )}
+                  </span>
+                }
+              />
               <ProjectFact icon={ClipboardCheck} label="Assigned by" value={getProfileName(visit.assigned_by ?? visit.created_by)} />
               <ProjectFact icon={ClipboardCheck} label="Checklist" value={`Safety ${hasSafety ? "done" : "needed"} · Before ${hasBefore ? "done" : "needed"} · After ${hasAfter ? "done" : "needed"}`} />
             </dl>
