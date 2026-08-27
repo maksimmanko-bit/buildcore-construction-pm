@@ -154,7 +154,7 @@ const navItems = [
   { id: "people", label: "People", icon: UsersRound },
   { id: "equipment", label: "Equipment", icon: Truck },
   { id: "documents", label: "Documents", icon: FileText },
-  { id: "reports", label: "Reports", icon: FileBarChart2 },
+  { id: "safetyReports", label: "Safety Reports", icon: FileBarChart2 },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -173,10 +173,10 @@ const visitStatusMap = {
   cancelled: "Cancelled",
 };
 const hazardOptions = ["Working at heights", "Excavation / trench", "Electrical hazard", "Heavy equipment", "Traffic / public access", "Weather exposure", "Dust / silica", "Manual lifting"];
-const timeLabels = ["7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM"];
+const timeLabels = ["7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM"];
 const colors = ["blue", "green", "yellow", "purple", "orange"];
 const scheduleStartHour = 7;
-const scheduleEndHour = 18;
+const scheduleEndHour = 22;
 
 const demoAssignments = [
   { id: "a1", type: "person", resourceId: "person-1", projectId: "project-1", title: "Riverside Building", subtitle: "Site Supervision", start: 7.55, end: 12.7, color: "blue" },
@@ -214,8 +214,8 @@ const emptyVisitForm = {
   project_id: "",
   visit_date: new Date().toISOString().slice(0, 10),
   duration_days: 1,
-  start_time: "08:00",
-  end_time: "16:00",
+  start_time: "07:00",
+  end_time: "17:00",
   work_scope: "",
   is_first_visit: false,
   people_ids: [],
@@ -284,15 +284,26 @@ function getPersonWorkStatus({ date, person, personId, projects = [], visits = [
   const resolvedPersonId = personId ?? person?.id;
   const dayVisits = visits.filter((visit) => visit.visit_date === date && visit.people_ids?.includes(resolvedPersonId) && visit.status !== "cancelled");
   const activeVisit = dayVisits.find((visit) => visit.status === "on_site");
-  const completedVisit = dayVisits.find((visit) => visit.status === "completed");
   const plannedVisit = dayVisits.find((visit) => visit.status === "planned");
-  const visit = activeVisit || plannedVisit || completedVisit;
+  const visit = activeVisit || plannedVisit;
   const project = visit ? projects.find((item) => item.id === visit.project_id) : null;
 
   if (activeVisit) return { label: "Active", tone: "active", detail: project?.name || "On site" };
   if (person?.availability_status === "not_available") return { label: "Not Available", tone: "notAvailable", detail: "Manually unavailable" };
-  if (completedVisit) return { label: "Available", tone: "available", detail: "Finished today" };
-  if (plannedVisit) return { label: "Available", tone: "available", detail: project?.name || "Scheduled today" };
+  if (plannedVisit) return { label: "Scheduled", tone: "scheduled", detail: project?.name || "Scheduled today" };
+  return { label: "Available", tone: "available", detail: "No assignment" };
+}
+
+function getEquipmentWorkStatus({ date, equipment, equipmentId, projects = [], visits = [] }) {
+  const resolvedEquipmentId = equipmentId ?? equipment?.id;
+  const dayVisits = visits.filter((visit) => visit.visit_date === date && visit.equipment_ids?.includes(resolvedEquipmentId) && visit.status !== "cancelled");
+  const activeVisit = dayVisits.find((visit) => visit.status === "on_site");
+  const plannedVisit = dayVisits.find((visit) => visit.status === "planned");
+  const visit = activeVisit || plannedVisit;
+  const project = visit ? projects.find((item) => item.id === visit.project_id) : null;
+
+  if (activeVisit) return { label: "Active", tone: "active", detail: project?.name || "On site" };
+  if (plannedVisit) return { label: "Scheduled", tone: "scheduled", detail: project?.name || "Scheduled today" };
   return { label: "Available", tone: "available", detail: "No assignment" };
 }
 
@@ -532,7 +543,7 @@ export default function App() {
 
   const isLive = Boolean(session && profile?.is_active);
   const canManage = Boolean(profile?.is_active && ["owner", "project_manager", "office_manager"].includes(profile?.role));
-  const visibleNavItems = canManage ? navItems : navItems.filter((item) => item.id !== "people");
+  const visibleNavItems = canManage ? navItems : navItems.filter((item) => !["people", "equipment"].includes(item.id));
   const currentUserName = profile?.full_name || session?.user?.email || "James Carter";
 
   const refreshData = useCallback(async () => {
@@ -642,7 +653,7 @@ export default function App() {
   }, [activeNav]);
 
   useEffect(() => {
-    if (activeNav === "people" && !canManage) setActiveNav("overview");
+    if ((activeNav === "people" || activeNav === "equipment") && !canManage) setActiveNav("overview");
   }, [activeNav, canManage]);
 
   useEffect(() => {
@@ -775,7 +786,7 @@ export default function App() {
   const selectedProjectVisits = selectedProject
     ? (rowsSource.visits ?? [])
         .filter((visit) => visit.project_id === selectedProject.id)
-        .sort((a, b) => `${b.visit_date} ${b.start_time}`.localeCompare(`${a.visit_date} ${a.start_time}`))
+        .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`))
     : [];
   const selectedVisit = selectedVisitId ? selectedProjectVisits.find((visit) => visit.id === selectedVisitId) ?? null : null;
   const currentVisit = selectedVisit ?? selectedProjectVisits[0] ?? null;
@@ -832,7 +843,16 @@ export default function App() {
     kind: "equipment",
     full_name: equipment.name,
     subtitle: equipment.type,
+    resourceStatus: getEquipmentWorkStatus({ date: selectedDate, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
     assignments: assignmentsSource.filter((item) => item.type === "equipment" && item.resourceId === equipment.id),
+  }));
+  const visitPickerPeople = rowsSource.people.map((person) => ({
+    ...person,
+    pickerStatus: getPersonWorkStatus({ date: visitForm.visit_date, person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
+  }));
+  const visitPickerEquipment = rowsSource.equipment.map((equipment) => ({
+    ...equipment,
+    pickerStatus: getEquipmentWorkStatus({ date: visitForm.visit_date, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
   }));
 
   async function applyPendingSignupProfile(nextProfile) {
@@ -1424,17 +1444,16 @@ export default function App() {
       doc.text("BuildCore Construction", 42, 42);
       doc.setFontSize(13);
       doc.text("Digital Safety Form", 42, 66);
-      doc.addImage(safetyLetterhead, "PNG", 42, 110, 238, 105);
       doc.setTextColor(17, 24, 39);
       doc.setFontSize(15);
-      doc.text(doc.splitTextToSize(activeProject.name, 246), 312, 128);
+      doc.text(doc.splitTextToSize(activeProject.name, 320), 42, 126);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      doc.text(`Job Number: ${activeProject.job_number || "Not set"}`, 312, 154);
-      doc.text(doc.splitTextToSize(`Address: ${activeProject.address}`, 246), 312, 170);
-      doc.text(`Visit Date: ${formatDateLabel(activeVisit.visit_date)}`, 312, 196);
-      doc.text(`Current Time: ${signedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`, 312, 212);
-      doc.text(`Scheduled Time: ${String(activeVisit.start_time).slice(0, 5)} - ${String(activeVisit.end_time).slice(0, 5)}`, 312, 228);
+      doc.text(`Job Number: ${activeProject.job_number || "Not set"}`, 42, 154);
+      doc.text(doc.splitTextToSize(`Address: ${activeProject.address}`, 492), 42, 170);
+      doc.text(`Visit Date: ${formatDateLabel(activeVisit.visit_date)}`, 42, 196);
+      doc.text(`Current Time: ${signedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`, 220, 196);
+      doc.text(`Scheduled Time: ${String(activeVisit.start_time).slice(0, 5)} - ${String(activeVisit.end_time).slice(0, 5)}`, 398, 196);
 
       doc.setDrawColor(226, 232, 240);
       doc.roundedRect(42, 244, 528, 112, 8, 8);
@@ -1466,6 +1485,7 @@ export default function App() {
         doc.addImage(safetyForm.signatures[person.id], "PNG", 320, y + 12, 190, 48);
         y += 96;
       });
+      doc.addImage(safetyLetterhead, "PNG", 332, 650, 238, 105);
 
       const blob = doc.output("blob");
       const searchableText = [
@@ -1771,8 +1791,8 @@ export default function App() {
       project_id: visit.project_id ?? selectedProject?.id ?? "",
       visit_date: visit.visit_date ?? selectedDate,
       duration_days: 1,
-      start_time: String(visit.start_time ?? "08:00").slice(0, 5),
-      end_time: String(visit.end_time ?? "16:00").slice(0, 5),
+      start_time: String(visit.start_time ?? "07:00").slice(0, 5),
+      end_time: String(visit.end_time ?? "17:00").slice(0, 5),
       work_scope: visit.work_scope ?? "",
       is_first_visit: Boolean(visit.is_first_visit),
       people_ids: visit.people_ids ?? [],
@@ -2009,8 +2029,8 @@ export default function App() {
     if (activeNav === "documents") {
       return <DocumentsView files={rowsSource.files ?? []} onOpen={openAttachment} profiles={rowsSource.people} projects={rowsSource.projects} />;
     }
-    if (activeNav === "reports") {
-      return <InfoView icon={FileBarChart2} title="Reports" text="Reports will use the same project, people, equipment, visit, and document records already connected here." />;
+    if (activeNav === "safetyReports") {
+      return <SafetyReportsView files={rowsSource.files ?? []} onOpen={openAttachment} profiles={rowsSource.people} projects={rowsSource.projects} />;
     }
     if (activeNav === "settings") {
       return <SettingsView avatarUrl={avatarUrls[profile?.id]} form={profileForm} isConfigured={isSupabaseConfigured} loading={loading} onChange={setProfileForm} onSubmit={saveProfileSettings} profile={profile} session={session} />;
@@ -2507,8 +2527,8 @@ export default function App() {
                 <input type="checkbox" checked={visitForm.is_first_visit} onChange={(event) => setVisitForm({ ...visitForm, is_first_visit: event.target.checked })} />
                 First site visit
               </label>
-              <PickerList title="People" items={rowsSource.people} selected={visitForm.people_ids} labelKey="full_name" onToggle={(id) => toggleVisitArray("people_ids", id)} />
-              <PickerList title="Equipment" items={rowsSource.equipment} selected={visitForm.equipment_ids} labelKey="name" onToggle={(id) => toggleVisitArray("equipment_ids", id)} />
+              <PickerList title="People" items={visitPickerPeople} selected={visitForm.people_ids} labelKey="full_name" onToggle={(id) => toggleVisitArray("people_ids", id)} />
+              <PickerList title="Equipment" items={visitPickerEquipment} selected={visitForm.equipment_ids} labelKey="name" onToggle={(id) => toggleVisitArray("equipment_ids", id)} />
               <div className="formActions wide">
                 <button className="addButton" type="submit" disabled={loading || !visitForm.project_id}>
                   <Save size={18} />
@@ -2672,24 +2692,23 @@ function DetailOverlayShell({ children, onClose, title }) {
 function ProjectDetailOverlay({ activities = [], canManage, currentVisit, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onOpenAttachment, onOpenVisit, people, project, visits }) {
   return (
     <DetailOverlayShell title={project.name} onClose={onClose}>
-      <div className="detailHero">
-        <img src={getProjectPhoto(project.name)} alt="" />
+      <div className="detailHero projectDetailHeroTextOnly">
         <div>
           <span className="jobNumberPill">{project.job_number || "No job number"}</span>
           <h3>{project.name}</h3>
           <p>{project.description || "No description yet."}</p>
-          <div className="detailActionRow">
-            <a className="outlineLink" href={getGoogleMapsUrl(project.address)} target="_blank" rel="noreferrer">
-              <MapPin size={17} />
-              Open Maps
-            </a>
-            {canManage && (
-              <button className="outlineButton" type="button" onClick={onEditProject}>
-                <Edit3 size={17} />
-                Edit Project
-              </button>
-            )}
-          </div>
+        </div>
+        <div className="detailActionRow projectHeroActions">
+          <a className="outlineLink" href={getGoogleMapsUrl(project.address)} target="_blank" rel="noreferrer">
+            <MapPin size={17} />
+            Open Maps
+          </a>
+          {canManage && (
+            <button className="outlineButton" type="button" onClick={onEditProject}>
+              <Edit3 size={17} />
+              Edit Project
+            </button>
+          )}
         </div>
       </div>
 
@@ -2812,6 +2831,9 @@ function VisitDetailOverlay({ equipment, files, getProfileName, onArrive, onClos
       </div>
 
       <dl className="detailFacts">
+        <ProjectFact icon={Calendar} label="Scheduled" value={`${String(visit.start_time).slice(0, 5)} - ${String(visit.end_time).slice(0, 5)}`} />
+        <ProjectFact icon={CheckCircle2} label="Actual start" value={visit.arrived_at ? new Date(visit.arrived_at).toLocaleString() : "Not started"} />
+        <ProjectFact icon={ClipboardCheck} label="Actual finish" value={visit.completed_at ? new Date(visit.completed_at).toLocaleString() : "Not finished"} />
         <ProjectFact icon={MapPin} label="Address" value={project.address || "Not set"} />
         <ProjectFact icon={UserRound} label="Contact" value={`${project.contact_name || "Not set"} ${project.contact_phone || ""}`} />
         <ProjectFact icon={ClipboardCheck} label="Assigned by" value={getProfileName(visit.assigned_by ?? visit.created_by)} />
@@ -2953,12 +2975,15 @@ function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, 
         <span>{formatDateLabel(visit.visit_date)} · Current time {currentTime}</span>
       </div>
 
-      <fieldset className="pickerList">
+      <fieldset className="pickerList safetySwitchList">
         <legend>Potential hazards</legend>
         {hazards.map((hazard) => (
-          <label key={hazard}>
+          <label className="safetySwitch" key={hazard}>
             <input type="checkbox" checked={form.hazards.includes(hazard)} onChange={() => toggleHazard(hazard)} />
-            {hazard}
+            <span className="switchTrack" aria-hidden="true">
+              <span />
+            </span>
+            <strong>{hazard}</strong>
           </label>
         ))}
       </fieldset>
@@ -3135,6 +3160,7 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
     setSelectedDate(date);
     setScheduleMode("day");
   };
+  const jumpToToday = () => openDay(new Date().toISOString().slice(0, 10));
 
   return (
     <>
@@ -3156,7 +3182,7 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
           </button>
         </div>
 
-        <button className="dateButton" type="button" onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}>
+        <button className="dateButton" type="button" onClick={jumpToToday}>
           <Calendar size={18} />
           {formatDateLabel(selectedDate)}
         </button>
@@ -3171,13 +3197,13 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
           ))}
         </div>
 
-        <button className="outlineButton" type="button" onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}>
+        <button className="outlineButton" type="button" onClick={jumpToToday}>
           Today
         </button>
         <button className="squareButton" type="button" title="Open calendar" onClick={() => document.querySelector(".hiddenDateInput")?.showPicker?.()}>
           <Calendar size={18} />
         </button>
-        <input className="hiddenDateInput" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} />
+        <input className="hiddenDateInput" type="date" value={selectedDate} onChange={(event) => openDay(event.target.value)} />
         <button className="addButton" type="button" onClick={onAdd}>
           <Plus size={18} />
           Add
@@ -3185,7 +3211,7 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
       </div>
 
       {scheduleMode === "day" ? (
-        <div className={`timelineCard density-${scheduleDensity}`} style={{ "--now-ratio": nowRatio }}>
+        <div className={`timelineCard density-${scheduleDensity}`} style={{ "--now-ratio": nowRatio, "--time-count": timeLabels.length, "--time-span": scheduleEndHour - scheduleStartHour }}>
           <div className="timelineHeader">
             <div className="allDay">All Day</div>
             {timeLabels.map((label) => (
@@ -3207,13 +3233,13 @@ function ScheduleView({ assignmentsReady, avatarUrls, equipmentRows, peopleRows,
           <ResourceGroup dragPreview={dragPreview} setDragPreview={setDragPreview} title="Equipment" count={equipmentRows.length} icon={Truck} rows={equipmentRows} onDropAssignment={onDropAssignment} onSelect={onSelect} />
         </div>
       ) : (
-        <CalendarTileGrid mode={scheduleMode} people={peopleRows} projects={projects} selectedDate={selectedDate} today={today} visits={visits} onSelectDay={openDay} />
+        <CalendarTileGrid equipment={equipmentRows} mode={scheduleMode} people={peopleRows} projects={projects} selectedDate={selectedDate} today={today} visits={visits} onSelectDay={openDay} />
       )}
     </>
   );
 }
 
-function CalendarTileGrid({ mode, people = [], projects = [], selectedDate, today, visits = [], onSelectDay }) {
+function CalendarTileGrid({ equipment = [], mode, people = [], projects = [], selectedDate, today, visits = [], onSelectDay }) {
   const days = mode === "week" ? getWeekDates(selectedDate) : getMonthDates(selectedDate);
   const selectedMonth = new Date(`${selectedDate}T12:00:00`).getMonth();
 
@@ -3227,9 +3253,22 @@ function CalendarTileGrid({ mode, people = [], projects = [], selectedDate, toda
       {days.map((date) => {
         const dayVisits = visits.filter((visit) => visit.visit_date === date && visit.status !== "cancelled");
         const assignedIds = new Set(dayVisits.flatMap((visit) => visit.people_ids ?? []));
+        const assignedEquipmentIds = new Set(dayVisits.flatMap((visit) => visit.equipment_ids ?? []));
         const assignedPeople = people.filter((person) => assignedIds.has(person.id));
         const availablePeople = people.filter((person) => !assignedIds.has(person.id) && person.availability_status !== "not_available");
         const unavailablePeople = people.filter((person) => person.availability_status === "not_available");
+        const scheduledPeopleDetails = assignedPeople.map((person) => {
+          const visit = dayVisits.find((item) => item.people_ids?.includes(person.id));
+          const project = projects.find((item) => item.id === visit?.project_id);
+          return `${profileDisplayName(person)} (${project?.name || "Scheduled"})`;
+        });
+        const assignedEquipment = equipment.filter((item) => assignedEquipmentIds.has(item.id));
+        const availableEquipment = equipment.filter((item) => !assignedEquipmentIds.has(item.id));
+        const scheduledEquipmentDetails = assignedEquipment.map((item) => {
+          const visit = dayVisits.find((visitItem) => visitItem.equipment_ids?.includes(item.id));
+          const project = projects.find((projectItem) => projectItem.id === visit?.project_id);
+          return `${item.name} (${project?.name || "Scheduled"})`;
+        });
         const isMuted = mode === "month" && new Date(`${date}T12:00:00`).getMonth() !== selectedMonth;
         const isWeekend = isWeekendDate(date);
 
@@ -3242,6 +3281,7 @@ function CalendarTileGrid({ mode, people = [], projects = [], selectedDate, toda
             <span className="calendarDayStats">
               <em>{dayVisits.length} ticket{dayVisits.length === 1 ? "" : "s"}</em>
               <em>{availablePeople.length} free</em>
+              <em>{availableEquipment.length} eq free</em>
             </span>
             <span className="calendarDayProjects">
               {dayVisits.slice(0, 3).map((visit) => {
@@ -3251,16 +3291,20 @@ function CalendarTileGrid({ mode, people = [], projects = [], selectedDate, toda
             </span>
             <span className="dayHoverPanel">
               <strong>{formatDateLabel(date)}</strong>
-              <small>Assigned</small>
-              <span>{assignedPeople.map((person) => profileDisplayName(person)).join(", ") || "No one assigned"}</span>
-              <small>Available</small>
+              <small>Scheduled people</small>
+              <span>{scheduledPeopleDetails.join(", ") || "No one scheduled"}</span>
+              <small>Available people</small>
               <span>{availablePeople.map((person) => profileDisplayName(person)).join(", ") || "No available people"}</span>
               {unavailablePeople.length > 0 && (
                 <>
-                  <small>Not Available</small>
+                  <small>Not Available people</small>
                   <span>{unavailablePeople.map((person) => profileDisplayName(person)).join(", ")}</span>
                 </>
               )}
+              <small>Scheduled equipment</small>
+              <span>{scheduledEquipmentDetails.join(", ") || "No equipment scheduled"}</span>
+              <small>Available equipment</small>
+              <span>{availableEquipment.map((item) => item.name).join(", ") || "No available equipment"}</span>
             </span>
           </button>
         );
@@ -3403,6 +3447,45 @@ function DocumentsView({ files, onOpen, profiles, projects }) {
           </section>
         );
       })}
+    </div>
+  );
+}
+
+function SafetyReportsView({ files, onOpen, profiles, projects }) {
+  const safetyFiles = files
+    .filter((file) => file.file_type === "safety_form")
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+
+  return (
+    <div className="documentsView groupedDocuments safetyReportsView">
+      <section className="documentGroup safety">
+        <div className="documentGroupHeader">
+          <FileBarChart2 size={18} />
+          <h3>Safety Reports</h3>
+          <span>{safetyFiles.length}</span>
+        </div>
+        {safetyFiles.length === 0 ? (
+          <div className="emptyState">No safety reports saved yet.</div>
+        ) : (
+          safetyFiles.map((file) => {
+            const project = projects.find((item) => item.id === file.project_id);
+            const uploader = profiles.find((item) => item.id === file.uploaded_by);
+            return (
+              <button className="documentRow safetyReportRow" key={file.id} type="button" onClick={() => onOpen(file)}>
+                <span className="searchIcon">
+                  <FileText size={18} />
+                </span>
+                <span>
+                  <strong>{file.file_name}</strong>
+                  <small>
+                    {project?.name || "Project"} / {uploader?.full_name || uploader?.email || "Unknown"} / {new Date(file.created_at).toLocaleString()}
+                  </small>
+                </span>
+              </button>
+            );
+          })
+        )}
+      </section>
     </div>
   );
 }
@@ -3638,12 +3721,19 @@ function PickerList({ title, items, selected, labelKey, onToggle }) {
     <fieldset className="pickerList">
       <legend>{title}</legend>
       {items.length === 0 && <span className="mutedLine">No records yet</span>}
-      {items.map((item) => (
-        <label key={item.id}>
-          <input type="checkbox" checked={selected.includes(item.id)} onChange={() => onToggle(item.id)} />
-          {item[labelKey]}
-        </label>
-      ))}
+      {items.map((item) => {
+        const status = item.pickerStatus;
+        return (
+          <label className="pickerOption" key={item.id}>
+            <input type="checkbox" checked={selected.includes(item.id)} onChange={() => onToggle(item.id)} />
+            <span className="pickerOptionText">
+              <strong>{item[labelKey]}</strong>
+              {status?.detail && <small>{status.detail}</small>}
+            </span>
+            {status && <em className={`resourceStatusChip ${status.tone}`}>{status.label}</em>}
+          </label>
+        );
+      })}
     </fieldset>
   );
 }
