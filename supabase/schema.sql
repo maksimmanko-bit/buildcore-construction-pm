@@ -140,8 +140,9 @@ create table if not exists public.visit_files (
   mime_type text,
   annotation_json jsonb,
   annotation_history jsonb not null default '[]'::jsonb,
+  photo_caption text,
   search_text text,
-  search_vector tsvector generated always as (to_tsvector('english', coalesce(file_name, '') || ' ' || coalesce(search_text, ''))) stored,
+  search_vector tsvector generated always as (to_tsvector('english', coalesce(file_name, '') || ' ' || coalesce(search_text, '') || ' ' || coalesce(photo_caption, ''))) stored,
   created_at timestamptz not null default now()
 );
 

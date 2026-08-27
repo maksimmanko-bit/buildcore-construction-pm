@@ -54,7 +54,7 @@ function AttachmentThumbnail({ attachment, onOpen }) {
       </span>
       <span className="attachmentMeta">
         <strong title={attachment.file_name}>{attachment.file_name}</strong>
-        <small>{photo ? "Photo" : getDocLabel(attachment)}</small>
+        <small>{photo ? attachment.photo_caption || "Photo" : getDocLabel(attachment)}</small>
       </span>
     </button>
   );
@@ -67,6 +67,8 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
 
   async function handleFile(file) {
     if (!file) return;
+    const photo = isPhoto(file);
+    const photoCaption = photo ? window.prompt("Add a short note for this photo:", "")?.trim() ?? "" : "";
 
     if (!supabase) {
       onUploaded?.("Demo mode: connect Supabase to upload files.");
@@ -81,17 +83,18 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
     setBusy(true);
 
     try {
-      const { text } = isPhoto(file) ? { text: "" } : await extractSearchText(file);
+      const { text } = photo ? { text: photoCaption } : await extractSearchText(file);
       const row = await uploadVisitAttachment({
         companyId,
         projectId,
         visitId,
         profileId,
         file,
+        photoCaption,
         searchText: text,
       });
 
-      onUploaded?.(`${isPhoto(file) ? "Photo" : "Document"} uploaded to Supabase Storage: ${row.file_name}`);
+      onUploaded?.(`${photo ? "Photo" : "Document"} uploaded to Supabase Storage: ${row.file_name}`);
     } catch (error) {
       onUploaded?.(error.message);
     } finally {

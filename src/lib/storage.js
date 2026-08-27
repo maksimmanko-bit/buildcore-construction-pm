@@ -106,11 +106,12 @@ export function getAttachmentKind(file) {
   return "document";
 }
 
-export function getAttachmentType(file) {
+export function getAttachmentType(file, visitId) {
   const kind = getAttachmentKind(file);
   const name = file.name.toLowerCase();
 
   if (kind === "photo") {
+    if (!visitId) return "project_document";
     if (name.includes("before")) return "before_photo";
     return "completion_photo";
   }
@@ -167,7 +168,7 @@ export function makeSimplePdfBlob(lines) {
   return new Blob([pdf], { type: "application/pdf" });
 }
 
-export async function uploadVisitGeneratedFile({ bucket = "project-documents", companyId, projectId, visitId, profileId, blob, fileName, fileType = "project_document", fileKind = "pdf", mimeType = "application/pdf", searchText = "" }) {
+export async function uploadVisitGeneratedFile({ bucket = "project-documents", companyId, projectId, visitId, profileId, blob, fileName, fileType = "project_document", fileKind = "pdf", mimeType = "application/pdf", photoCaption = "", searchText = "" }) {
   if (!supabase) throw new Error("Supabase is not configured.");
   if (!companyId || !projectId || !blob || !fileName) throw new Error("Missing file upload details.");
 
@@ -194,6 +195,7 @@ export async function uploadVisitGeneratedFile({ bucket = "project-documents", c
       file_type: fileType,
       file_kind: fileKind,
       mime_type: mimeType,
+      photo_caption: photoCaption || null,
       search_text: searchText,
     })
     .select()
@@ -203,7 +205,7 @@ export async function uploadVisitGeneratedFile({ bucket = "project-documents", c
   return data;
 }
 
-export async function uploadVisitAttachment({ companyId, projectId, visitId, profileId, file, searchText = "" }) {
+export async function uploadVisitAttachment({ companyId, projectId, visitId, profileId, file, photoCaption = "", searchText = "" }) {
   if (!supabase) throw new Error("Supabase is not configured.");
 
   const bucket = getAttachmentBucket(file);
@@ -228,9 +230,10 @@ export async function uploadVisitAttachment({ companyId, projectId, visitId, pro
       bucket_id: bucket,
       storage_path: storagePath,
       file_name: file.name,
-      file_type: getAttachmentType(file),
+      file_type: getAttachmentType(file, visitId),
       file_kind: kind,
       mime_type: file.type || "application/octet-stream",
+      photo_caption: kind === "photo" ? photoCaption || null : null,
       search_text: searchText,
     })
     .select()
@@ -240,7 +243,7 @@ export async function uploadVisitAttachment({ companyId, projectId, visitId, pro
   return data;
 }
 
-export async function uploadVisitPhoto({ companyId, projectId, visitId, profileId, file, fileType = "completion_photo", searchText = "" }) {
+export async function uploadVisitPhoto({ companyId, projectId, visitId, profileId, file, fileType = "completion_photo", photoCaption = "", searchText = "" }) {
   return uploadVisitGeneratedFile({
     bucket: "visit-photos",
     companyId,
@@ -252,6 +255,7 @@ export async function uploadVisitPhoto({ companyId, projectId, visitId, profileI
     fileType,
     fileKind: "photo",
     mimeType: file.type || "image/jpeg",
+    photoCaption,
     searchText,
   });
 }

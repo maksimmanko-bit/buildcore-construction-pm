@@ -379,6 +379,10 @@ function normalizeWorkScopes(scopes, count, fallback = "") {
   return Array.from({ length: Math.max(1, count) }, (_, index) => values[index] ?? (index === 0 ? fallback : ""));
 }
 
+function fileInputKey(file) {
+  return `${file?.name ?? "file"}-${file?.size ?? 0}-${file?.lastModified ?? 0}`;
+}
+
 function getWeekDates(value) {
   const date = new Date(`${value}T12:00:00`);
   const day = date.getDay();
@@ -505,7 +509,7 @@ function Avatar({ profile, small = false, url }) {
 export default function App() {
   const globalSearchRef = useRef(null);
   const searchInputRef = useRef(null);
-  const [activeNav, setActiveNav] = useState("schedule");
+  const [activeNav, setActiveNav] = useState("overview");
   const [scheduleMode, setScheduleMode] = useState("day");
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -543,8 +547,8 @@ export default function App() {
   const [visitForm, setVisitForm] = useState(emptyVisitForm);
   const [safetyForm, setSafetyForm] = useState({ hazards: [], notes: "", signatures: {} });
   const [workflowVisitId, setWorkflowVisitId] = useState("");
-  const [photoStep, setPhotoStep] = useState({ kind: "", visitId: "", files: [] });
-  const [completionForm, setCompletionForm] = useState({ notes: "", files: [] });
+  const [photoStep, setPhotoStep] = useState({ kind: "", visitId: "", files: [], captions: {} });
+  const [completionForm, setCompletionForm] = useState({ notes: "", files: [], captions: {} });
   const [profileForm, setProfileForm] = useState({ first_name: "", last_name: "", phone: "", avatarFile: null, removeAvatar: false });
   const [personForm, setPersonForm] = useState({ first_name: "", last_name: "", phone: "", role: "builder", trade: "", availability_status: "available" });
   const [avatarUrls, setAvatarUrls] = useState({});
@@ -810,8 +814,7 @@ export default function App() {
   const todayValue = new Date().toISOString().slice(0, 10);
   const todayVisits = (rowsSource.visits ?? []).filter((visit) => visit.visit_date === todayValue && (!isLive || visit.people_ids?.includes(profile?.id)));
   const projectAttachments = (rowsSource.files ?? [])
-    .filter((file) => selectedProject && (file.project_id === selectedProject.id || file.projectId === selectedProject.id))
-    .slice(0, 6);
+    .filter((file) => selectedProject && (file.project_id === selectedProject.id || file.projectId === selectedProject.id) && !file.visit_id);
 
   useEffect(() => {
     let alive = true;
@@ -855,6 +858,33 @@ export default function App() {
     resourceStatus: getEquipmentWorkStatus({ date: selectedDate, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
     assignments: assignmentsSource.filter((item) => item.type === "equipment" && item.resourceId === equipment.id),
   }));
+  const projectRows = rowsSource.projects
+    .map((project, index) => {
+      const projectVisits = (rowsSource.visits ?? []).filter((visit) => visit.project_id === project.id && visit.visit_date === selectedDate && visit.status !== "cancelled");
+      return {
+        ...project,
+        kind: "project",
+        full_name: project.name,
+        subtitle: project.job_number || project.address,
+        color: colors[index % colors.length],
+        assignments: projectVisits.map((visit) => ({
+          visitId: visit.id,
+          projectId: visit.project_id,
+          title: project.name,
+          subtitle: visit.work_scope || normalizeVisitStatus(visit.status),
+          start: toHour(visit.start_time),
+          end: toHour(visit.end_time),
+          timeText: `${String(visit.start_time).slice(0, 5)} - ${String(visit.end_time).slice(0, 5)}`,
+          status: visit.status,
+          isFirstVisit: visit.is_first_visit,
+          color: colors[index % colors.length],
+          people: rowsSource.people.filter((person) => visit.people_ids?.includes(person.id)),
+          equipment: rowsSource.equipment.filter((item) => visit.equipment_ids?.includes(item.id)),
+        })),
+      };
+    })
+    .filter((project) => project.assignments.length > 0);
+  const availableTodayPeople = rowsSource.people.filter((person) => getPersonWorkStatus({ date: selectedDate, person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }).tone === "available");
   const visitPickerPeople = rowsSource.people.map((person) => ({
     ...person,
     pickerStatus: getPersonWorkStatus({ date: visitForm.visit_date, person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
@@ -1274,6 +1304,7 @@ export default function App() {
     }
 
     setLoading(true);
+    setNotice("Generating Safety PDF...");
     try {
       let avatarPath = profile.avatar_path || null;
       if (profileForm.removeAvatar) avatarPath = null;
@@ -1411,7 +1442,7 @@ export default function App() {
     }
 
     if (!hasBefore) {
-      setPhotoStep({ kind: "before", visitId: visit.id, files: [] });
+      setPhotoStep({ kind: "before", visitId: visit.id, files: [], captions: {} });
       setModalType("beforePhotos");
       return;
     }
@@ -1428,7 +1459,7 @@ export default function App() {
     setSelectedProjectId(visit.project_id);
     setSelectedVisitId(visit.id);
     setWorkflowVisitId(visit.id);
-    setCompletionForm({ notes: "", files: [] });
+    setCompletionForm({ notes: "", files: [], captions: {} });
     setModalType("completeVisit");
   }
 
@@ -1517,6 +1548,7 @@ export default function App() {
         ...names,
       ].join(" ");
       const fileName = `${names.join("-")}-${activeVisit.visit_date}-safety-form.pdf`.replace(/\s+/g, "-");
+      setNotice("Saving Safety PDF to Supabase Storage...");
       await uploadVisitGeneratedFile({
         companyId: rowsSource.companyId,
         projectId: activeProject.id,
@@ -1531,11 +1563,11 @@ export default function App() {
         hazards: safetyForm.hazards,
         team: names,
       });
-      await refreshData();
       setWorkflowVisitId(activeVisit.id);
-      setPhotoStep({ kind: "before", visitId: activeVisit.id, files: [] });
+      setPhotoStep({ kind: "before", visitId: activeVisit.id, files: [], captions: {} });
       setModalType("beforePhotos");
       setNotice("Safety form saved. Add before photos to start work.");
+      refreshData();
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -1558,17 +1590,22 @@ export default function App() {
 
     setLoading(true);
     try {
-      for (const file of photoStep.files) {
-        await uploadVisitPhoto({
+      setNotice(`Uploading ${photoStep.files.length} before photo${photoStep.files.length === 1 ? "" : "s"}...`);
+      await Promise.all(
+        photoStep.files.map((file) => {
+          const caption = photoStep.captions?.[fileInputKey(file)]?.trim() || "";
+          return uploadVisitPhoto({
           companyId: rowsSource.companyId,
           projectId: activeProject.id,
           visitId: activeVisit.id,
           profileId: profile.id,
           file,
           fileType: "before_photo",
-          searchText: `Before photo uploaded by ${currentUserName} at ${new Date().toISOString()}`,
-        });
-      }
+          photoCaption: caption,
+          searchText: `Before photo uploaded by ${currentUserName} at ${new Date().toISOString()}. ${caption}`,
+          });
+        }),
+      );
       await logVisitActivity(activeVisit, "before_photos_uploaded", `${currentUserName} uploaded ${photoStep.files.length} before photo${photoStep.files.length === 1 ? "" : "s"}.`, {
         count: photoStep.files.length,
       });
@@ -1576,11 +1613,11 @@ export default function App() {
       await logVisitActivity(activeVisit, "arrived", `${currentUserName} arrived and started work.`, {
         arrivedAt: new Date().toISOString(),
       });
-      await refreshData();
       setModalType(null);
       setWorkflowVisitId("");
-      setPhotoStep({ kind: "", visitId: "", files: [] });
+      setPhotoStep({ kind: "", visitId: "", files: [], captions: {} });
       setNotice("Work started. Ticket is Active.");
+      refreshData();
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -1603,17 +1640,22 @@ export default function App() {
 
     setLoading(true);
     try {
-      for (const file of completionForm.files) {
-        await uploadVisitPhoto({
+      setNotice(`Uploading ${completionForm.files.length} after photo${completionForm.files.length === 1 ? "" : "s"}...`);
+      await Promise.all(
+        completionForm.files.map((file) => {
+          const caption = completionForm.captions?.[fileInputKey(file)]?.trim() || "";
+          return uploadVisitPhoto({
           companyId: rowsSource.companyId,
           projectId: activeProject.id,
           visitId: activeVisit.id,
           profileId: profile.id,
           file,
           fileType: "completion_photo",
-          searchText: `After photo uploaded by ${currentUserName} at ${new Date().toISOString()}. ${completionForm.notes}`,
-        });
-      }
+          photoCaption: caption,
+          searchText: `After photo uploaded by ${currentUserName} at ${new Date().toISOString()}. ${completionForm.notes} ${caption}`,
+          });
+        }),
+      );
       await logVisitActivity(activeVisit, "after_photos_uploaded", `${currentUserName} uploaded ${completionForm.files.length} after photo${completionForm.files.length === 1 ? "" : "s"}.`, {
         count: completionForm.files.length,
       });
@@ -1622,11 +1664,11 @@ export default function App() {
         completedAt: new Date().toISOString(),
         notes: completionForm.notes,
       });
-      await refreshData();
       setModalType(null);
       setWorkflowVisitId("");
-      setCompletionForm({ notes: "", files: [] });
+      setCompletionForm({ notes: "", files: [], captions: {} });
       setNotice("Thank you. Work is Done.");
+      refreshData();
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -1653,7 +1695,7 @@ export default function App() {
     setSelectedAssignmentId("");
     if (selectedVisitId === visitToDelete.id) setSelectedVisitId("");
     if (workflowVisitId === visitToDelete.id) setWorkflowVisitId("");
-    if (photoStep.visitId === visitToDelete.id) setPhotoStep({ kind: "", visitId: "", files: [] });
+    if (photoStep.visitId === visitToDelete.id) setPhotoStep({ kind: "", visitId: "", files: [], captions: {} });
     if (detailOverlay === "visit") setDetailOverlay(project ? "project" : "");
     setNotice("Ticket and Activity Feed removed.");
     refreshData();
@@ -1665,8 +1707,8 @@ export default function App() {
       return;
     }
     if (!assignment?.visitId || !trackElement) return;
-    if (assignment.type !== row.kind) {
-      setNotice("Drop people visits on people rows and equipment visits on equipment rows.");
+    if (row.kind !== "project" && assignment.type !== row.kind) {
+      setNotice("Drop tickets on matching rows.");
       return;
     }
 
@@ -1680,7 +1722,7 @@ export default function App() {
     setLoading(true);
     let addedNewResource = false;
 
-    if (row.id !== assignment.resourceId) {
+    if (row.kind !== "project" && row.id !== assignment.resourceId) {
       if (row.kind === "person") {
         const addResult = await supabase.from("visit_people").insert({ visit_id: assignment.visitId, profile_id: row.id });
         if (addResult.error) {
@@ -1738,6 +1780,36 @@ export default function App() {
     setLoading(false);
     setNotice(`Visit moved to ${toTimeValue(start)} - ${toTimeValue(end)}.`);
     refreshData();
+  }
+
+  async function assignPersonToVisit({ personId, visitId }) {
+    if (!supabase || !canManage) {
+      setNotice("Only Owner, PM, or Office Manager can assign people.");
+      return;
+    }
+    if (!personId || !visitId) return;
+
+    const visit = (rowsSource.visits ?? []).find((item) => item.id === visitId);
+    const person = rowsSource.people.find((item) => item.id === personId);
+    if (!visit || !person) return;
+    if (visit.people_ids?.includes(personId)) {
+      setNotice(`${profileDisplayName(person)} is already assigned to this ticket.`);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("visit_people").insert({ visit_id: visitId, profile_id: personId });
+      if (error) throw error;
+      await logVisitActivity(visit, "person_assigned", `${currentUserName} assigned ${profileDisplayName(person)} to this ticket.`, { personId });
+      setNotice(`${profileDisplayName(person)} assigned to ticket.`);
+      refreshData();
+    } catch (error) {
+      setNotice(error.message);
+      refreshData();
+    } finally {
+      setLoading(false);
+    }
   }
 
   function openAddModal() {
@@ -1833,7 +1905,7 @@ export default function App() {
 
       if (isPhoto) {
         const siblingPhotos = (rowsSource.files ?? [])
-          .filter((file) => (file.file_kind === "photo" || file.mime_type?.startsWith("image/")) && file.project_id === opened.project_id && (!opened.visit_id || file.visit_id === opened.visit_id))
+          .filter((file) => (file.file_kind === "photo" || file.mime_type?.startsWith("image/")) && file.project_id === opened.project_id && (opened.visit_id ? file.visit_id === opened.visit_id : !file.visit_id))
           .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
         const hydrated = await Promise.all(
           siblingPhotos.map(async (file) => {
@@ -1896,7 +1968,7 @@ export default function App() {
       setViewerItems(nextItems);
       setSelectedAttachment(nextItems[0] ?? null);
       await refreshData();
-      setNotice("Photo deleted.");
+      setNotice("File deleted.");
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -2100,8 +2172,10 @@ export default function App() {
     return (
       <ScheduleView
         assignmentsReady={assignmentsSource.length > 0}
+        availablePeople={availableTodayPeople}
         equipmentRows={equipmentRows}
         peopleRows={peopleRows}
+        projectRows={projectRows}
         avatarUrls={avatarUrls}
         canDeleteTickets={canDeleteTickets}
         projects={rowsSource.projects}
@@ -2111,6 +2185,7 @@ export default function App() {
         setSelectedDate={setSelectedDate}
         visits={rowsSource.visits ?? []}
         onAdd={openAddModal}
+        onAssignPerson={assignPersonToVisit}
         onDropAssignment={moveVisitAssignment}
         onRemoveVisit={deleteVisit}
         onSelect={selectAssignment}
@@ -2340,7 +2415,7 @@ export default function App() {
                 companyId={rowsSource.companyId}
                 profileId={profile?.id}
                 projectId={selectedProject.id}
-                visitId={currentVisit?.id ?? null}
+                visitId={null}
                 onOpen={openAttachment}
                 onUploaded={(message) => {
                   setNotice(message);
@@ -2413,6 +2488,7 @@ export default function App() {
           <ProjectDetailOverlay
             canDeleteTickets={canDeleteTickets}
             canManage={canManage}
+            companyId={rowsSource.companyId}
             currentVisit={currentVisit}
             files={projectAttachments}
             getProfileName={getProfileName}
@@ -2423,7 +2499,12 @@ export default function App() {
             onOpenAttachment={openAttachment}
             onOpenVisit={openVisitOverlay}
             onRemoveVisit={deleteVisit}
+            onUploaded={(message) => {
+              setNotice(message);
+              refreshData();
+            }}
             people={rowsSource.people}
+            profileId={profile?.id}
             project={selectedProject}
             activities={selectedProjectActivities}
             visits={selectedProjectVisits}
@@ -2433,6 +2514,7 @@ export default function App() {
         {detailOverlay === "visit" && selectedProject && currentVisit && (
           <VisitDetailOverlay
             canDeleteTickets={canDeleteTickets}
+            companyId={rowsSource.companyId}
             equipment={currentVisitEquipment}
             files={currentVisitFiles}
             getProfileName={getProfileName}
@@ -2441,8 +2523,13 @@ export default function App() {
             onComplete={() => startCompletionWorkflow(currentVisit)}
             onEdit={() => editVisit(currentVisit)}
             onOpenAttachment={openAttachment}
+            onUploaded={(message) => {
+              setNotice(message);
+              refreshData();
+            }}
             onRemove={deleteVisit}
             people={currentVisitPeople}
+            profileId={profile?.id}
             profiles={rowsSource.people}
             project={selectedProject}
             visit={currentVisit}
@@ -2632,10 +2719,12 @@ export default function App() {
         {modalType === "beforePhotos" && workflowVisit && workflowProject && (
           <AppModal title="Before Work Photos" onClose={() => setModalType(null)}>
             <PhotoStepModal
+              captions={photoStep.captions}
               files={photoStep.files}
               label="Upload at least one photo before work starts."
               loading={loading}
-              onFiles={(files) => setPhotoStep({ kind: "before", visitId: workflowVisit.id, files })}
+              onCaption={(key, value) => setPhotoStep((current) => ({ ...current, captions: { ...current.captions, [key]: value } }))}
+              onFiles={(files) => setPhotoStep({ kind: "before", visitId: workflowVisit.id, files, captions: {} })}
               onSubmit={saveBeforePhotos}
             />
           </AppModal>
@@ -2729,15 +2818,19 @@ export default function App() {
                   zoom={photoZoom}
                 />
               ) : selectedAttachment.file_kind === "pdf" || selectedAttachment.mime_type === "application/pdf" ? (
-                <iframe title={selectedAttachment.file_name || "PDF"} src={selectedAttachment.viewUrl} />
+                <DocumentFileViewer attachment={selectedAttachment} canDelete={canManage || selectedAttachment.uploaded_by === profile?.id} loading={loading} onDelete={removeSelectedAttachment} onDownload={() => downloadAttachment(selectedAttachment)}>
+                  <iframe title={selectedAttachment.file_name || "PDF"} src={selectedAttachment.viewUrl} />
+                </DocumentFileViewer>
               ) : (
-                <div className="documentOpenCard">
-                  <FileSpreadsheet size={38} />
-                  <strong>{selectedAttachment.file_name}</strong>
-                  <a href={selectedAttachment.viewUrl} target="_blank" rel="noreferrer">
-                    Open Excel file
-                  </a>
-                </div>
+                <DocumentFileViewer attachment={selectedAttachment} canDelete={canManage || selectedAttachment.uploaded_by === profile?.id} loading={loading} onDelete={removeSelectedAttachment} onDownload={() => downloadAttachment(selectedAttachment)}>
+                  <div className="documentOpenCard">
+                    <FileSpreadsheet size={38} />
+                    <strong>{selectedAttachment.file_name}</strong>
+                    <a href={selectedAttachment.viewUrl} target="_blank" rel="noreferrer">
+                      Open Excel file
+                    </a>
+                  </div>
+                </DocumentFileViewer>
               )}
             </div>
           </AppModal>
@@ -2764,7 +2857,7 @@ function DetailOverlayShell({ children, onClose, title }) {
   );
 }
 
-function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, currentVisit, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onOpenAttachment, onOpenVisit, onRemoveVisit, people, project, visits }) {
+function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, companyId, currentVisit, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onOpenAttachment, onOpenVisit, onRemoveVisit, onUploaded, people, profileId, project, visits }) {
   return (
     <DetailOverlayShell title={project.name} onClose={onClose}>
       <div className="detailHero projectDetailHeroTextOnly">
@@ -2838,6 +2931,15 @@ function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, cu
 
       <ActivityFeed activities={activities} getProfileName={getProfileName} visits={visits} />
 
+      {canManage && (
+        <div className="detailSection">
+          <div className="panelSectionHeader">
+            <h3>Project Files</h3>
+          </div>
+          <DocumentUploader attachments={files} companyId={companyId} profileId={profileId} projectId={project.id} visitId={null} onOpen={onOpenAttachment} onUploaded={onUploaded} />
+        </div>
+      )}
+
       <AttachmentSections files={files} onOpen={onOpenAttachment} profiles={people} />
     </DetailOverlayShell>
   );
@@ -2889,7 +2991,7 @@ function ActivityFeed({ activities = [], getProfileName, visits = [] }) {
   );
 }
 
-function VisitDetailOverlay({ canDeleteTickets, equipment, files, getProfileName, onArrive, onClose, onComplete, onEdit, onOpenAttachment, onRemove, people, profiles, project, visit }) {
+function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, files, getProfileName, onArrive, onClose, onComplete, onEdit, onOpenAttachment, onRemove, onUploaded, people, profileId, profiles, project, visit }) {
   return (
     <DetailOverlayShell title={`${project.name} Ticket`} onClose={onClose}>
       <div className="ticketHeaderCard">
@@ -2923,6 +3025,17 @@ function VisitDetailOverlay({ canDeleteTickets, equipment, files, getProfileName
         <ProjectFact icon={Truck} label="Equipment" value={equipment.map((item) => item.name).join(", ") || "No equipment"} />
       </dl>
 
+      <div className="ticketScopeGrid">
+        <section>
+          <h3>Project Work Description</h3>
+          <p>{project.description || "No project work description yet."}</p>
+        </section>
+        <section>
+          <h3>Today Work Scope</h3>
+          <p>{visit.work_scope || "No work scope for this ticket."}</p>
+        </section>
+      </div>
+
       {visit.status !== "completed" ? (
         <div className="visitActions wideActions">
           {visit.status === "planned" && (
@@ -2941,6 +3054,13 @@ function VisitDetailOverlay({ canDeleteTickets, equipment, files, getProfileName
       ) : (
         <div className="thanksBox">Thank you. This ticket is Done.</div>
       )}
+
+      <div className="detailSection">
+        <div className="panelSectionHeader">
+          <h3>Ticket Files</h3>
+        </div>
+        <DocumentUploader attachments={files} companyId={companyId} profileId={profileId} projectId={project.id} visitId={visit.id} onOpen={onOpenAttachment} onUploaded={onUploaded} />
+      </div>
 
       <AttachmentSections files={files} onOpen={onOpenAttachment} profiles={profiles} />
     </DetailOverlayShell>
@@ -2995,8 +3115,9 @@ function PersonDetailOverlay({ avatarUrl, canManage, onClose, onEdit, person }) 
 function AttachmentSections({ files, onOpen, profiles = [] }) {
   const groups = [
     { id: "safety", label: "Safety Forms", icon: FileText, items: files.filter((file) => file.file_type === "safety_form") },
-    { id: "before", label: "Before Photos", icon: Camera, items: files.filter((file) => file.file_type === "before_photo") },
-    { id: "after", label: "After Photos", icon: Camera, items: files.filter((file) => file.file_type === "completion_photo") },
+    { id: "projectPhotos", label: "Project Photos", icon: Camera, items: files.filter((file) => file.file_kind === "photo" && !file.visit_id) },
+    { id: "before", label: "Before Photos", icon: Camera, items: files.filter((file) => file.file_type === "before_photo" && file.visit_id) },
+    { id: "after", label: "After Photos", icon: Camera, items: files.filter((file) => file.file_type === "completion_photo" && file.visit_id) },
     { id: "pdf", label: "PDFs", icon: FileText, items: files.filter((file) => file.file_kind === "pdf" && file.file_type !== "safety_form") },
     { id: "excel", label: "Excel", icon: FileSpreadsheet, items: files.filter((file) => file.file_kind === "excel") },
   ];
@@ -3023,7 +3144,7 @@ function AttachmentSections({ files, onOpen, profiles = [] }) {
                       <span className="attachmentThumb">{file.file_kind === "photo" ? <ImagePlus size={22} /> : <FileText size={22} />}</span>
                       <span className="attachmentMeta">
                         <strong title={file.file_name}>{file.file_name}</strong>
-                        <small>{uploader?.full_name || uploader?.email || "Unknown"} · {new Date(file.created_at).toLocaleString()}</small>
+                        <small>{file.photo_caption ? `${file.photo_caption} · ` : ""}{uploader?.full_name || uploader?.email || "Unknown"} · {new Date(file.created_at).toLocaleString()}</small>
                       </span>
                     </button>
                   );
@@ -3112,16 +3233,16 @@ function SignaturePad({ label, onChange, value }) {
   function getPoint(event) {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
-    const source = event.touches?.[0] ?? event;
     return {
-      x: ((source.clientX - rect.left) / rect.width) * canvas.width,
-      y: ((source.clientY - rect.top) / rect.height) * canvas.height,
+      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvas.height,
     };
   }
 
   function start(event) {
     event.preventDefault();
     const canvas = canvasRef.current;
+    canvas.setPointerCapture?.(event.pointerId);
     const ctx = canvas.getContext("2d");
     const point = getPoint(event);
     drawingRef.current = true;
@@ -3143,8 +3264,9 @@ function SignaturePad({ label, onChange, value }) {
     ctx.stroke();
   }
 
-  function end() {
+  function end(event) {
     if (!drawingRef.current) return;
+    canvasRef.current?.releasePointerCapture?.(event.pointerId);
     drawingRef.current = false;
     onChange(canvasRef.current.toDataURL("image/png"));
   }
@@ -3168,20 +3290,17 @@ function SignaturePad({ label, onChange, value }) {
         width="680"
         height="180"
         aria-label={`${label} digital signature`}
-        onMouseDown={start}
-        onMouseMove={move}
-        onMouseUp={end}
-        onMouseLeave={end}
-        onTouchStart={start}
-        onTouchMove={move}
-        onTouchEnd={end}
+        onPointerDown={start}
+        onPointerMove={move}
+        onPointerUp={end}
+        onPointerCancel={end}
       />
       {!value && <span>Draw signature here</span>}
     </div>
   );
 }
 
-function PhotoStepModal({ files = [], label, loading, onFiles, onSubmit }) {
+function PhotoStepModal({ captions = {}, files = [], label, loading, onCaption, onFiles, onSubmit }) {
   const selectedFiles = Array.isArray(files) ? files : typeof files?.[Symbol.iterator] === "function" ? [...files] : [];
 
   return (
@@ -3189,9 +3308,15 @@ function PhotoStepModal({ files = [], label, loading, onFiles, onSubmit }) {
       <div className="emptyPanelState">{label}</div>
       <input accept="image/jpeg,image/png,image/webp" multiple required type="file" onChange={(event) => onFiles([...event.target.files])} />
       <div className="selectedFiles">
-        {selectedFiles.map((file) => (
-          <span key={`${file.name}-${file.size}`}>{file.name}</span>
-        ))}
+        {selectedFiles.map((file) => {
+          const key = fileInputKey(file);
+          return (
+            <label className="selectedFileWithCaption" key={key}>
+              <span>{file.name}</span>
+              <input placeholder="Photo note..." value={captions[key] || ""} onChange={(event) => onCaption?.(key, event.target.value)} />
+            </label>
+          );
+        })}
       </div>
       <div className="formActions wide">
         <button className="addButton" type="submit" disabled={loading || selectedFiles.length === 0}>
@@ -3204,6 +3329,8 @@ function PhotoStepModal({ files = [], label, loading, onFiles, onSubmit }) {
 }
 
 function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
+  const selectedFiles = Array.isArray(form.files) ? form.files : [];
+
   return (
     <form className="workflowForm" onSubmit={onSubmit}>
       <FormField label="Completion comments">
@@ -3212,9 +3339,15 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
       <div className="emptyPanelState">Upload at least one after photo before completing the ticket.</div>
       <input accept="image/jpeg,image/png,image/webp" multiple required type="file" onChange={(event) => onChange({ ...form, files: [...event.target.files] })} />
       <div className="selectedFiles">
-        {form.files.map((file) => (
-          <span key={`${file.name}-${file.size}`}>{file.name}</span>
-        ))}
+        {selectedFiles.map((file) => {
+          const key = fileInputKey(file);
+          return (
+            <label className="selectedFileWithCaption" key={key}>
+              <span>{file.name}</span>
+              <input placeholder="Photo note..." value={form.captions?.[key] || ""} onChange={(event) => onChange({ ...form, captions: { ...form.captions, [key]: event.target.value } })} />
+            </label>
+          );
+        })}
       </div>
       <div className="formActions wide">
         <button className="addButton" type="submit" disabled={loading || form.files.length === 0}>
@@ -3226,7 +3359,7 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
   );
 }
 
-function ScheduleView({ assignmentsReady, avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onDropAssignment, onRemoveVisit, onSelect }) {
+function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projectRows = [], projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onAssignPerson, onDropAssignment, onRemoveVisit, onSelect }) {
   const [dragPreview, setDragPreview] = useState(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(selectedDate);
@@ -3321,13 +3454,16 @@ function ScheduleView({ assignmentsReady, avatarUrls, canDeleteTickets, equipmen
               <div className="nowPill">{nowLabel}</div>
             </>
           )}
-          {!assignmentsReady && <div className="emptyTimeline">No visits scheduled for this day.</div>}
+          {projectRows.length === 0 && <div className="emptyTimeline">No project visits scheduled for this day.</div>}
 
-          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} setDragPreview={setDragPreview} title="People" count={peopleRows.length} icon={UsersRound} rows={peopleRows} selectedDate={selectedDate} visits={visits} onDropAssignment={onDropAssignment} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
-          <ResourceGroup canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} setDragPreview={setDragPreview} title="Equipment" count={equipmentRows.length} icon={Truck} rows={equipmentRows} selectedDate={selectedDate} visits={visits} onDropAssignment={onDropAssignment} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
+          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignPerson={onAssignPerson} onDropAssignment={onDropAssignment} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
         </div>
       ) : (
         <CalendarTileGrid equipment={equipmentRows} mode={scheduleMode} people={peopleRows} projects={projects} selectedDate={selectedDate} today={today} visits={visits} onSelectDay={openDay} />
+      )}
+
+      {scheduleMode === "day" && (
+        <AvailablePeoplePool avatarUrls={avatarUrls} people={availablePeople} />
       )}
     </>
   );
@@ -3546,9 +3682,9 @@ function EquipmentView({ equipment }) {
 
 function DocumentsView({ files, onOpen, profiles, projects }) {
   const groups = [
-    { id: "safety", label: "Safety Forms", icon: FileText, items: files.filter((file) => file.file_type === "safety_form") },
-    { id: "before", label: "Before Photos", icon: Camera, items: files.filter((file) => file.file_type === "before_photo") },
-    { id: "after", label: "After Photos", icon: Camera, items: files.filter((file) => file.file_type === "completion_photo") },
+    { id: "projectPhotos", label: "Project Photos", icon: Camera, items: files.filter((file) => file.file_kind === "photo" && !file.visit_id) },
+    { id: "before", label: "Before Photos", icon: Camera, items: files.filter((file) => file.file_type === "before_photo" && file.visit_id) },
+    { id: "after", label: "After Photos", icon: Camera, items: files.filter((file) => file.file_type === "completion_photo" && file.visit_id) },
     { id: "pdf", label: "PDFs", icon: FileText, items: files.filter((file) => file.file_kind === "pdf" && file.file_type !== "safety_form") },
     { id: "excel", label: "Excel", icon: FileSpreadsheet, items: files.filter((file) => file.file_kind === "excel") },
     { id: "other", label: "Other", icon: FileText, items: files.filter((file) => !["safety_form", "before_photo", "completion_photo"].includes(file.file_type) && !["pdf", "excel", "photo"].includes(file.file_kind)) },
@@ -3574,7 +3710,7 @@ function DocumentsView({ files, onOpen, profiles, projects }) {
                   <span className="searchIcon">{file.file_kind === "photo" ? <ImagePlus size={18} /> : file.file_kind === "excel" ? <FileSpreadsheet size={18} /> : <FileText size={18} />}</span>
                   <span>
                     <strong>{file.file_name}</strong>
-                    <small>{project?.name || "Project"} / {file.file_type?.replaceAll("_", " ")} / {uploader?.full_name || uploader?.email || "Unknown"} / {new Date(file.created_at).toLocaleString()}</small>
+                    <small>{project?.name || "Project"} / {file.visit_id ? "Ticket file" : "Project file"} / {file.photo_caption ? `${file.photo_caption} / ` : ""}{file.file_type?.replaceAll("_", " ")} / {uploader?.full_name || uploader?.email || "Unknown"} / {new Date(file.created_at).toLocaleString()}</small>
                   </span>
                 </button>
               );
@@ -4059,7 +4195,7 @@ function AuthGate({
   );
 }
 
-function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onDropAssignment, onRemoveVisit, onSelect }) {
+function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onAssignPerson, onDropAssignment, onRemoveVisit, onSelect }) {
   return (
     <div className="resourceGroup">
       <div className="groupLabel">
@@ -4075,6 +4211,8 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
           <div className="resourceIdentity">
             {row.kind === "person" ? (
               <Avatar profile={row} url={avatarUrls[row.id]} />
+            ) : row.kind === "project" ? (
+              <div className={`equipmentAvatar projectAvatar ${row.color ?? "blue"}`}>{makeInitials(row.name, "PR")}</div>
             ) : (
               <div className={`equipmentAvatar ${row.icon ?? "machine"}`}>{equipmentIcon(row.type)}</div>
             )}
@@ -4124,7 +4262,7 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
                 project_id: assignment.projectId,
                 visit_date: selectedDate,
               };
-              return <ScheduleBlock assignment={assignment} canDeleteTickets={canDeleteTickets} key={assignment.id} onRemove={() => onRemoveVisit?.(visit)} onSelect={onSelect} />;
+              return <ScheduleBlock assignment={assignment} avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} key={assignment.id || assignment.visitId} onAssignPerson={onAssignPerson} onRemove={() => onRemoveVisit?.(visit)} onSelect={onSelect} />;
             })}
           </div>
         </div>
@@ -4133,7 +4271,35 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
   );
 }
 
-function ScheduleBlock({ assignment, canDeleteTickets, onRemove, onSelect }) {
+function AvailablePeoplePool({ avatarUrls = {}, people = [] }) {
+  return (
+    <section className="availablePeoplePool">
+      <div>
+        <strong>Available today</strong>
+        <span>{people.length ? "Drag a person into a project ticket" : "No available people for this day"}</span>
+      </div>
+      <div className="availableAvatarStrip">
+        {people.map((person) => (
+          <button
+            className="availableAvatarCard"
+            draggable
+            key={person.id}
+            type="button"
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "copy";
+              event.dataTransfer.setData("application/x-buildcore-person", person.id);
+            }}
+          >
+            <Avatar profile={person} url={avatarUrls[person.id]} />
+            <span>{profileDisplayName(person)}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssignPerson, onRemove, onSelect }) {
   const span = scheduleEndHour - scheduleStartHour;
   const left = Math.max(0, ((assignment.start - scheduleStartHour) / span) * 100);
   const width = Math.min(100 - left, ((assignment.end - assignment.start) / span) * 100);
@@ -4151,6 +4317,16 @@ function ScheduleBlock({ assignment, canDeleteTickets, onRemove, onSelect }) {
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("application/json", JSON.stringify(assignment));
       }}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes("application/x-buildcore-person")) event.preventDefault();
+      }}
+      onDrop={(event) => {
+        const personId = event.dataTransfer.getData("application/x-buildcore-person");
+        if (!personId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onAssignPerson?.({ personId, visitId: assignment.visitId });
+      }}
       onKeyDown={(event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
@@ -4160,8 +4336,16 @@ function ScheduleBlock({ assignment, canDeleteTickets, onRemove, onSelect }) {
       <span className="scheduleBlockTop">
         <strong>{assignment.title}</strong>
       </span>
-      <span>{assignment.subtitle}</span>
+      <span className="scheduleBlockScope">{assignment.subtitle}</span>
       {assignment.timeText && <small>{assignment.timeText}</small>}
+      {assignment.people?.length > 0 && (
+        <span className="assignmentCrew">
+          {assignment.people.slice(0, 5).map((person) => (
+            <Avatar profile={person} url={avatarUrls[person.id]} key={person.id} />
+          ))}
+          <i>{assignment.people.map((person) => profileDisplayName(person)).join(", ")}</i>
+        </span>
+      )}
       {assignment.status && <em className="scheduleBlockStatus">{normalizeVisitStatus(assignment.status)}</em>}
       {canDeleteTickets && assignment.visitId && (
         <button
@@ -4209,6 +4393,7 @@ function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading,
         <div>
           <strong>{attachment.file_name}</strong>
           <small>{uploader?.full_name || uploader?.email || "Unknown"} / {new Date(attachment.created_at).toLocaleString()}</small>
+          {attachment.photo_caption && <p className="photoCaption">{attachment.photo_caption}</p>}
         </div>
         <div className="viewerControls">
           <button type="button" title="Zoom out" onClick={() => onZoom(Math.max(0.65, zoom - 0.15))}>
@@ -4260,6 +4445,30 @@ function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading,
           ))
         )}
       </div>
+    </section>
+  );
+}
+
+function DocumentFileViewer({ attachment, canDelete, children, loading, onDelete, onDownload }) {
+  return (
+    <section className="documentFileViewer">
+      <div className="viewerTopBar">
+        <div>
+          <strong>{attachment.file_name}</strong>
+          <small>{attachment.visit_id ? "Ticket file" : "Project file"} / {new Date(attachment.created_at).toLocaleString()}</small>
+        </div>
+        <div className="viewerControls">
+          <button type="button" title="Download" onClick={onDownload}>
+            <Download size={17} />
+          </button>
+          {canDelete && (
+            <button className="dangerIcon" type="button" title="Delete file" disabled={loading} onClick={onDelete}>
+              <Trash2 size={17} />
+            </button>
+          )}
+        </div>
+      </div>
+      {children}
     </section>
   );
 }
