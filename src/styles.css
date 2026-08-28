@@ -524,7 +524,7 @@ h1 {
 .detailOverlay {
   position: fixed;
   inset: 0;
-  z-index: 44;
+  z-index: 56;
   display: grid;
   place-items: start center;
   padding: 5vh 20px 24px;
@@ -949,14 +949,14 @@ h1 {
 
 .documentRow {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: 64px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   width: 100%;
-  min-height: 72px;
+  min-height: 84px;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: 13px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.78);
   color: var(--ink);
   text-align: left;
@@ -979,6 +979,77 @@ h1 {
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
+}
+
+.filePreviewThumb {
+  position: relative;
+  display: grid;
+  width: 64px;
+  height: 58px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(241, 245, 249, 0.84)),
+    #f8fafc;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 12px 24px rgba(15, 23, 42, 0.1);
+}
+
+.filePreviewThumb.card {
+  width: 58px;
+  height: 56px;
+  border-radius: 13px;
+}
+
+.filePreviewThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.filePreviewThumb.document {
+  background: linear-gradient(145deg, #f8fafc, #e2e8f0);
+}
+
+.filePreviewThumb.pdf {
+  background: linear-gradient(145deg, #fff5f5, #fee2e2);
+}
+
+.filePreviewThumb.excel {
+  background: linear-gradient(145deg, #ecfdf5, #d1fae5);
+}
+
+.pdfMiniature {
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+  color: #b91c1c;
+}
+
+.pdfMiniature b {
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.excelMiniature {
+  display: grid;
+  grid-template-columns: repeat(3, 10px);
+  gap: 4px;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.excelMiniature i {
+  width: 10px;
+  height: 8px;
+  border-radius: 3px;
+  background: #10b981;
 }
 
 .safetySummary {
@@ -1618,7 +1689,7 @@ h1 {
 .resourceRow {
   display: grid;
   grid-template-columns: var(--resource-col) minmax(0, 1fr);
-  min-height: 128px;
+  min-height: max(128px, calc(var(--lane-count, 1) * 116px));
   border-bottom: 1px solid var(--line);
 }
 
@@ -1770,11 +1841,11 @@ h1 {
   position: absolute;
   top: 12px;
   bottom: 12px;
-  display: grid;
-  align-content: start;
-  gap: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   min-width: 120px;
-  padding: 9px 34px 9px 14px;
+  padding: 10px 34px 10px 12px;
   overflow: hidden;
   border: 1px solid rgba(15, 23, 42, 0.07);
   border-radius: 12px;
@@ -1812,6 +1883,22 @@ h1 {
   white-space: nowrap;
 }
 
+.scheduleBlockTime {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 22px;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.64);
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 950;
+  line-height: 1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.84);
+}
+
 .scheduleBlockScope {
   display: -webkit-box;
   overflow: hidden;
@@ -1825,10 +1912,18 @@ h1 {
 }
 
 .assignmentCrew {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.assignmentAvatarStack {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 5px;
+  padding-left: 1px;
 }
 
 .assignmentCrew .avatar {
@@ -1837,8 +1932,38 @@ h1 {
   border-width: 2px;
 }
 
-.assignmentCrew .avatar + .avatar {
-  margin-left: -10px;
+.crewAvatarButton {
+  position: relative;
+  display: grid;
+  flex: 0 0 23px;
+  width: 23px;
+  height: 23px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: grab;
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.crewAvatarButton + .crewAvatarButton {
+  margin-left: -7px;
+}
+
+.crewAvatarButton:active {
+  cursor: grabbing;
+}
+
+.crewAvatarButton:hover {
+  z-index: 2;
+  transform: translateY(-1px) scale(1.05);
+}
+
+.crewAvatarButton .avatar,
+.crewAvatarButton img {
+  pointer-events: none;
 }
 
 .assignmentCrew i {
@@ -1853,23 +1978,27 @@ h1 {
 }
 
 .scheduleBlockTop {
-  display: block;
+  display: flex;
+  min-height: 18px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
   min-width: 0;
 }
 
 .scheduleBlockTop strong {
   display: block;
+  flex: 1 1 auto;
   min-width: 0;
   line-height: 1.15;
 }
 
 .scheduleBlockStatus {
   display: inline-flex;
-  width: fit-content;
-  max-width: 100%;
+  flex: 0 0 auto;
+  max-width: 78px;
   min-height: 17px;
   align-items: center;
-  margin-top: 1px;
   padding: 3px 7px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.58);
@@ -4333,6 +4462,14 @@ textarea:focus-visible {
   transition:
     opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
     transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.availablePeoplePool.dropActive {
+  border-color: rgba(37, 99, 235, 0.42);
+  background: rgba(239, 246, 255, 0.92);
+  box-shadow:
+    0 18px 45px rgba(15, 23, 42, 0.07),
+    inset 0 0 0 2px rgba(37, 99, 235, 0.16);
 }
 
 .calendarDayTile:hover .dayHoverPanel {

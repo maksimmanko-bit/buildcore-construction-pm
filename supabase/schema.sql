@@ -660,7 +660,7 @@ as $$
   union all
 
   select concat('file-', vf.id), 'file', vf.file_name, p.name,
-    ts_headline('english', coalesce(vf.search_text, vf.file_name), plainto_tsquery('english', search_query), 'MaxWords=22, MinWords=8'),
+    ts_headline('english', coalesce(vf.photo_caption, '') || ' ' || coalesce(vf.search_text, vf.file_name), plainto_tsquery('english', search_query), 'MaxWords=22, MinWords=8'),
     vf.file_kind
   from public.visit_files vf
   join public.projects p on p.id = vf.project_id

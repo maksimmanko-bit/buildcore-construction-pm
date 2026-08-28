@@ -441,8 +441,15 @@ function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function cleanSearchText(value) {
+  return String(value ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function highlightText(value, query) {
-  const raw = String(value ?? "");
+  const raw = cleanSearchText(value);
   const terms = String(query ?? "")
     .toLowerCase()
     .split(/[^a-z0-9а-яё]+/i)
@@ -520,6 +527,7 @@ export default function App() {
   const [selectedVisitId, setSelectedVisitId] = useState("");
   const [selectedPersonId, setSelectedPersonId] = useState("");
   const [detailOverlay, setDetailOverlay] = useState("");
+  const [detailOverlayStack, setDetailOverlayStack] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -781,14 +789,18 @@ export default function App() {
   useEffect(() => {
     function handleKeyDown(event) {
       if (event.key !== "Escape") return;
+      if (detailOverlay) {
+        closeDetailOverlay();
+        return;
+      }
       setIsSearchOpen(false);
       setSearchResults([]);
-      setDetailOverlay("");
+      clearDetailOverlay();
     }
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [detailOverlay]);
 
   const rowsSource = isLive ? data : demo;
   const assignmentsSource = isLive ? liveAssignments : demoAssignments;
@@ -867,7 +879,7 @@ export default function App() {
         full_name: project.name,
         subtitle: project.job_number || project.address,
         color: colors[index % colors.length],
-        assignments: projectVisits.map((visit) => ({
+        assignments: projectVisits.map((visit, visitIndex) => ({
           visitId: visit.id,
           projectId: visit.project_id,
           title: project.name,
@@ -880,6 +892,8 @@ export default function App() {
           color: colors[index % colors.length],
           people: rowsSource.people.filter((person) => visit.people_ids?.includes(person.id)),
           equipment: rowsSource.equipment.filter((item) => visit.equipment_ids?.includes(item.id)),
+          laneIndex: visitIndex,
+          laneCount: projectVisits.length,
         })),
       };
     })
@@ -990,7 +1004,7 @@ export default function App() {
     setSelectedAssignmentId("");
     setSelectedPersonId("");
     setWorkflowVisitId("");
-    setDetailOverlay("");
+    clearDetailOverlay();
   }
 
   async function createCompany(event) {
@@ -1397,6 +1411,24 @@ export default function App() {
     if (error) setNotice(error.message);
   }
 
+  function showDetailOverlay(nextOverlay) {
+    if (detailOverlay && detailOverlay !== nextOverlay) setDetailOverlayStack((stack) => [...stack, detailOverlay]);
+    setDetailOverlay(nextOverlay);
+  }
+
+  function closeDetailOverlay() {
+    setDetailOverlayStack((stack) => {
+      const previous = stack.at(-1);
+      setDetailOverlay(previous || "");
+      return previous ? stack.slice(0, -1) : [];
+    });
+  }
+
+  function clearDetailOverlay() {
+    setDetailOverlay("");
+    setDetailOverlayStack([]);
+  }
+
   function openProjectOverlay(project, mode = "project") {
     setSelectedProjectId(project.id);
     if (mode === "project") {
@@ -1405,7 +1437,7 @@ export default function App() {
         .sort((a, b) => `${b.visit_date} ${b.start_time}`.localeCompare(`${a.visit_date} ${a.start_time}`))[0];
       setSelectedVisitId(nextVisit?.id ?? "");
     }
-    setDetailOverlay(mode);
+    showDetailOverlay(mode);
   }
 
   function openVisitOverlay(visit) {
@@ -1413,7 +1445,13 @@ export default function App() {
     setSelectedProjectId(visit.project_id);
     setSelectedVisitId(visit.id);
     setSelectedDate(visit.visit_date);
-    setDetailOverlay("visit");
+    showDetailOverlay("visit");
+  }
+
+  function openPersonOverlay(person) {
+    if (!person?.id) return;
+    setSelectedPersonId(person.id);
+    showDetailOverlay("person");
   }
 
   function startArrivalWorkflow(visit = currentVisit) {
@@ -1696,7 +1734,7 @@ export default function App() {
     if (selectedVisitId === visitToDelete.id) setSelectedVisitId("");
     if (workflowVisitId === visitToDelete.id) setWorkflowVisitId("");
     if (photoStep.visitId === visitToDelete.id) setPhotoStep({ kind: "", visitId: "", files: [], captions: {} });
-    if (detailOverlay === "visit") setDetailOverlay(project ? "project" : "");
+    if (detailOverlay === "visit") closeDetailOverlay();
     setNotice("Ticket and Activity Feed removed.");
     refreshData();
   }
@@ -1812,6 +1850,33 @@ export default function App() {
     }
   }
 
+  async function removePersonFromVisit({ personId, visitId }) {
+    if (!supabase || !canManage) {
+      setNotice("Only Owner, PM, or Office Manager can change ticket crews.");
+      return;
+    }
+    if (!personId || !visitId) return;
+
+    const visit = (rowsSource.visits ?? []).find((item) => item.id === visitId);
+    const person = rowsSource.people.find((item) => item.id === personId);
+    if (!visit || !person) return;
+    if (!visit.people_ids?.includes(personId)) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("visit_people").delete().eq("visit_id", visitId).eq("profile_id", personId);
+      if (error) throw error;
+      await logVisitActivity(visit, "person_removed", `${currentUserName} removed ${profileDisplayName(person)} from this ticket.`, { personId });
+      setNotice(`${profileDisplayName(person)} removed from ticket.`);
+      refreshData();
+    } catch (error) {
+      setNotice(error.message);
+      refreshData();
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function openAddModal() {
     if (!session) {
       setNotice("Sign in first.");
@@ -1870,7 +1935,7 @@ export default function App() {
     else {
       setSelectedProjectId(assignment.projectId);
       setSelectedVisitId(assignment.visitId ?? "");
-      setDetailOverlay("visit");
+      showDetailOverlay("visit");
     }
   }
 
@@ -1995,9 +2060,6 @@ export default function App() {
   }
 
   function handleSearchSelect(result) {
-    setSearchQuery("");
-    setSearchResults([]);
-    setIsSearchOpen(false);
     if (result.type === "project") {
       const project = rowsSource.projects.find((item) => item.id === result.id.replace("project-", ""));
       if (project) openProjectOverlay(project, "project");
@@ -2016,6 +2078,11 @@ export default function App() {
         else openAttachment(file);
       }
     } else if (result.type === "person") {
+      const person = rowsSource.people.find((item) => item.id === result.id.replace("person-", ""));
+      if (person) {
+        setSelectedPersonId(person.id);
+        showDetailOverlay("person");
+      }
       setActiveNav("people");
     } else if (result.type === "equipment") {
       setActiveNav("equipment");
@@ -2142,10 +2209,7 @@ export default function App() {
       return (
         <>
           <SectionToolbar label="People" onAdd={openAddModal} />
-          <PeopleView avatarUrls={avatarUrls} people={peopleRows} onSelect={(person) => {
-            setSelectedPersonId(person.id);
-            setDetailOverlay("person");
-          }} pendingPeople={rowsSource.pendingPeople ?? []} onApprove={approvePerson} />
+          <PeopleView avatarUrls={avatarUrls} people={peopleRows} onSelect={openPersonOverlay} pendingPeople={rowsSource.pendingPeople ?? []} onApprove={approvePerson} />
         </>
       );
     }
@@ -2187,6 +2251,8 @@ export default function App() {
         onAdd={openAddModal}
         onAssignPerson={assignPersonToVisit}
         onDropAssignment={moveVisitAssignment}
+        onOpenPerson={openPersonOverlay}
+        onRemovePersonFromVisit={removePersonFromVisit}
         onRemoveVisit={deleteVisit}
         onSelect={selectAssignment}
       />
@@ -2493,7 +2559,7 @@ export default function App() {
             files={projectAttachments}
             getProfileName={getProfileName}
             onAddVisit={() => openVisitModal(selectedProject.id)}
-            onClose={() => setDetailOverlay("")}
+            onClose={closeDetailOverlay}
             onEditProject={() => editProject(selectedProject)}
             onEditVisit={editVisit}
             onOpenAttachment={openAttachment}
@@ -2519,7 +2585,7 @@ export default function App() {
             files={currentVisitFiles}
             getProfileName={getProfileName}
             onArrive={() => startArrivalWorkflow(currentVisit)}
-            onClose={() => setDetailOverlay("")}
+            onClose={closeDetailOverlay}
             onComplete={() => startCompletionWorkflow(currentVisit)}
             onEdit={() => editVisit(currentVisit)}
             onOpenAttachment={openAttachment}
@@ -2541,7 +2607,7 @@ export default function App() {
             avatarUrl={avatarUrls[selectedPerson.id]}
             canManage={canManage}
             onEdit={() => editPerson(selectedPerson)}
-            onClose={() => setDetailOverlay("")}
+            onClose={closeDetailOverlay}
             person={selectedPerson}
           />
         )}
@@ -3112,6 +3178,92 @@ function PersonDetailOverlay({ avatarUrl, canManage, onClose, onEdit, person }) 
   );
 }
 
+function isAttachmentPhoto(file) {
+  return file?.file_kind === "photo" || file?.mime_type?.startsWith("image/");
+}
+
+function attachmentKindLabel(file) {
+  if (isAttachmentPhoto(file)) return file.visit_id ? "Ticket photo" : "Project photo";
+  if (file?.file_type === "safety_form") return "Safety form";
+  if (file?.file_kind === "excel" || file?.file_kind === "xlsx") return "Excel";
+  if (file?.file_kind === "pdf" || file?.mime_type === "application/pdf") return "PDF";
+  return "File";
+}
+
+function FilePreviewThumb({ file, size = "card" }) {
+  const [urls, setUrls] = useState({});
+  const photo = isAttachmentPhoto(file);
+  const kind = attachmentKindLabel(file);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadUrls() {
+      try {
+        const nextUrls = await createAttachmentUrls(file);
+        if (alive) setUrls(nextUrls);
+      } catch {
+        if (alive) setUrls({});
+      }
+    }
+
+    if (photo && file?.storage_path) loadUrls();
+    return () => {
+      alive = false;
+    };
+  }, [file, photo]);
+
+  return (
+    <span className={`filePreviewThumb ${photo ? "photo" : "document"} ${file?.file_kind ?? "file"} ${size}`}>
+      {photo && urls.thumbnailUrl ? (
+        <img src={urls.thumbnailUrl} alt="" />
+      ) : file?.file_kind === "excel" ? (
+        <span className="excelMiniature" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+          <i />
+          <i />
+          <i />
+        </span>
+      ) : (
+        <span className="pdfMiniature" aria-hidden="true">
+          <FileText size={size === "row" ? 18 : 22} />
+          <b>{kind}</b>
+        </span>
+      )}
+    </span>
+  );
+}
+
+function AttachmentPreviewCard({ file, onOpen, profiles = [] }) {
+  const uploader = profiles.find((profile) => profile.id === file.uploaded_by);
+
+  return (
+    <button className={isAttachmentPhoto(file) ? "attachmentCard photo" : "attachmentCard document"} type="button" onClick={() => onOpen(file)}>
+      <FilePreviewThumb file={file} />
+      <span className="attachmentMeta">
+        <strong title={file.file_name}>{file.file_name}</strong>
+        <small>{file.photo_caption ? `${file.photo_caption} · ` : ""}{uploader?.full_name || uploader?.email || "Unknown"} · {new Date(file.created_at).toLocaleString()}</small>
+      </span>
+    </button>
+  );
+}
+
+function DocumentListRow({ file, onOpen, profiles = [], project }) {
+  const uploader = profiles.find((item) => item.id === file.uploaded_by);
+
+  return (
+    <button className="documentRow" type="button" onClick={() => onOpen(file)}>
+      <FilePreviewThumb file={file} size="row" />
+      <span>
+        <strong>{file.file_name}</strong>
+        <small>{project?.name || "Project"} / {file.visit_id ? "Ticket file" : "Project file"} / {file.photo_caption ? `${file.photo_caption} / ` : ""}{file.file_type?.replaceAll("_", " ")} / {uploader?.full_name || uploader?.email || "Unknown"} / {new Date(file.created_at).toLocaleString()}</small>
+      </span>
+    </button>
+  );
+}
+
 function AttachmentSections({ files, onOpen, profiles = [] }) {
   const groups = [
     { id: "safety", label: "Safety Forms", icon: FileText, items: files.filter((file) => file.file_type === "safety_form") },
@@ -3137,18 +3289,9 @@ function AttachmentSections({ files, onOpen, profiles = [] }) {
               <div className="emptyPanelState">No files yet</div>
             ) : (
               <div className="attachmentStrip">
-                {group.items.map((file) => {
-                  const uploader = profiles.find((profile) => profile.id === file.uploaded_by);
-                  return (
-                    <button className={file.file_kind === "photo" ? "attachmentCard photo" : "attachmentCard document"} key={file.id} type="button" onClick={() => onOpen(file)}>
-                      <span className="attachmentThumb">{file.file_kind === "photo" ? <ImagePlus size={22} /> : <FileText size={22} />}</span>
-                      <span className="attachmentMeta">
-                        <strong title={file.file_name}>{file.file_name}</strong>
-                        <small>{file.photo_caption ? `${file.photo_caption} · ` : ""}{uploader?.full_name || uploader?.email || "Unknown"} · {new Date(file.created_at).toLocaleString()}</small>
-                      </span>
-                    </button>
-                  );
-                })}
+                {group.items.map((file) => (
+                  <AttachmentPreviewCard file={file} key={file.id} onOpen={onOpen} profiles={profiles} />
+                ))}
               </div>
             )}
           </section>
@@ -3359,7 +3502,7 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
   );
 }
 
-function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projectRows = [], projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onAssignPerson, onDropAssignment, onRemoveVisit, onSelect }) {
+function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projectRows = [], projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onAssignPerson, onDropAssignment, onOpenPerson, onRemovePersonFromVisit, onRemoveVisit, onSelect }) {
   const [dragPreview, setDragPreview] = useState(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(selectedDate);
@@ -3456,14 +3599,14 @@ function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canD
           )}
           {projectRows.length === 0 && <div className="emptyTimeline">No project visits scheduled for this day.</div>}
 
-          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignPerson={onAssignPerson} onDropAssignment={onDropAssignment} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
+          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignPerson={onAssignPerson} onDropAssignment={onDropAssignment} onOpenPerson={onOpenPerson} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
         </div>
       ) : (
         <CalendarTileGrid equipment={equipmentRows} mode={scheduleMode} people={peopleRows} projects={projects} selectedDate={selectedDate} today={today} visits={visits} onSelectDay={openDay} />
       )}
 
       {scheduleMode === "day" && (
-        <AvailablePeoplePool avatarUrls={avatarUrls} people={availablePeople} />
+        <AvailablePeoplePool avatarUrls={avatarUrls} people={availablePeople} onOpenPerson={onOpenPerson} onRemovePersonFromVisit={onRemovePersonFromVisit} />
       )}
     </>
   );
@@ -3704,16 +3847,7 @@ function DocumentsView({ files, onOpen, profiles, projects }) {
             </div>
             {group.items.map((file) => {
               const project = projects.find((item) => item.id === file.project_id);
-              const uploader = profiles.find((item) => item.id === file.uploaded_by);
-              return (
-                <button className="documentRow" key={file.id} type="button" onClick={() => onOpen(file)}>
-                  <span className="searchIcon">{file.file_kind === "photo" ? <ImagePlus size={18} /> : file.file_kind === "excel" ? <FileSpreadsheet size={18} /> : <FileText size={18} />}</span>
-                  <span>
-                    <strong>{file.file_name}</strong>
-                    <small>{project?.name || "Project"} / {file.visit_id ? "Ticket file" : "Project file"} / {file.photo_caption ? `${file.photo_caption} / ` : ""}{file.file_type?.replaceAll("_", " ")} / {uploader?.full_name || uploader?.email || "Unknown"} / {new Date(file.created_at).toLocaleString()}</small>
-                  </span>
-                </button>
-              );
+              return <DocumentListRow file={file} key={file.id} onOpen={onOpen} profiles={profiles} project={project} />;
             })}
           </section>
         );
@@ -3740,20 +3874,7 @@ function SafetyReportsView({ files, onOpen, profiles, projects }) {
         ) : (
           safetyFiles.map((file) => {
             const project = projects.find((item) => item.id === file.project_id);
-            const uploader = profiles.find((item) => item.id === file.uploaded_by);
-            return (
-              <button className="documentRow safetyReportRow" key={file.id} type="button" onClick={() => onOpen(file)}>
-                <span className="searchIcon">
-                  <FileText size={18} />
-                </span>
-                <span>
-                  <strong>{file.file_name}</strong>
-                  <small>
-                    {project?.name || "Project"} / {uploader?.full_name || uploader?.email || "Unknown"} / {new Date(file.created_at).toLocaleString()}
-                  </small>
-                </span>
-              </button>
-            );
+            return <DocumentListRow file={file} key={file.id} onOpen={onOpen} profiles={profiles} project={project} />;
           })
         )}
       </section>
@@ -4195,7 +4316,7 @@ function AuthGate({
   );
 }
 
-function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onAssignPerson, onDropAssignment, onRemoveVisit, onSelect }) {
+function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onAssignPerson, onDropAssignment, onOpenPerson, onRemoveVisit, onSelect }) {
   return (
     <div className="resourceGroup">
       <div className="groupLabel">
@@ -4207,7 +4328,7 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
       </div>
 
       {rows.map((row) => (
-        <div className="resourceRow" key={row.id}>
+        <div className="resourceRow" key={row.id} style={{ "--lane-count": Math.max(1, row.assignments.length) }}>
           <div className="resourceIdentity">
             {row.kind === "person" ? (
               <Avatar profile={row} url={avatarUrls[row.id]} />
@@ -4262,7 +4383,7 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
                 project_id: assignment.projectId,
                 visit_date: selectedDate,
               };
-              return <ScheduleBlock assignment={assignment} avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} key={assignment.id || assignment.visitId} onAssignPerson={onAssignPerson} onRemove={() => onRemoveVisit?.(visit)} onSelect={onSelect} />;
+              return <ScheduleBlock assignment={assignment} avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} key={assignment.id || assignment.visitId} onAssignPerson={onAssignPerson} onOpenPerson={onOpenPerson} onRemove={() => onRemoveVisit?.(visit)} onSelect={onSelect} />;
             })}
           </div>
         </div>
@@ -4271,12 +4392,33 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
   );
 }
 
-function AvailablePeoplePool({ avatarUrls = {}, people = [] }) {
+function AvailablePeoplePool({ avatarUrls = {}, people = [], onOpenPerson, onRemovePersonFromVisit }) {
+  const [isDropActive, setIsDropActive] = useState(false);
+  const acceptsAssignedPerson = (event) => event.dataTransfer.types.includes("application/x-buildcore-assigned-person");
+
   return (
-    <section className="availablePeoplePool">
+    <section
+      className={isDropActive ? "availablePeoplePool dropActive" : "availablePeoplePool"}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsDropActive(false);
+      }}
+      onDragOver={(event) => {
+        if (!acceptsAssignedPerson(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setIsDropActive(true);
+      }}
+      onDrop={(event) => {
+        const raw = event.dataTransfer.getData("application/x-buildcore-assigned-person");
+        if (!raw) return;
+        event.preventDefault();
+        setIsDropActive(false);
+        onRemovePersonFromVisit?.(JSON.parse(raw));
+      }}
+    >
       <div>
         <strong>Available today</strong>
-        <span>{people.length ? "Drag a person into a project ticket" : "No available people for this day"}</span>
+        <span>{people.length ? "Drag people into a ticket, or drop assigned people here to remove" : "Drop assigned people here to remove them from a ticket"}</span>
       </div>
       <div className="availableAvatarStrip">
         {people.map((person) => (
@@ -4289,6 +4431,7 @@ function AvailablePeoplePool({ avatarUrls = {}, people = [] }) {
               event.dataTransfer.effectAllowed = "copy";
               event.dataTransfer.setData("application/x-buildcore-person", person.id);
             }}
+            onClick={() => onOpenPerson?.(person)}
           >
             <Avatar profile={person} url={avatarUrls[person.id]} />
             <span>{profileDisplayName(person)}</span>
@@ -4299,10 +4442,20 @@ function AvailablePeoplePool({ avatarUrls = {}, people = [] }) {
   );
 }
 
-function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssignPerson, onRemove, onSelect }) {
+function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssignPerson, onOpenPerson, onRemove, onSelect }) {
   const span = scheduleEndHour - scheduleStartHour;
   const left = Math.max(0, ((assignment.start - scheduleStartHour) / span) * 100);
   const width = Math.min(100 - left, ((assignment.end - assignment.start) / span) * 100);
+  const laneCount = Math.max(1, assignment.laneCount ?? 1);
+  const laneIndex = Math.min(laneCount - 1, Math.max(0, assignment.laneIndex ?? 0));
+  const verticalStyle =
+    laneCount > 1
+      ? {
+          top: `calc(10px + (${laneIndex} * ((100% - 20px) / ${laneCount})))`,
+          bottom: "auto",
+          height: `calc((100% - 20px) / ${laneCount} - 8px)`,
+        }
+      : {};
   const openAssignment = () => onSelect(assignment);
 
   return (
@@ -4310,7 +4463,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssign
       className={`scheduleBlock ${assignment.color} ${assignment.status ?? ""}`}
       draggable={Boolean(assignment.visitId)}
       role="button"
-      style={{ left: `${left}%`, width: `${width}%` }}
+      style={{ left: `${left}%`, width: `${width}%`, ...verticalStyle }}
       tabIndex={0}
       onClick={openAssignment}
       onDragStart={(event) => {
@@ -4335,18 +4488,36 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssign
     >
       <span className="scheduleBlockTop">
         <strong>{assignment.title}</strong>
+        {assignment.status && <em className="scheduleBlockStatus">{normalizeVisitStatus(assignment.status)}</em>}
       </span>
-      <span className="scheduleBlockScope">{assignment.subtitle}</span>
-      {assignment.timeText && <small>{assignment.timeText}</small>}
+      {assignment.timeText && <small className="scheduleBlockTime">{assignment.timeText}</small>}
       {assignment.people?.length > 0 && (
-        <span className="assignmentCrew">
-          {assignment.people.slice(0, 5).map((person) => (
-            <Avatar profile={person} url={avatarUrls[person.id]} key={person.id} />
-          ))}
+        <div className="assignmentCrew">
+          <div className="assignmentAvatarStack">
+            {assignment.people.slice(0, 5).map((person) => (
+              <button
+                className="crewAvatarButton"
+                draggable
+                key={person.id}
+                type="button"
+                title={`Open ${profileDisplayName(person)}. Drag to Available to remove from ticket.`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenPerson?.(person);
+                }}
+                onDragStart={(event) => {
+                  event.stopPropagation();
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("application/x-buildcore-assigned-person", JSON.stringify({ personId: person.id, visitId: assignment.visitId }));
+                }}
+              >
+                <Avatar profile={person} url={avatarUrls[person.id]} />
+              </button>
+            ))}
+          </div>
           <i>{assignment.people.map((person) => profileDisplayName(person)).join(", ")}</i>
-        </span>
+        </div>
       )}
-      {assignment.status && <em className="scheduleBlockStatus">{normalizeVisitStatus(assignment.status)}</em>}
       {canDeleteTickets && assignment.visitId && (
         <button
           className="scheduleDeleteButton"

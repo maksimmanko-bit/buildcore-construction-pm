@@ -3,7 +3,7 @@ const searchableFields = {
   person: ["full_name", "role", "trade", "phone"],
   equipment: ["name", "type", "unit_number", "status"],
   visit: ["visit_date", "start_time", "end_time", "work_scope", "office_notes", "status"],
-  file: ["file_name", "search_text", "project_name"],
+  file: ["file_name", "photo_caption", "search_text", "project_name"],
 };
 
 function includesQuery(value, query) {
