@@ -5110,3 +5110,388 @@ textarea:focus-visible {
     min-height: 118px;
   }
 }
+
+/* Current interaction polish */
+body.overlayLocked {
+  overscroll-behavior: none;
+}
+
+.appSkeletonShell {
+  display: grid;
+  grid-template-columns: 284px minmax(0, 1fr);
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 16% 10%, rgba(207, 46, 46, 0.06), transparent 28%),
+    radial-gradient(circle at 86% 6%, rgba(37, 99, 235, 0.05), transparent 28%),
+    var(--bg);
+}
+
+.appSkeletonShell aside,
+.appSkeletonShell section {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 28px;
+}
+
+.appSkeletonShell aside {
+  border-right: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.appSkeletonShell section {
+  padding-top: 42px;
+}
+
+.skeletonBrand,
+.skeletonLine,
+.skeletonHeader span,
+.skeletonHeader i,
+.skeletonRow span,
+.skeletonRow i {
+  overflow: hidden;
+  border-radius: 14px;
+  background: linear-gradient(90deg, rgba(226, 232, 240, 0.72), rgba(255, 255, 255, 0.9), rgba(226, 232, 240, 0.72));
+  background-size: 220% 100%;
+  animation: skeletonShimmer 1.3s ease-in-out infinite;
+}
+
+.skeletonBrand {
+  width: 154px;
+  height: 54px;
+  margin-bottom: 22px;
+}
+
+.skeletonLine {
+  width: 100%;
+  height: 48px;
+}
+
+.skeletonLine:nth-child(2n) {
+  width: 82%;
+}
+
+.skeletonHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.skeletonHeader span {
+  width: 240px;
+  height: 54px;
+}
+
+.skeletonHeader i {
+  width: 220px;
+  height: 44px;
+}
+
+.skeletonTimeline {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.skeletonRow {
+  display: grid;
+  grid-template-columns: 190px 1fr 0.72fr;
+  gap: 12px;
+  min-height: 92px;
+}
+
+.skeletonRow span,
+.skeletonRow i {
+  height: 100%;
+}
+
+.appSkeletonShell strong {
+  color: #64748b;
+  font-size: 13px;
+}
+
+@keyframes skeletonShimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.noticeToast {
+  position: fixed;
+  top: max(18px, env(safe-area-inset-top));
+  left: 50%;
+  z-index: 90;
+  display: inline-flex;
+  min-height: 44px;
+  max-width: min(520px, calc(100vw - 24px));
+  align-items: center;
+  gap: 10px;
+  padding: 10px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111827;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.16);
+  -webkit-backdrop-filter: blur(24px) saturate(1.16);
+  backdrop-filter: blur(24px) saturate(1.16);
+  transform: translateX(-50%);
+  animation: toastIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.noticeToast span {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(207, 46, 46, 0.18);
+  border-top-color: var(--brand-red);
+  border-radius: 999px;
+  animation: spin 0.72s linear infinite;
+}
+
+.noticeToast strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.projectHeroActions {
+  justify-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.projectHeroActions .outlineButton,
+.projectHeroActions .addButton {
+  justify-content: center;
+}
+
+.modalHeader,
+.detailHeader,
+.viewerTopBar {
+  position: static !important;
+  top: auto !important;
+}
+
+.modalHeader {
+  margin: 0 0 16px !important;
+  padding: 12px 12px 14px !important;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 18px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.82)),
+    rgba(255, 255, 255, 0.88);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 12px 28px rgba(15, 23, 42, 0.055);
+}
+
+.modalHeader h2 {
+  color: #111827;
+  font-family: var(--font-header);
+  font-size: 22px;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.detailHeader {
+  padding: 4px 2px 2px;
+}
+
+.dateField {
+  position: relative;
+  overflow: visible;
+}
+
+.formCalendarPopover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 80;
+  width: min(338px, calc(100vw - 42px));
+}
+
+.formCalendarPopover .miniCalendarPopover {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: 100%;
+  max-height: min(430px, calc(100dvh - 150px));
+  margin-top: 0;
+  overflow: auto;
+}
+
+.resourceIdentity {
+  width: 100%;
+  border-top: 0;
+  border-bottom: 0;
+  border-left: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.resourceIdentity[aria-disabled="true"] {
+  cursor: default;
+}
+
+.resourceIdentity:not([aria-disabled="true"]):hover {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.9));
+}
+
+.scheduleBlock {
+  min-width: 156px;
+  padding: 10px 36px 10px 12px;
+}
+
+.assignmentCrew {
+  gap: 9px;
+}
+
+.assignmentCrew .avatar {
+  width: 44px;
+  height: 44px;
+  border-width: 2px;
+}
+
+.crewAvatarButton {
+  flex-basis: 44px;
+  width: 44px;
+  height: 44px;
+}
+
+.crewAvatarButton + .crewAvatarButton {
+  margin-left: -13px;
+}
+
+.assignmentCrew i {
+  font-size: 12px;
+}
+
+.scheduleBlockTime {
+  min-height: 25px;
+  font-size: 12px;
+}
+
+.scheduleBlockTop {
+  align-items: center;
+}
+
+.modal input,
+.modal select,
+.modal textarea,
+.detailPanel input,
+.detailPanel select,
+.detailPanel textarea,
+.searchPanel input {
+  font-size: 16px;
+}
+
+@media (max-width: 860px) {
+  .appSkeletonShell {
+    grid-template-columns: 1fr;
+  }
+
+  .appSkeletonShell aside {
+    display: none;
+  }
+
+  .appSkeletonShell section {
+    padding: max(18px, env(safe-area-inset-top)) 14px max(18px, env(safe-area-inset-bottom));
+  }
+
+  .skeletonHeader {
+    display: grid;
+  }
+
+  .skeletonHeader span,
+  .skeletonHeader i {
+    width: 100%;
+  }
+
+  .skeletonRow {
+    grid-template-columns: 1fr;
+    min-height: 240px;
+  }
+
+  .modalBackdrop,
+  .detailOverlay,
+  .searchOverlay {
+    overscroll-behavior: none;
+    touch-action: pan-y;
+  }
+
+  .modal,
+  .modal:not(.wideModal),
+  .wideModal,
+  .detailPanel,
+  .searchPanel {
+    height: auto;
+    max-height: calc(100dvh - max(20px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom)));
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .modalHeader,
+  .detailHeader,
+  .viewerTopBar {
+    margin: 0 0 14px !important;
+  }
+
+  .formCalendarPopover {
+    left: 0;
+    right: auto;
+    width: min(338px, 100%);
+  }
+
+  .resourceIdentity {
+    grid-template-columns: 52px minmax(0, 1fr);
+    padding: 12px;
+  }
+
+  .scheduleBlock {
+    min-height: 132px;
+  }
+
+  .assignmentCrew .avatar,
+  .crewAvatarButton {
+    width: 48px;
+    height: 48px;
+  }
+
+  .crewAvatarButton {
+    flex-basis: 48px;
+  }
+
+  .crewAvatarButton + .crewAvatarButton {
+    margin-left: -14px;
+  }
+}

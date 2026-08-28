@@ -214,7 +214,7 @@ const emptyEquipmentForm = { name: "", type: "", unit_number: "", notes: "" };
 const emptyVisitForm = {
   project_id: "",
   visit_date: new Date().toISOString().slice(0, 10),
-  duration_days: 1,
+  duration_days: "1",
   start_time: "07:00",
   end_time: "17:00",
   work_scope: "",
@@ -373,6 +373,11 @@ function collectBusinessDates(startDate, count) {
   }
 
   return dates;
+}
+
+function parseWorkDayCount(value) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function normalizeWorkScopes(scopes, count, fallback = "") {
@@ -942,7 +947,7 @@ export default function App() {
     ...equipment,
     pickerStatus: getEquipmentWorkStatus({ date: visitForm.visit_date, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
   }));
-  const visitFormDates = editingVisitId ? [visitForm.visit_date] : collectBusinessDates(visitForm.visit_date, visitForm.duration_days);
+  const visitFormDates = editingVisitId ? [visitForm.visit_date] : collectBusinessDates(visitForm.visit_date, Math.max(1, parseWorkDayCount(visitForm.duration_days)));
   const visitWorkScopes = normalizeWorkScopes(visitForm.work_scopes, visitFormDates.length, visitForm.work_scope);
 
   async function applyPendingSignupProfile(nextProfile) {
@@ -1179,6 +1184,12 @@ export default function App() {
     event.preventDefault();
     if (!supabase || !profile) return;
 
+    const requestedWorkDays = editingVisitId ? 1 : parseWorkDayCount(visitForm.duration_days);
+    if (!editingVisitId && requestedWorkDays < 1) {
+      setNotice("Enter at least 1 work day before saving the visit.");
+      return;
+    }
+
     setLoading(true);
     const baseVisitPayload = {
       project_id: visitForm.project_id,
@@ -1187,7 +1198,7 @@ export default function App() {
     };
 
     const createdVisitIds = [];
-    const generatedDates = editingVisitId ? [visitForm.visit_date] : collectBusinessDates(visitForm.visit_date, visitForm.duration_days);
+    const generatedDates = editingVisitId ? [visitForm.visit_date] : collectBusinessDates(visitForm.visit_date, requestedWorkDays);
     const workScopes = normalizeWorkScopes(visitForm.work_scopes, generatedDates.length, visitForm.work_scope).map((scope) => scope.trim());
 
     if (workScopes.some((scope) => !scope)) {
@@ -1792,6 +1803,38 @@ export default function App() {
     const rawStart = scheduleStartHour + percent * (scheduleEndHour - scheduleStartHour);
     const start = Math.min(scheduleEndHour - duration, Math.max(scheduleStartHour, Math.round(rawStart * 4) / 4));
     const end = start + duration;
+    const nextStartTime = toTimeValue(start);
+    const nextEndTime = toTimeValue(end);
+    const previousData = data;
+
+    setNotice("Updating schedule...");
+    setData((current) => ({
+      ...current,
+      visits: (current.visits ?? []).map((visit) => {
+        if (visit.id !== assignment.visitId) return visit;
+        const nextVisit = {
+          ...visit,
+          start_time: nextStartTime,
+          end_time: nextEndTime,
+        };
+
+        if (row.kind === "person" && row.id !== assignment.resourceId) {
+          const peopleIds = new Set(nextVisit.people_ids ?? []);
+          peopleIds.add(row.id);
+          if (assignment.type === "person") peopleIds.delete(assignment.resourceId);
+          nextVisit.people_ids = [...peopleIds];
+        }
+
+        if (row.kind === "equipment" && row.id !== assignment.resourceId) {
+          const equipmentIds = new Set(nextVisit.equipment_ids ?? []);
+          equipmentIds.add(row.id);
+          if (assignment.type === "equipment") equipmentIds.delete(assignment.resourceId);
+          nextVisit.equipment_ids = [...equipmentIds];
+        }
+
+        return nextVisit;
+      }),
+    }));
 
     setLoading(true);
     let addedNewResource = false;
@@ -1800,6 +1843,7 @@ export default function App() {
       if (row.kind === "person") {
         const addResult = await supabase.from("visit_people").insert({ visit_id: assignment.visitId, profile_id: row.id });
         if (addResult.error) {
+          setData(previousData);
           setLoading(false);
           setNotice(addResult.error.message);
           refreshData();
@@ -1809,6 +1853,7 @@ export default function App() {
       } else {
         const addResult = await supabase.from("visit_equipment").insert({ visit_id: assignment.visitId, equipment_id: row.id });
         if (addResult.error) {
+          setData(previousData);
           setLoading(false);
           setNotice(addResult.error.message);
           refreshData();
@@ -1821,12 +1866,13 @@ export default function App() {
     const visitResult = await supabase
       .from("visits")
       .update({
-        start_time: toTimeValue(start),
-        end_time: toTimeValue(end),
+        start_time: nextStartTime,
+        end_time: nextEndTime,
       })
       .eq("id", assignment.visitId);
 
     if (visitResult.error) {
+      setData(previousData);
       if (addedNewResource) {
         if (row.kind === "person") await supabase.from("visit_people").delete().eq("visit_id", assignment.visitId).eq("profile_id", row.id);
         else await supabase.from("visit_equipment").delete().eq("visit_id", assignment.visitId).eq("equipment_id", row.id);
@@ -1844,6 +1890,7 @@ export default function App() {
           : await supabase.from("visit_equipment").delete().eq("visit_id", assignment.visitId).eq("equipment_id", assignment.resourceId);
 
       if (removeResult.error) {
+        setData(previousData);
         setLoading(false);
         setNotice(removeResult.error.message);
         refreshData();
@@ -1852,7 +1899,7 @@ export default function App() {
     }
 
     setLoading(false);
-    setNotice(`Visit moved to ${toTimeValue(start)} - ${toTimeValue(end)}.`);
+    setNotice(`Visit moved to ${nextStartTime} - ${nextEndTime}.`);
     refreshData();
   }
 
@@ -1871,6 +1918,17 @@ export default function App() {
       return;
     }
 
+    const previousData = data;
+    setData((current) => ({
+      ...current,
+      visits: (current.visits ?? []).map((item) => {
+        if (item.id !== visitId) return item;
+        const peopleIds = new Set(item.people_ids ?? []);
+        peopleIds.add(personId);
+        return { ...item, people_ids: [...peopleIds] };
+      }),
+    }));
+    setNotice(`Assigning ${profileDisplayName(person)}...`);
     setLoading(true);
     try {
       const { error } = await supabase.from("visit_people").insert({ visit_id: visitId, profile_id: personId });
@@ -1879,6 +1937,7 @@ export default function App() {
       setNotice(`${profileDisplayName(person)} assigned to ticket.`);
       refreshData();
     } catch (error) {
+      setData(previousData);
       setNotice(error.message);
       refreshData();
     } finally {
@@ -1898,6 +1957,15 @@ export default function App() {
     if (!visit || !person) return;
     if (!visit.people_ids?.includes(personId)) return;
 
+    const previousData = data;
+    setData((current) => ({
+      ...current,
+      visits: (current.visits ?? []).map((item) => {
+        if (item.id !== visitId) return item;
+        return { ...item, people_ids: (item.people_ids ?? []).filter((id) => id !== personId) };
+      }),
+    }));
+    setNotice(`Removing ${profileDisplayName(person)}...`);
     setLoading(true);
     try {
       const { error } = await supabase.from("visit_people").delete().eq("visit_id", visitId).eq("profile_id", personId);
@@ -1906,6 +1974,7 @@ export default function App() {
       setNotice(`${profileDisplayName(person)} removed from ticket.`);
       refreshData();
     } catch (error) {
+      setData(previousData);
       setNotice(error.message);
       refreshData();
     } finally {
@@ -1985,7 +2054,7 @@ export default function App() {
     setVisitForm({
       project_id: visit.project_id ?? selectedProject?.id ?? "",
       visit_date: visit.visit_date ?? selectedDate,
-      duration_days: 1,
+      duration_days: "1",
       start_time: String(visit.start_time ?? "07:00").slice(0, 5),
       end_time: String(visit.end_time ?? "17:00").slice(0, 5),
       work_scope: visit.work_scope ?? "",
@@ -2136,7 +2205,8 @@ export default function App() {
 
   function updateVisitStartDate(value) {
     setVisitForm((current) => {
-      const nextDates = editingVisitId ? [value] : collectBusinessDates(value, current.duration_days);
+      const nextDuration = Math.max(1, parseWorkDayCount(current.duration_days));
+      const nextDates = editingVisitId ? [value] : collectBusinessDates(value, nextDuration);
       return {
         ...current,
         visit_date: value,
@@ -2146,12 +2216,13 @@ export default function App() {
   }
 
   function updateVisitDuration(value) {
-    const durationDays = Math.min(60, Math.max(1, Number(value) || 1));
+    const rawValue = String(value ?? "").replace(/\D/g, "");
+    const durationDays = Math.min(60, parseWorkDayCount(rawValue));
     setVisitForm((current) => {
-      const nextDates = collectBusinessDates(current.visit_date, durationDays);
+      const nextDates = collectBusinessDates(current.visit_date, Math.max(1, durationDays));
       return {
         ...current,
-        duration_days: durationDays,
+        duration_days: rawValue,
         work_scopes: normalizeWorkScopes(current.work_scopes, nextDates.length, current.work_scope),
       };
     });
@@ -2159,7 +2230,8 @@ export default function App() {
 
   function updateVisitWorkScope(index, value) {
     setVisitForm((current) => {
-      const dates = editingVisitId ? [current.visit_date] : collectBusinessDates(current.visit_date, current.duration_days);
+      const durationDays = Math.max(1, parseWorkDayCount(current.duration_days));
+      const dates = editingVisitId ? [current.visit_date] : collectBusinessDates(current.visit_date, durationDays);
       const nextScopes = normalizeWorkScopes(current.work_scopes, dates.length, current.work_scope);
       nextScopes[index] = value;
       return {
@@ -2204,7 +2276,7 @@ export default function App() {
     }
 
     if (!authReady || (session && !profile)) {
-      return <AuthGate loading notice={notice || "Checking Supabase session and account access..."} />;
+      return <AppSkeletonShell notice={notice || "Checking Supabase session and account access..."} />;
     }
 
     return (
@@ -2288,6 +2360,7 @@ export default function App() {
         onAssignPerson={assignPersonToVisit}
         onDropAssignment={moveVisitAssignment}
         onOpenPerson={openPersonOverlay}
+        onOpenProject={selectProject}
         onRemovePersonFromVisit={removePersonFromVisit}
         onRemoveVisit={deleteVisit}
         onSelect={selectAssignment}
@@ -2350,6 +2423,12 @@ export default function App() {
       </aside>
 
       <main className="mainWorkspace">
+        {(loading || notice) && (
+          <div className={loading ? "noticeToast isLoading" : "noticeToast"}>
+            {loading && <span />}
+            <strong>{loading ? notice || "Saving changes..." : notice}</strong>
+          </div>
+        )}
         <div className="mobileTopBar">
           <button className="mobileMenuButton" type="button" onClick={() => setIsMobileMenuOpen(true)} aria-label="Open menu">
             <Menu size={23} />
@@ -2785,10 +2864,10 @@ export default function App() {
               <FormField label="Work days">
                 <input
                   disabled={Boolean(editingVisitId)}
-                  min="1"
-                  max="60"
-                  required
-                  type="number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder="1"
+                  type="text"
                   value={visitForm.duration_days}
                   onChange={(event) => updateVisitDuration(event.target.value)}
                 />
@@ -3582,7 +3661,7 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
   );
 }
 
-function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projectRows = [], projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onAssignPerson, onDropAssignment, onOpenPerson, onRemovePersonFromVisit, onRemoveVisit, onSelect }) {
+function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projectRows = [], projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onAssignPerson, onDropAssignment, onOpenPerson, onOpenProject, onRemovePersonFromVisit, onRemoveVisit, onSelect }) {
   const [dragPreview, setDragPreview] = useState(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(selectedDate);
@@ -3679,7 +3758,7 @@ function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canD
           )}
           {projectRows.length === 0 && <div className="emptyTimeline">No project visits scheduled for this day.</div>}
 
-          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignPerson={onAssignPerson} onDropAssignment={onDropAssignment} onOpenPerson={onOpenPerson} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
+          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignPerson={onAssignPerson} onDropAssignment={onDropAssignment} onOpenPerson={onOpenPerson} onOpenProject={onOpenProject} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
         </div>
       ) : (
         <CalendarTileGrid equipment={equipmentRows} mode={scheduleMode} people={peopleRows} projects={projects} selectedDate={selectedDate} today={today} visits={visits} onSelectDay={openDay} />
@@ -4274,6 +4353,35 @@ function AppModal({ children, onClose, title, wide = false }) {
   );
 }
 
+function AppSkeletonShell({ notice }) {
+  return (
+    <main className="appSkeletonShell" aria-label="Loading workspace">
+      <aside>
+        <div className="skeletonBrand" />
+        {Array.from({ length: 7 }).map((_, index) => (
+          <span className="skeletonLine" key={index} />
+        ))}
+      </aside>
+      <section>
+        <div className="skeletonHeader">
+          <span />
+          <i />
+        </div>
+        <div className="skeletonTimeline">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div className="skeletonRow" key={index}>
+              <span />
+              <i />
+              <i />
+            </div>
+          ))}
+        </div>
+        <strong>{notice || "Loading BuildCore..."}</strong>
+      </section>
+    </main>
+  );
+}
+
 function PendingAccessScreen({ notice, onSignOut, profile }) {
   return (
     <main className="authGate">
@@ -4443,7 +4551,7 @@ function AuthGate({
   );
 }
 
-function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onAssignPerson, onDropAssignment, onOpenPerson, onRemoveVisit, onSelect }) {
+function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onAssignPerson, onDropAssignment, onOpenPerson, onOpenProject, onRemoveVisit, onSelect }) {
   return (
     <div className="resourceGroup">
       <div className="groupLabel">
@@ -4456,7 +4564,15 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
 
       {rows.map((row) => (
         <div className="resourceRow" key={row.id} style={{ "--lane-count": Math.max(1, row.assignments.length) }}>
-          <div className="resourceIdentity">
+          <button
+            className="resourceIdentity"
+            type="button"
+            onClick={() => {
+              if (row.kind === "project") onOpenProject?.(row);
+            }}
+            aria-disabled={row.kind !== "project"}
+            title={row.kind === "project" ? "Open project" : undefined}
+          >
             {row.kind === "person" ? (
               <Avatar profile={row} url={avatarUrls[row.id]} />
             ) : row.kind === "project" ? (
@@ -4472,7 +4588,7 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
               <span>{row.subtitle ?? roleLabel(row.role)}</span>
               {row.resourceStatus?.detail && <small>{row.resourceStatus.detail}</small>}
             </div>
-          </div>
+          </button>
 
           <div
             className="rowTrack"
