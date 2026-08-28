@@ -5543,3 +5543,242 @@ body.overlayLocked {
     margin-left: -14px;
   }
 }
+
+/* Modern photo markup */
+.photoAnnotatorPanel .viewerTopBar {
+  margin-bottom: 0 !important;
+}
+
+.annotator {
+  display: grid;
+  gap: 12px;
+}
+
+.annotatorToolbar {
+  position: relative !important;
+  top: auto !important;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.9)),
+    #0f172a;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 18px 42px rgba(15, 23, 42, 0.22);
+  -webkit-backdrop-filter: blur(22px) saturate(1.18);
+  backdrop-filter: blur(22px) saturate(1.18);
+}
+
+.annotatorToolGroup {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.annotator .iconButton {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  min-height: 42px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  background: transparent;
+  color: rgba(248, 250, 252, 0.82);
+  box-shadow: none;
+  transition:
+    background 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.annotator .iconButton:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.11);
+  color: #fff;
+}
+
+.annotator .iconButton.active {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24);
+}
+
+.annotator .iconButton:disabled {
+  opacity: 0.34;
+  transform: none;
+}
+
+.annotatorColorPicker {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.annotatorColorPicker input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.annotationTextInput {
+  flex: 1 1 220px;
+  min-width: 160px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  outline: 0;
+}
+
+.annotationTextInput::placeholder {
+  color: rgba(226, 232, 240, 0.72);
+}
+
+.annotationTextInput:focus {
+  border-color: rgba(255, 255, 255, 0.34);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08);
+}
+
+.annotator .saveButton {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 18px;
+  border-radius: 15px;
+  background: var(--brand-red);
+  box-shadow: 0 12px 24px rgba(207, 46, 46, 0.28);
+  font-weight: 950;
+}
+
+.annotator .saveButton:disabled {
+  opacity: 0.64;
+}
+
+.annotatorHint {
+  min-height: 34px;
+  align-content: center;
+  padding: 0 4px;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.canvasShell {
+  aspect-ratio: 1040 / 700;
+  min-height: 0;
+  max-height: min(68vh, 760px);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 50% 0, rgba(255, 255, 255, 0.07), transparent 32%),
+    #070b13;
+}
+
+.canvasShell .annotationBaseImage {
+  position: absolute;
+  inset: auto;
+  top: 50%;
+  left: 50%;
+  width: min(100%, 1040px);
+  height: auto;
+  max-height: 100%;
+  aspect-ratio: 1040 / 700;
+  object-fit: contain;
+  object-position: center;
+  transform: translate(-50%, -50%);
+}
+
+.canvasShell .canvas-container {
+  width: min(100%, 1040px) !important;
+  aspect-ratio: 1040 / 700;
+  height: auto !important;
+}
+
+.canvasShell canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.canvasShell .upper-canvas {
+  touch-action: none;
+}
+
+.canvasShell .annotationClickLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: copy;
+  touch-action: none;
+}
+
+@media (max-width: 860px) {
+  .annotatorToolbar {
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .annotatorToolGroup {
+    width: 100%;
+    overflow-x: auto;
+    justify-content: space-between;
+  }
+
+  .annotator .iconButton {
+    flex: 1 0 42px;
+  }
+
+  .annotationTextInput {
+    flex-basis: 100%;
+  }
+
+  .annotator .saveButton {
+    flex: 1 1 auto;
+  }
+
+  .annotatorHint {
+    color: #475569;
+  }
+
+  .canvasShell {
+    min-height: 0;
+    max-height: min(54vh, 560px);
+    border-radius: 18px;
+  }
+}

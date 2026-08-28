@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Circle, Download, MousePointer2, Pencil, Square, Type, Undo2 } from "lucide-react";
-import { Canvas, Circle as FabricCircle, IText, PencilBrush, Rect } from "fabric";
+import { ArrowUpRight, Check, Circle, MousePointer2, Palette, Pencil, Square, Type, Undo2 } from "lucide-react";
+import { Canvas, Circle as FabricCircle, Group, IText, Line, PencilBrush, Rect, Triangle } from "fabric";
 
 const tools = [
   { id: "select", label: "Move", icon: MousePointer2 },
-  { id: "draw", label: "Pencil", icon: Pencil },
+  { id: "draw", label: "Draw", icon: Pencil },
+  { id: "arrow", label: "Arrow", icon: ArrowUpRight },
   { id: "rect", label: "Rectangle", icon: Square },
   { id: "circle", label: "Circle", icon: Circle },
   { id: "text", label: "Text", icon: Type },
@@ -39,94 +40,150 @@ function loadHtmlImage(source) {
   });
 }
 
+function annotationControlDefaults(object) {
+  object.set({
+    borderColor: "#2563eb",
+    cornerColor: "#ffffff",
+    cornerStrokeColor: "#2563eb",
+    cornerSize: 13,
+    cornerStyle: "circle",
+    transparentCorners: false,
+    data: { annotation: true },
+  });
+  return object;
+}
+
+function createAnnotationObject({ color, point, text, tool }) {
+  if (tool === "rect") {
+    return annotationControlDefaults(
+      new Rect({
+        left: point.x,
+        top: point.y,
+        width: 190,
+        height: 110,
+        fill: "rgba(207,46,46,0.12)",
+        stroke: color,
+        strokeWidth: 4,
+      }),
+    );
+  }
+
+  if (tool === "circle") {
+    return annotationControlDefaults(
+      new FabricCircle({
+        left: point.x,
+        top: point.y,
+        radius: 58,
+        fill: "rgba(207,46,46,0.12)",
+        stroke: color,
+        strokeWidth: 4,
+      }),
+    );
+  }
+
+  if (tool === "arrow") {
+    const line = new Line([0, 0, 168, 0], {
+      stroke: color,
+      strokeWidth: 7,
+      strokeLineCap: "round",
+      selectable: false,
+      evented: false,
+    });
+    const head = new Triangle({
+      left: 168,
+      top: 0,
+      width: 30,
+      height: 34,
+      angle: 90,
+      fill: color,
+      originX: "center",
+      originY: "center",
+      selectable: false,
+      evented: false,
+    });
+    return annotationControlDefaults(
+      new Group([line, head], {
+        left: point.x,
+        top: point.y,
+        angle: -18,
+      }),
+    );
+  }
+
+  if (tool === "text") {
+    const cleanText = text.trim();
+    if (!cleanText) return null;
+    return annotationControlDefaults(
+      new IText(cleanText, {
+        left: point.x,
+        top: point.y,
+        fill: color,
+        fontSize: 34,
+        fontFamily: "Inter, system-ui, sans-serif",
+        fontWeight: 800,
+        backgroundColor: "rgba(255,255,255,0.9)",
+        padding: 9,
+      }),
+    );
+  }
+
+  return null;
+}
+
 export default function PhotoAnnotator({ imageUrl, onSave }) {
   const canvasElement = useRef(null);
   const fabricRef = useRef(null);
-  const layerRef = useRef(null);
+  const annotationLayerRef = useRef(null);
   const toolRef = useRef("select");
   const colorRef = useRef("#cf2e2e");
-  const textDraftRef = useRef("Note");
+  const textDraftRef = useRef("");
   const [tool, setTool] = useState("select");
   const [color, setColor] = useState("#cf2e2e");
-  const [textDraft, setTextDraft] = useState("Note");
+  const [textDraft, setTextDraft] = useState("");
   const [baseImageSrc, setBaseImageSrc] = useState("");
+  const [canUndo, setCanUndo] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  function syncUndoState(canvas = fabricRef.current) {
+    const hasAnnotations = (canvas?.getObjects() ?? []).some((object) => object.data?.annotation);
+    setCanUndo(hasAnnotations);
+  }
 
   function selectTool(nextTool) {
     toolRef.current = nextTool;
     setTool(nextTool);
   }
 
-  function insertObjectAtPointer(event) {
+  function placeAnnotationFromEvent(rawEvent) {
     const canvas = fabricRef.current;
-    if (!canvas || !["rect", "circle", "text"].includes(toolRef.current)) return;
-
-    event.preventDefault?.();
-    event.stopPropagation?.();
-    const sourceEvent = event.nativeEvent ?? event;
-    const point = getCanvasPoint(canvas, sourceEvent);
-    const activeColor = colorRef.current;
     const activeTool = toolRef.current;
-    let object = null;
+    if (!canvas || !["rect", "circle", "arrow", "text"].includes(activeTool)) return;
 
-    if (activeTool === "rect") {
-      object = new Rect({
-        left: point.x,
-        top: point.y,
-        width: 190,
-        height: 110,
-        fill: "rgba(207,46,46,0.12)",
-        stroke: activeColor,
-        strokeWidth: 4,
-        cornerStyle: "circle",
-        transparentCorners: false,
-        data: { annotation: true },
-      });
-    }
-
-    if (activeTool === "circle") {
-      object = new FabricCircle({
-        left: point.x,
-        top: point.y,
-        radius: 55,
-        fill: "rgba(207,46,46,0.12)",
-        stroke: activeColor,
-        strokeWidth: 4,
-        cornerStyle: "circle",
-        transparentCorners: false,
-        data: { annotation: true },
-      });
-    }
-
-    if (activeTool === "text") {
-      const text = textDraftRef.current.trim();
-      if (!text) return;
-      object = new IText(text, {
-        left: point.x,
-        top: point.y,
-        fill: activeColor,
-        fontSize: 32,
-        fontFamily: "Inter, system-ui, sans-serif",
-        backgroundColor: "rgba(255,255,255,0.88)",
-        padding: 8,
-        cornerStyle: "circle",
-        transparentCorners: false,
-        data: { annotation: true },
-      });
-    }
+    rawEvent.preventDefault?.();
+    rawEvent.stopPropagation?.();
+    const point = getCanvasPoint(canvas, rawEvent);
+    const object = createAnnotationObject({
+      color: colorRef.current,
+      point,
+      text: textDraftRef.current,
+      tool: activeTool,
+    });
 
     if (!object) return;
     canvas.add(object);
     canvas.setActiveObject(object);
     canvas.requestRenderAll();
+    syncUndoState(canvas);
     selectTool("select");
   }
 
   function bindAnnotationLayer(node) {
-    layerRef.current = node;
+    annotationLayerRef.current = node;
     if (!node) return;
-    node.onclick = insertObjectAtPointer;
-    node.onmousedown = insertObjectAtPointer;
-    node.onpointerdown = insertObjectAtPointer;
+    const handler = (event) => placeAnnotationFromEvent(event);
+    node.onpointerdown = handler;
+    node.onmousedown = handler;
+    node.onclick = handler;
   }
 
   useEffect(() => {
@@ -148,78 +205,26 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
       width: 1040,
       height: 700,
       backgroundColor: "rgba(0,0,0,0)",
+      enableRetinaScaling: false,
       preserveObjectStacking: true,
+      renderOnAddRemove: true,
+      selectionColor: "rgba(37, 99, 235, 0.08)",
+      selectionBorderColor: "#2563eb",
     });
 
     canvas.freeDrawingBrush = new PencilBrush(canvas);
     fabricRef.current = canvas;
-    const handlePointerDown = (event) => {
-      const activeTool = toolRef.current;
-      if (!["rect", "circle", "text"].includes(activeTool)) return;
-      if (event.__buildcoreAnnotationHandled) return;
-      event.__buildcoreAnnotationHandled = true;
-
-      event.preventDefault();
-      const point = getCanvasPoint(canvas, event);
-      const activeColor = colorRef.current;
-      let object = null;
-
-      if (activeTool === "rect") {
-        object = new Rect({
-          left: point.x,
-          top: point.y,
-          width: 190,
-          height: 110,
-          fill: "rgba(207,46,46,0.12)",
-          stroke: activeColor,
-          strokeWidth: 4,
-          cornerStyle: "circle",
-          transparentCorners: false,
-          data: { annotation: true },
-        });
-      }
-
-      if (activeTool === "circle") {
-        object = new FabricCircle({
-          left: point.x,
-          top: point.y,
-          radius: 55,
-          fill: "rgba(207,46,46,0.12)",
-          stroke: activeColor,
-          strokeWidth: 4,
-          cornerStyle: "circle",
-          transparentCorners: false,
-          data: { annotation: true },
-        });
-      }
-
-      if (activeTool === "text") {
-        const text = textDraftRef.current.trim();
-        if (!text) return;
-        object = new IText(text, {
-          left: point.x,
-          top: point.y,
-          fill: activeColor,
-          fontSize: 32,
-          fontFamily: "Inter, system-ui, sans-serif",
-          backgroundColor: "rgba(255,255,255,0.88)",
-          padding: 8,
-          cornerStyle: "circle",
-          transparentCorners: false,
-          data: { annotation: true },
-        });
-      }
-
-      if (!object) return;
-      canvas.add(object);
-      canvas.setActiveObject(object);
-      canvas.requestRenderAll();
-      selectTool("select");
+    const handleCanvasPointerDown = (event) => {
+      placeAnnotationFromEvent(event);
     };
-    ["pointerdown", "mousedown", "click"].forEach((eventName) => canvas.upperCanvasEl?.addEventListener(eventName, handlePointerDown, true));
+    canvas.upperCanvasEl?.addEventListener("pointerdown", handleCanvasPointerDown, true);
     canvas.on("path:created", (event) => {
-      event.path?.set({ data: { annotation: true } });
+      annotationControlDefaults(event.path);
+      syncUndoState(canvas);
     });
+    canvas.on("object:removed", () => syncUndoState(canvas));
+    canvas.on("object:added", () => syncUndoState(canvas));
+
     let cancelled = false;
     imageToDataUrl(imageUrl)
       .then((source) => {
@@ -231,176 +236,137 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
 
     return () => {
       cancelled = true;
-      ["pointerdown", "mousedown", "click"].forEach((eventName) => canvas.upperCanvasEl?.removeEventListener(eventName, handlePointerDown, true));
+      canvas.upperCanvasEl?.removeEventListener("pointerdown", handleCanvasPointerDown, true);
       canvas.dispose();
     };
   }, [imageUrl]);
 
   useEffect(() => {
     const canvas = fabricRef.current;
-    if (!canvas) return undefined;
+    if (!canvas) return;
 
     canvas.isDrawingMode = tool === "draw";
     canvas.selection = tool === "select";
     canvas.skipTargetFind = tool !== "select";
     if (!canvas.freeDrawingBrush) canvas.freeDrawingBrush = new PencilBrush(canvas);
     canvas.freeDrawingBrush.color = color;
-    canvas.freeDrawingBrush.width = 5;
+    canvas.freeDrawingBrush.width = 5.5;
     canvas.defaultCursor = tool === "draw" ? "crosshair" : tool === "select" ? "move" : "copy";
     canvas.hoverCursor = tool === "select" ? "move" : canvas.defaultCursor;
-  }, [tool, color, textDraft]);
-
-  useEffect(() => {
-    const layer = layerRef.current;
-    if (!layer) return undefined;
-
-    const handleLayerEvent = (event) => insertObjectAtPointer(event);
-    ["pointerdown", "mousedown", "click"].forEach((eventName) => layer.addEventListener(eventName, handleLayerEvent, true));
-    return () => ["pointerdown", "mousedown", "click"].forEach((eventName) => layer.removeEventListener(eventName, handleLayerEvent, true));
-  }, [tool, color, textDraft]);
-
-  useEffect(() => {
-    const canvas = fabricRef.current;
-    const upperCanvas = canvas?.upperCanvasEl;
-    if (!canvas || !upperCanvas) return undefined;
-
-    const handlePointerDown = (event) => {
-      const activeTool = toolRef.current;
-      if (!["rect", "circle", "text"].includes(activeTool)) return;
-      if (event.__buildcoreAnnotationHandled) return;
-      event.__buildcoreAnnotationHandled = true;
-      event.preventDefault();
-
-      const point = getCanvasPoint(canvas, event);
-      let object = null;
-
-      if (activeTool === "rect") {
-        object = new Rect({
-          left: point.x,
-          top: point.y,
-          width: 190,
-          height: 110,
-          fill: "rgba(207,46,46,0.12)",
-          stroke: color,
-          strokeWidth: 4,
-          cornerStyle: "circle",
-          transparentCorners: false,
-          data: { annotation: true },
-        });
-      }
-
-      if (activeTool === "circle") {
-        object = new FabricCircle({
-          left: point.x,
-          top: point.y,
-          radius: 55,
-          fill: "rgba(207,46,46,0.12)",
-          stroke: color,
-          strokeWidth: 4,
-          cornerStyle: "circle",
-          transparentCorners: false,
-          data: { annotation: true },
-        });
-      }
-
-      if (activeTool === "text") {
-        const text = textDraft.trim();
-        if (!text) return;
-        object = new IText(text, {
-          left: point.x,
-          top: point.y,
-          fill: color,
-          fontSize: 32,
-          fontFamily: "Inter, system-ui, sans-serif",
-          backgroundColor: "rgba(255,255,255,0.88)",
-          padding: 8,
-          cornerStyle: "circle",
-          transparentCorners: false,
-          data: { annotation: true },
-        });
-      }
-
-      if (!object) return;
-      canvas.add(object);
-      canvas.setActiveObject(object);
-      canvas.requestRenderAll();
-      selectTool("select");
-    };
-
-    ["pointerdown", "mousedown", "click"].forEach((eventName) => upperCanvas.addEventListener(eventName, handlePointerDown, true));
-    return () => ["pointerdown", "mousedown", "click"].forEach((eventName) => upperCanvas.removeEventListener(eventName, handlePointerDown, true));
-  }, [tool, color, textDraft]);
+    canvas.requestRenderAll();
+  }, [tool, color]);
 
   function undo() {
     const canvas = fabricRef.current;
-    const objects = canvas?.getObjects() ?? [];
-    const annotationObjects = objects.filter((object) => !object.data?.baseImage);
-    if (annotationObjects.length) canvas.remove(annotationObjects.at(-1));
+    const annotationObjects = (canvas?.getObjects() ?? []).filter((object) => object.data?.annotation);
+    const lastObject = annotationObjects.at(-1);
+    if (!canvas || !lastObject) return;
+    canvas.remove(lastObject);
+    canvas.requestRenderAll();
+    syncUndoState(canvas);
   }
 
   async function save() {
     const canvas = fabricRef.current;
-    const output = document.createElement("canvas");
-    output.width = canvas.width;
-    output.height = canvas.height;
-    const context = output.getContext("2d");
+    if (!canvas || isSaving) return;
 
-    if (baseImageSrc) {
-      const image = await loadHtmlImage(baseImageSrc);
-      const scale = Math.min(output.width / image.naturalWidth, output.height / image.naturalHeight);
-      const width = image.naturalWidth * scale;
-      const height = image.naturalHeight * scale;
-      context.drawImage(image, (output.width - width) / 2, (output.height - height) / 2, width, height);
-    } else {
-      context.fillStyle = "#090e18";
-      context.fillRect(0, 0, output.width, output.height);
+    setIsSaving(true);
+    try {
+      const output = document.createElement("canvas");
+      output.width = canvas.width;
+      output.height = canvas.height;
+      const context = output.getContext("2d");
+
+      if (baseImageSrc) {
+        const image = await loadHtmlImage(baseImageSrc);
+        const scale = Math.min(output.width / image.naturalWidth, output.height / image.naturalHeight);
+        const width = image.naturalWidth * scale;
+        const height = image.naturalHeight * scale;
+        context.drawImage(image, (output.width - width) / 2, (output.height - height) / 2, width, height);
+      } else {
+        context.fillStyle = "#090e18";
+        context.fillRect(0, 0, output.width, output.height);
+      }
+
+      context.drawImage(canvas.lowerCanvasEl, 0, 0);
+      const dataUrl = output.toDataURL("image/jpeg", 0.92);
+      const annotationJson = canvas.toJSON(["data"]);
+      await onSave?.({ dataUrl, annotationJson });
+    } finally {
+      setIsSaving(false);
     }
-
-    context.drawImage(canvas.lowerCanvasEl, 0, 0);
-    const dataUrl = output.toDataURL("image/jpeg", 0.92);
-    const annotationJson = canvas.toJSON();
-    await onSave?.({ dataUrl, annotationJson });
   }
 
   return (
     <section className="annotator">
       <div className="annotatorToolbar" aria-label="Photo annotation tools">
-        {tools.map((item) => {
-          const Icon = item.icon;
-          return (
-            <button
-              key={item.id}
-              className={tool === item.id ? "iconButton active" : "iconButton"}
-              type="button"
-              title={item.label}
-              onClick={() => selectTool(item.id)}
-            >
-              <Icon size={18} />
-            </button>
-          );
-        })}
-        <input aria-label="Annotation color" className="colorInput" type="color" value={color} onChange={(event) => setColor(event.target.value)} />
+        <div className="annotatorToolGroup">
+          {tools.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                className={tool === item.id ? "iconButton active" : "iconButton"}
+                type="button"
+                title={item.label}
+                aria-label={item.label}
+                onClick={() => selectTool(item.id)}
+              >
+                <Icon size={18} />
+              </button>
+            );
+          })}
+        </div>
+        <label className="annotatorColorPicker" title="Annotation color">
+          <Palette size={16} />
+          <input aria-label="Annotation color" type="color" value={color} onChange={(event) => setColor(event.target.value)} />
+        </label>
         {tool === "text" && (
           <input
             aria-label="Text annotation"
             className="annotationTextInput"
-            placeholder="Type text, then click photo"
+            placeholder="Type text, then tap photo"
             value={textDraft}
             onChange={(event) => setTextDraft(event.target.value)}
           />
         )}
-        <button className="iconButton" type="button" title="Undo" onClick={undo}>
+        <button className="iconButton" type="button" title="Undo" aria-label="Undo" disabled={!canUndo} onClick={undo}>
           <Undo2 size={18} />
         </button>
-        <button className="saveButton" type="button" onClick={save}>
-          <Download size={18} />
-          Save
+        <button className="saveButton" type="button" disabled={isSaving} onClick={save}>
+          <Check size={18} />
+          {isSaving ? "Saving..." : "Save"}
         </button>
       </div>
-      <div className="canvasShell">
+      <div className="annotatorHint">
+        {tool === "select" && "Drag annotations to move or resize them."}
+        {tool === "draw" && "Press and drag to draw. Lift to stop."}
+        {tool === "arrow" && "Tap the photo to place an arrow."}
+        {tool === "rect" && "Tap the photo to place a rectangle."}
+        {tool === "circle" && "Tap the photo to place a circle."}
+        {tool === "text" && "Enter text, then tap the photo."}
+      </div>
+      <div
+        className="canvasShell"
+        onMouseDownCapture={(event) => {
+          if (!["rect", "circle", "arrow", "text"].includes(toolRef.current)) return;
+          placeAnnotationFromEvent(event.nativeEvent);
+        }}
+        onPointerDownCapture={(event) => {
+          if (!["rect", "circle", "arrow", "text"].includes(toolRef.current)) return;
+          placeAnnotationFromEvent(event.nativeEvent);
+        }}
+      >
         {(baseImageSrc || imageUrl) && <img className="annotationBaseImage" src={baseImageSrc || imageUrl} alt="" />}
         <canvas ref={canvasElement} />
-        {["rect", "circle", "text"].includes(tool) && <div className="annotationClickLayer" ref={bindAnnotationLayer} />}
+        {["rect", "circle", "arrow", "text"].includes(tool) && (
+          <button
+            aria-label={`Place ${tool} annotation`}
+            className="annotationClickLayer"
+            ref={bindAnnotationLayer}
+            type="button"
+          />
+        )}
       </div>
     </section>
   );
