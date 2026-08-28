@@ -22,6 +22,7 @@ import {
   MapPin,
   LogIn,
   LogOut,
+  Menu,
   MoreHorizontal,
   Phone,
   Plus,
@@ -505,6 +506,28 @@ function FormField({ label, children }) {
   );
 }
 
+function DateField({ label, onChange, value }) {
+  const inputRef = useRef(null);
+
+  return (
+    <label className="formField dateField">
+      <span>{label}</span>
+      <button
+        className="modernDateButton"
+        type="button"
+        onClick={() => {
+          if (inputRef.current?.showPicker) inputRef.current.showPicker();
+          else inputRef.current?.focus();
+        }}
+      >
+        <Calendar size={17} />
+        <strong>{value ? formatDateLabel(value) : "Select date"}</strong>
+      </button>
+      <input ref={inputRef} required className="nativeDateInput" type="date" value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
 function Avatar({ profile, small = false, url }) {
   return (
     <div className={small ? "avatar face small" : "avatar face"}>
@@ -531,6 +554,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [authMode, setAuthMode] = useState("signin");
   const [authEmail, setAuthEmail] = useState("");
@@ -787,6 +811,12 @@ export default function App() {
   }, [isSearchOpen]);
 
   useEffect(() => {
+    const locked = isSearchOpen || Boolean(detailOverlay) || Boolean(modalType) || Boolean(selectedAttachment) || isMobileMenuOpen;
+    document.body.classList.toggle("overlayLocked", locked);
+    return () => document.body.classList.remove("overlayLocked");
+  }, [detailOverlay, isMobileMenuOpen, isSearchOpen, modalType, selectedAttachment]);
+
+  useEffect(() => {
     function handleKeyDown(event) {
       if (event.key !== "Escape") return;
       if (detailOverlay) {
@@ -997,6 +1027,7 @@ export default function App() {
   async function signOut() {
     if (!supabase) return;
     await supabase.auth.signOut();
+    setIsMobileMenuOpen(false);
     setProfile(null);
     setData({ ...demo, visits: [] });
     setSelectedProjectId("");
@@ -2264,7 +2295,8 @@ export default function App() {
   }
 
   return (
-    <div className="dashboardShell">
+    <div className={isMobileMenuOpen ? "dashboardShell mobileMenuOpen" : "dashboardShell"}>
+      <div className="mobileDrawerBackdrop" onClick={() => setIsMobileMenuOpen(false)} />
       <aside className="sidebar">
         <div className="brand">
           <div className="brandMark">B</div>
@@ -2278,12 +2310,28 @@ export default function App() {
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             return (
-              <button className={activeNav === item.id ? "sideNavItem active" : "sideNavItem"} key={item.id} type="button" onClick={() => setActiveNav(item.id)}>
+              <button
+                className={activeNav === item.id ? "sideNavItem active" : "sideNavItem"}
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  setActiveNav(item.id);
+                  setIsMobileMenuOpen(false);
+                }}
+              >
                 <Icon size={20} />
                 <span>{item.label}</span>
               </button>
             );
           })}
+          <button className="sideNavItem drawerOnly" type="button" onClick={() => setNotice("No new notifications.")}>
+            <Bell size={20} />
+            <span>Notifications</span>
+          </button>
+          <button className="sideNavItem drawerOnly" type="button" onClick={signOut}>
+            <LogOut size={20} />
+            <span>Sign out</span>
+          </button>
         </nav>
 
         <div className="sidebarUser">
@@ -2297,6 +2345,16 @@ export default function App() {
       </aside>
 
       <main className="mainWorkspace">
+        <div className="mobileTopBar">
+          <button className="mobileMenuButton" type="button" onClick={() => setIsMobileMenuOpen(true)} aria-label="Open menu">
+            <Menu size={23} />
+          </button>
+          <button className="mobileSearchButton" type="button" onClick={() => setIsSearchOpen(true)}>
+            <Search size={18} />
+            <span>Search</span>
+          </button>
+          <Avatar profile={profile} small url={avatarUrls[profile?.id]} />
+        </div>
         <header className="workspaceHeader">
           <div>
             <h1>{activeNav === "schedule" ? "Schedule" : navItems.find((item) => item.id === activeNav)?.label}</h1>
@@ -2718,9 +2776,7 @@ export default function App() {
                   ))}
                 </select>
               </FormField>
-              <FormField label="Date">
-                <input required type="date" value={visitForm.visit_date} onChange={(event) => updateVisitStartDate(event.target.value)} />
-              </FormField>
+              <DateField label="Date" value={visitForm.visit_date} onChange={updateVisitStartDate} />
               <FormField label="Work days">
                 <input
                   disabled={Boolean(editingVisitId)}
@@ -2751,8 +2807,11 @@ export default function App() {
                   {visitFormDates.join(", ")}
                 </div>
               )}
-              <label className="checkLine">
+              <label className="checkLine switchLine">
                 <input type="checkbox" checked={visitForm.is_first_visit} onChange={(event) => setVisitForm({ ...visitForm, is_first_visit: event.target.checked })} />
+                <span className="switchTrack" aria-hidden="true">
+                  <span />
+                </span>
                 First site visit
               </label>
               <PickerList title="People" items={visitPickerPeople} selected={visitForm.people_ids} labelKey="full_name" onToggle={(id) => toggleVisitArray("people_ids", id)} />
@@ -3448,8 +3507,16 @@ function PhotoStepModal({ captions = {}, files = [], label, loading, onCaption, 
 
   return (
     <form className="workflowForm" onSubmit={onSubmit}>
-      <div className="emptyPanelState">{label}</div>
-      <input accept="image/jpeg,image/png,image/webp" multiple required type="file" onChange={(event) => onFiles([...event.target.files])} />
+      <div className="workflowCallout">
+        <ImagePlus size={22} />
+        <span>{label}</span>
+      </div>
+      <label className="fileDropControl">
+        <Upload size={22} />
+        <strong>Select photos</strong>
+        <span>{selectedFiles.length ? `${selectedFiles.length} photo${selectedFiles.length === 1 ? "" : "s"} selected` : "JPG, PNG, or WebP"}</span>
+        <input accept="image/jpeg,image/png,image/webp" multiple required type="file" onChange={(event) => onFiles([...event.target.files])} />
+      </label>
       <div className="selectedFiles">
         {selectedFiles.map((file) => {
           const key = fileInputKey(file);
@@ -3479,8 +3546,16 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
       <FormField label="Completion comments">
         <textarea placeholder="Describe completed work, issues, materials, office notes..." value={form.notes} onChange={(event) => onChange({ ...form, notes: event.target.value })} />
       </FormField>
-      <div className="emptyPanelState">Upload at least one after photo before completing the ticket.</div>
-      <input accept="image/jpeg,image/png,image/webp" multiple required type="file" onChange={(event) => onChange({ ...form, files: [...event.target.files] })} />
+      <div className="workflowCallout">
+        <ImagePlus size={22} />
+        <span>Upload at least one after photo before completing the ticket.</span>
+      </div>
+      <label className="fileDropControl">
+        <Upload size={22} />
+        <strong>Select after photos</strong>
+        <span>{selectedFiles.length ? `${selectedFiles.length} photo${selectedFiles.length === 1 ? "" : "s"} selected` : "JPG, PNG, or WebP"}</span>
+        <input accept="image/jpeg,image/png,image/webp" multiple required type="file" onChange={(event) => onChange({ ...form, files: [...event.target.files] })} />
+      </label>
       <div className="selectedFiles">
         {selectedFiles.map((file) => {
           const key = fileInputKey(file);
@@ -4119,6 +4194,9 @@ function PickerList({ title, items, selected, labelKey, onToggle }) {
         return (
           <label className="pickerOption" key={item.id}>
             <input type="checkbox" checked={selected.includes(item.id)} onChange={() => onToggle(item.id)} />
+            <span className="switchTrack pickerSwitch" aria-hidden="true">
+              <span />
+            </span>
             <span className="pickerOptionText">
               <strong>{item[labelKey]}</strong>
               {status?.detail && <small>{status.detail}</small>}
@@ -4134,7 +4212,7 @@ function PickerList({ title, items, selected, labelKey, onToggle }) {
 function AppModal({ children, onClose, title, wide = false }) {
   return (
     <div className="modalBackdrop">
-      <div className={wide ? "modal wideModal" : "modal"}>
+      <div className={wide ? "modal wideModal" : "modal"} onClick={(event) => event.stopPropagation()}>
         <div className="modalHeader">
           <h2>{title}</h2>
           <button className="iconButton soft" type="button" onClick={onClose} title="Close">

@@ -1,11 +1,30 @@
 {
-  "name": "Build Dispatch PM",
-  "short_name": "Build PM",
+  "name": "BuildCore Construction PM",
+  "short_name": "BuildCore",
   "id": "/buildcore-construction-pm/",
-"start_url": "/buildcore-construction-pm/",
-"scope": "/buildcore-construction-pm/",
+  "start_url": "/buildcore-construction-pm/",
+  "scope": "/buildcore-construction-pm/",
   "display": "standalone",
-  "background_color": "#f4f5ef",
-  "theme_color": "#f4f5ef",
-  "icons": []
+  "background_color": "#f3f4f6",
+  "theme_color": "#111827",
+  "icons": [
+    {
+      "src": "buildcore-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "buildcore-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "buildcore-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }
