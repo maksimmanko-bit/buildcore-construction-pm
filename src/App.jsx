@@ -4669,7 +4669,7 @@ function AppModal({ children, onClose, title, wide = false }) {
             <X size={18} />
           </button>
         </div>
-        {children}
+        <div className="modalBody">{children}</div>
       </div>
     </div>
   );
@@ -5016,6 +5016,8 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssign
   const span = scheduleEndHour - scheduleStartHour;
   const left = Math.max(0, ((assignment.start - scheduleStartHour) / span) * 100);
   const width = Math.min(100 - left, ((assignment.end - assignment.start) / span) * 100);
+  const isShortBlock = width < 16;
+  const isTightBlock = width < 24;
   const laneCount = Math.max(1, assignment.laneCount ?? 1);
   const laneIndex = Math.min(laneCount - 1, Math.max(0, assignment.laneIndex ?? 0));
   const verticalStyle =
@@ -5030,7 +5032,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssign
 
   return (
     <div
-      className={`scheduleBlock ${assignment.color} ${assignment.status ?? ""}`}
+      className={`scheduleBlock ${assignment.color} ${assignment.status ?? ""} ${isShortBlock ? "shortBlock" : ""} ${isTightBlock ? "tightBlock" : ""}`}
       draggable={Boolean(assignment.visitId)}
       role="button"
       style={{ left: `${left}%`, width: `${width}%`, ...verticalStyle }}

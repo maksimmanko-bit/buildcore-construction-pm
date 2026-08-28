@@ -2030,7 +2030,6 @@ h1 {
   opacity: 0.88;
 }
 
-.scheduleBlock strong,
 .scheduleBlock small,
 .scheduleBlockStatus {
   overflow: hidden;
@@ -2142,10 +2141,15 @@ h1 {
 }
 
 .scheduleBlockTop strong {
-  display: block;
+  display: -webkit-box;
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
   line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .scheduleBlockStatus {
@@ -5956,6 +5960,170 @@ body.overlayLocked {
   }
 }
 
+/* Overlay frame polish */
+.modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(241, 245, 249, 0.82)),
+    color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow:
+    0 34px 88px rgba(15, 23, 42, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.74);
+}
+
+.modalHeader {
+  position: relative;
+  top: auto;
+  z-index: 4;
+  min-height: 74px;
+  margin: 0;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 24px 24px 0 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.78)),
+    rgba(255, 255, 255, 0.86);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  -webkit-backdrop-filter: blur(20px) saturate(1.12);
+  backdrop-filter: blur(20px) saturate(1.12);
+}
+
+.modalHeader h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-size: 24px;
+  line-height: 1.08;
+}
+
+.modalHeader .iconButton {
+  flex: 0 0 auto;
+}
+
+.modalBody {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px;
+  border-radius: 0 0 24px 24px;
+  scrollbar-color: rgba(100, 116, 139, 0.42) transparent;
+  scrollbar-width: thin;
+}
+
+.modalBody::-webkit-scrollbar,
+.detailPanel::-webkit-scrollbar,
+.searchPanelResults::-webkit-scrollbar,
+.photoViewer::-webkit-scrollbar,
+.photoAnnotatorPanel::-webkit-scrollbar,
+.documentFileViewer::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.modalBody::-webkit-scrollbar-track,
+.detailPanel::-webkit-scrollbar-track,
+.searchPanelResults::-webkit-scrollbar-track,
+.photoViewer::-webkit-scrollbar-track,
+.photoAnnotatorPanel::-webkit-scrollbar-track,
+.documentFileViewer::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modalBody::-webkit-scrollbar-thumb,
+.detailPanel::-webkit-scrollbar-thumb,
+.searchPanelResults::-webkit-scrollbar-thumb,
+.photoViewer::-webkit-scrollbar-thumb,
+.photoAnnotatorPanel::-webkit-scrollbar-thumb,
+.documentFileViewer::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.42);
+  background-clip: content-box;
+}
+
+.modalBody::-webkit-scrollbar-thumb:hover,
+.detailPanel::-webkit-scrollbar-thumb:hover,
+.searchPanelResults::-webkit-scrollbar-thumb:hover,
+.photoViewer::-webkit-scrollbar-thumb:hover,
+.photoAnnotatorPanel::-webkit-scrollbar-thumb:hover,
+.documentFileViewer::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.58);
+  background-clip: content-box;
+}
+
+.detailPanel {
+  scrollbar-color: rgba(100, 116, 139, 0.42) transparent;
+  scrollbar-width: thin;
+}
+
+.detailHeader,
+.viewerTopBar {
+  position: relative;
+  margin: 0;
+  border-color: rgba(255, 255, 255, 0.68);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.78)),
+    rgba(255, 255, 255, 0.86);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 16px 36px rgba(15, 23, 42, 0.08);
+}
+
+.workflowForm fieldset,
+.safetySwitchList,
+.signaturePad,
+.safetySummary,
+.fileDropControl,
+.selectedFileWithCaption,
+.formField,
+.pickerList {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(248, 250, 252, 0.58)),
+    rgba(255, 255, 255, 0.68);
+  border-color: rgba(226, 232, 240, 0.74);
+}
+
+@media (max-width: 860px) {
+  .modal,
+  .modal:not(.wideModal),
+  .wideModal {
+    width: calc(100vw - 20px);
+    max-width: calc(100vw - 20px);
+    height: min(840px, calc(100dvh - max(20px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom))));
+    max-height: calc(100dvh - max(20px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom)));
+    padding: 0;
+    border-radius: 24px;
+  }
+
+  .modalHeader {
+    top: auto;
+    min-height: 66px;
+    margin: 0 !important;
+    padding: 14px;
+    border-radius: 24px 24px 0 0;
+  }
+
+  .modalHeader h2 {
+    font-size: 21px;
+  }
+
+  .modalBody {
+    padding: 14px 14px max(22px, env(safe-area-inset-bottom));
+  }
+
+  .detailHeader,
+  .viewerTopBar {
+    margin: 0 0 12px !important;
+  }
+}
+
 /* Mobile form and schedule stability */
 html {
   -webkit-text-size-adjust: 100%;
@@ -6051,6 +6219,44 @@ html {
 
 .scheduleBlockStatus {
   max-width: 92px;
+}
+
+.scheduleBlock.tightBlock {
+  gap: 7px;
+  min-width: 164px;
+  padding: 11px 14px 10px;
+}
+
+.scheduleBlock.tightBlock .scheduleBlockTop {
+  display: grid;
+  gap: 5px;
+}
+
+.scheduleBlock.tightBlock .scheduleBlockTop strong {
+  font-size: 13px;
+  line-height: 1.16;
+}
+
+.scheduleBlock.tightBlock .scheduleBlockStatus {
+  justify-self: start;
+  max-width: 100%;
+}
+
+.scheduleBlock.tightBlock .assignmentCrew {
+  display: flex;
+  align-items: center;
+}
+
+.scheduleBlock.tightBlock .assignmentCrew i {
+  display: none;
+}
+
+.scheduleBlock.shortBlock {
+  min-width: 178px;
+}
+
+.scheduleBlock.shortBlock .assignmentAvatarStack {
+  overflow: visible;
 }
 
 .assignmentCrew .avatar,
@@ -6230,5 +6436,44 @@ html {
 
   .attendanceList {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Final overlay guard: keep scrollbars inside the sheet body, not on the rounded shell. */
+.modalBackdrop .modal,
+.modalBackdrop .modal:not(.wideModal),
+.modalBackdrop .wideModal {
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+.modalBackdrop .modalHeader {
+  position: relative !important;
+  top: auto !important;
+  margin: 0 !important;
+  border-radius: 24px 24px 0 0 !important;
+}
+
+.modalBackdrop .modalBody {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 18px;
+  border-radius: 0 0 24px 24px;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(100, 116, 139, 0.38) transparent;
+  scrollbar-width: thin;
+}
+
+@media (max-width: 860px) {
+  .modalBackdrop .modal,
+  .modalBackdrop .modal:not(.wideModal),
+  .modalBackdrop .wideModal {
+    height: min(840px, calc(100dvh - max(20px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom))));
+    max-height: calc(100dvh - max(20px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom)));
+  }
+
+  .modalBackdrop .modalBody {
+    padding: 14px 14px max(22px, env(safe-area-inset-bottom));
   }
 }
