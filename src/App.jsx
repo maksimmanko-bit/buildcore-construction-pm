@@ -949,6 +949,22 @@ export default function App() {
   }));
   const visitFormDates = editingVisitId ? [visitForm.visit_date] : collectBusinessDates(visitForm.visit_date, Math.max(1, parseWorkDayCount(visitForm.duration_days)));
   const visitWorkScopes = normalizeWorkScopes(visitForm.work_scopes, visitFormDates.length, visitForm.work_scope);
+  const safetyFormHasDraft =
+    safetyForm.hazards.length > 0 ||
+    safetyForm.notes.trim().length > 0 ||
+    Object.values(safetyForm.signatures ?? {}).some((signature) => String(signature ?? "").trim().length > 0);
+  const beforePhotosHaveDraft =
+    (photoStep.files?.length ?? 0) > 0 ||
+    Object.values(photoStep.captions ?? {}).some((caption) => String(caption ?? "").trim().length > 0);
+  const completionHasDraft =
+    completionForm.notes.trim().length > 0 ||
+    (completionForm.files?.length ?? 0) > 0 ||
+    Object.values(completionForm.captions ?? {}).some((caption) => String(caption ?? "").trim().length > 0);
+
+  function closeModalWithConfirmation(hasUnsavedDraft = false) {
+    if (hasUnsavedDraft && !window.confirm("You have unsaved changes. Close this window without saving?")) return;
+    setModalType(null);
+  }
 
   async function applyPendingSignupProfile(nextProfile) {
     if (!supabase || !nextProfile?.id || !nextProfile.company_id || !session?.user?.email) return;
@@ -2911,7 +2927,7 @@ export default function App() {
         )}
 
         {modalType === "safety" && workflowVisit && workflowProject && (
-          <AppModal title="Digital Safety Form" onClose={() => setModalType(null)} wide>
+          <AppModal confirmOnClose={safetyFormHasDraft} title="Digital Safety Form" onClose={() => closeModalWithConfirmation(safetyFormHasDraft)} wide>
             <SafetyFormModal
               form={safetyForm}
               hazards={hazardOptions}
@@ -2926,7 +2942,7 @@ export default function App() {
         )}
 
         {modalType === "beforePhotos" && workflowVisit && workflowProject && (
-          <AppModal title="Before Work Photos" onClose={() => setModalType(null)}>
+          <AppModal confirmOnClose={beforePhotosHaveDraft} title="Before Work Photos" onClose={() => closeModalWithConfirmation(beforePhotosHaveDraft)}>
             <PhotoStepModal
               captions={photoStep.captions}
               files={photoStep.files}
@@ -2940,7 +2956,7 @@ export default function App() {
         )}
 
         {modalType === "completeVisit" && workflowVisit && workflowProject && (
-          <AppModal title="Complete Work" onClose={() => setModalType(null)}>
+          <AppModal confirmOnClose={completionHasDraft} title="Complete Work" onClose={() => closeModalWithConfirmation(completionHasDraft)}>
             <CompleteVisitModal form={completionForm} loading={loading} onChange={setCompletionForm} onSubmit={saveCompletion} />
           </AppModal>
         )}
@@ -4339,7 +4355,7 @@ function PickerList({ title, items, selected, labelKey, onToggle }) {
 
 function AppModal({ children, onClose, title, wide = false }) {
   return (
-    <div className="modalBackdrop">
+    <div className="modalBackdrop" onClick={onClose}>
       <div className={wide ? "modal wideModal" : "modal"} onClick={(event) => event.stopPropagation()}>
         <div className="modalHeader">
           <h2>{title}</h2>
