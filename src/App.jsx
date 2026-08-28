@@ -325,6 +325,27 @@ function toHour(time) {
   return hours + (minutes || 0) / 60;
 }
 
+function packVisitLanes(visits = []) {
+  const sortedVisits = [...visits].sort((a, b) => {
+    const startDiff = toHour(a.start_time) - toHour(b.start_time);
+    if (startDiff !== 0) return startDiff;
+    return toHour(a.end_time) - toHour(b.end_time);
+  });
+  const laneEnds = [];
+  const laneByVisitId = new Map();
+
+  sortedVisits.forEach((visit) => {
+    const start = toHour(visit.start_time);
+    const end = Math.max(start + 0.25, toHour(visit.end_time));
+    const laneIndex = laneEnds.findIndex((laneEnd) => laneEnd <= start);
+    const nextLaneIndex = laneIndex === -1 ? laneEnds.length : laneIndex;
+    laneEnds[nextLaneIndex] = end;
+    laneByVisitId.set(visit.id, nextLaneIndex);
+  });
+
+  return { laneByVisitId, laneCount: Math.max(1, laneEnds.length) };
+}
+
 function toTimeValue(hourValue) {
   const clamped = Math.max(0, Math.min(23.75, hourValue));
   const totalMinutes = Math.round(clamped * 4) * 15;
@@ -960,14 +981,18 @@ export default function App() {
   }));
   const projectRows = rowsSource.projects
     .map((project, index) => {
-      const projectVisits = (rowsSource.visits ?? []).filter((visit) => visit.project_id === project.id && visit.visit_date === selectedDate && visit.status !== "cancelled");
+      const projectVisits = (rowsSource.visits ?? [])
+        .filter((visit) => visit.project_id === project.id && visit.visit_date === selectedDate && visit.status !== "cancelled")
+        .sort((a, b) => `${a.start_time} ${a.end_time}`.localeCompare(`${b.start_time} ${b.end_time}`));
+      const visitLanes = packVisitLanes(projectVisits);
       return {
         ...project,
         kind: "project",
         full_name: project.name,
         subtitle: project.job_number || project.address,
         color: colors[index % colors.length],
-        assignments: projectVisits.map((visit, visitIndex) => ({
+        laneCount: visitLanes.laneCount,
+        assignments: projectVisits.map((visit) => ({
           visitId: visit.id,
           projectId: visit.project_id,
           title: project.name,
@@ -980,8 +1005,8 @@ export default function App() {
           color: colors[index % colors.length],
           people: rowsSource.people.filter((person) => visit.people_ids?.includes(person.id)),
           equipment: rowsSource.equipment.filter((item) => visit.equipment_ids?.includes(item.id)),
-          laneIndex: visitIndex,
-          laneCount: projectVisits.length,
+          laneIndex: visitLanes.laneByVisitId.get(visit.id) ?? 0,
+          laneCount: visitLanes.laneCount,
         })),
       };
     })
@@ -4860,7 +4885,7 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
       </div>
 
       {rows.map((row) => (
-        <div className="resourceRow" key={row.id} style={{ "--lane-count": Math.max(1, row.assignments.length) }}>
+        <div className="resourceRow" key={row.id} style={{ "--lane-count": Math.max(1, row.laneCount ?? row.assignments.length) }}>
           <button
             className="resourceIdentity"
             type="button"
