@@ -354,6 +354,37 @@ function toTimeValue(hourValue) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
+function formatTimeLabel(value) {
+  const [rawHours, rawMinutes] = String(value ?? "").slice(0, 5).split(":").map(Number);
+  if (!Number.isFinite(rawHours)) return "TBD";
+  const hours = Math.max(0, Math.min(23, rawHours));
+  const minutes = Number.isFinite(rawMinutes) ? rawMinutes : 0;
+  const period = hours >= 12 ? "PM" : "AM";
+  const displayHour = hours % 12 || 12;
+  return `${displayHour}:${String(minutes).padStart(2, "0")} ${period}`;
+}
+
+function formatTimeRange(start, end) {
+  return `${formatTimeLabel(start)} - ${formatTimeLabel(end)}`;
+}
+
+function formatDateTimeLabel(value) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(value));
+}
+
+const timePickerOptions = Array.from({ length: 96 }, (_, index) => {
+  const value = toTimeValue(index / 4);
+  return { value, label: formatTimeLabel(value) };
+});
+
 function formatDateLabel(value) {
   return new Intl.DateTimeFormat("en-US", {
     weekday: "long",
@@ -837,7 +868,7 @@ export default function App() {
         subtitle: visit.work_scope || normalizeVisitStatus(visit.status),
         start: toHour(visit.start_time),
         end: toHour(visit.end_time),
-        timeText: `${String(visit.start_time).slice(0, 5)} - ${String(visit.end_time).slice(0, 5)}`,
+        timeText: formatTimeRange(visit.start_time, visit.end_time),
         status: visit.status,
         isFirstVisit: visit.is_first_visit,
         color: project?.color ?? "blue",
@@ -999,7 +1030,7 @@ export default function App() {
           subtitle: visit.work_scope || normalizeVisitStatus(visit.status),
           start: toHour(visit.start_time),
           end: toHour(visit.end_time),
-          timeText: `${String(visit.start_time).slice(0, 5)} - ${String(visit.end_time).slice(0, 5)}`,
+          timeText: formatTimeRange(visit.start_time, visit.end_time),
           status: visit.status,
           isFirstVisit: visit.is_first_visit,
           color: colors[index % colors.length],
@@ -1715,8 +1746,8 @@ export default function App() {
       doc.text(`Job Number: ${activeProject.job_number || "Not set"}`, 42, 154);
       doc.text(doc.splitTextToSize(`Address: ${activeProject.address}`, 492), 42, 170);
       doc.text(`Visit Date: ${formatDateLabel(activeVisit.visit_date)}`, 42, 196);
-      doc.text(`Current Time: ${signedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`, 220, 196);
-      doc.text(`Scheduled Time: ${String(activeVisit.start_time).slice(0, 5)} - ${String(activeVisit.end_time).slice(0, 5)}`, 398, 196);
+      doc.text(`Current Time: ${formatTimeLabel(`${signedAt.getHours()}:${signedAt.getMinutes()}`)}`, 220, 196);
+      doc.text(`Scheduled Time: ${formatTimeRange(activeVisit.start_time, activeVisit.end_time)}`, 398, 196);
 
       doc.setDrawColor(226, 232, 240);
       doc.roundedRect(42, 244, 528, 112, 8, 8);
@@ -1750,7 +1781,7 @@ export default function App() {
         doc.setFontSize(11);
         doc.text(person.full_name || person.email || "Team member", 58, y + 24);
         doc.setFont("helvetica", "normal");
-        doc.text(`Signed: ${signedAt.toLocaleString()}`, 58, y + 42);
+        doc.text(`Signed: ${formatDateTimeLabel(signedAt)}`, 58, y + 42);
         doc.addImage(safetyForm.signatures[person.id], "PNG", 320, y + 12, 190, 48);
         y += 96;
       });
@@ -1762,7 +1793,7 @@ export default function App() {
         activeProject.job_number,
         activeProject.address,
         formatDateLabel(activeVisit.visit_date),
-        signedAt.toLocaleString(),
+        formatDateTimeLabel(signedAt),
         safetyForm.hazards.join(", "),
         safetyForm.notes,
         ...names,
@@ -2036,11 +2067,11 @@ export default function App() {
     }
 
     setLoading(false);
-    setNotice(`Visit moved to ${nextStartTime} - ${nextEndTime}.`);
+    setNotice(`Visit moved to ${formatTimeRange(nextStartTime, nextEndTime)}.`);
     refreshData();
   }
 
-  async function assignPersonToVisit({ personId, visitId }) {
+  async function assignPersonToVisit({ personId, sourceVisitId = "", visitId }) {
     if (!supabase || !canManage) {
       setNotice("Only Owner, PM, or Office Manager can assign people.");
       return;
@@ -2050,28 +2081,78 @@ export default function App() {
     const visit = (rowsSource.visits ?? []).find((item) => item.id === visitId);
     const person = rowsSource.people.find((item) => item.id === personId);
     if (!visit || !person) return;
+    if (person.availability_status === "not_available") {
+      setNotice(`${profileDisplayName(person)} is marked Not Available.`);
+      return;
+    }
     if (visit.people_ids?.includes(personId)) {
       setNotice(`${profileDisplayName(person)} is already assigned to this ticket.`);
       return;
     }
 
+    const conflicts = (rowsSource.visits ?? []).filter((item) => {
+      if (item.id === visitId || item.status === "cancelled") return false;
+      if (item.visit_date !== visit.visit_date || !item.people_ids?.includes(personId)) return false;
+      return overlaps(
+        String(visit.start_time).slice(0, 5),
+        String(visit.end_time).slice(0, 5),
+        String(item.start_time).slice(0, 5),
+        String(item.end_time).slice(0, 5),
+      );
+    });
+    const conflictsText = conflicts
+      .map((item) => {
+        const project = rowsSource.projects.find((projectItem) => projectItem.id === item.project_id);
+        return `${project?.name || "another project"} (${formatTimeRange(item.start_time, item.end_time)})`;
+      })
+      .join(", ");
+    if (conflicts.length > 0 && !sourceVisitId) {
+      setNotice(`${profileDisplayName(person)} already has an overlapping ticket: ${conflictsText}.`);
+      return;
+    }
+    if (conflicts.length > 0) {
+      const confirmed = window.confirm(
+        `${profileDisplayName(person)} is already assigned during this time: ${conflictsText}.\n\nMove them to this ticket instead?`,
+      );
+      if (!confirmed) {
+        setNotice("Assignment unchanged.");
+        return;
+      }
+    }
+
+    const conflictVisitIds = conflicts.map((item) => item.id);
     const previousData = data;
     setData((current) => ({
       ...current,
       visits: (current.visits ?? []).map((item) => {
+        if (conflictVisitIds.includes(item.id)) {
+          return { ...item, people_ids: (item.people_ids ?? []).filter((id) => id !== personId) };
+        }
         if (item.id !== visitId) return item;
         const peopleIds = new Set(item.people_ids ?? []);
         peopleIds.add(personId);
         return { ...item, people_ids: [...peopleIds] };
       }),
     }));
-    setNotice(`Assigning ${profileDisplayName(person)}...`);
+    setNotice(conflicts.length > 0 ? `Moving ${profileDisplayName(person)}...` : `Assigning ${profileDisplayName(person)}...`);
     setLoading(true);
     try {
       const { error } = await supabase.from("visit_people").insert({ visit_id: visitId, profile_id: personId });
       if (error) throw error;
-      await logVisitActivity(visit, "person_assigned", `${currentUserName} assigned ${profileDisplayName(person)} to this ticket.`, { personId });
-      setNotice(`${profileDisplayName(person)} assigned to ticket.`);
+      if (conflictVisitIds.length > 0) {
+        const removeResult = await supabase.from("visit_people").delete().eq("profile_id", personId).in("visit_id", conflictVisitIds);
+        if (removeResult.error) {
+          await supabase.from("visit_people").delete().eq("visit_id", visitId).eq("profile_id", personId);
+          throw removeResult.error;
+        }
+      }
+      await Promise.all([
+        ...conflicts.map((conflictVisit) =>
+          logVisitActivity(conflictVisit, "person_removed", `${currentUserName} moved ${profileDisplayName(person)} from this ticket.`, { personId, movedToVisitId: visitId }),
+        ),
+        logVisitActivity(visit, "person_assigned", `${currentUserName} assigned ${profileDisplayName(person)} to this ticket.`, { personId, sourceVisitId, replacedVisitIds: conflictVisitIds }),
+      ]);
+      setNotice(conflicts.length > 0 ? `${profileDisplayName(person)} moved to ticket.` : `${profileDisplayName(person)} assigned to ticket.`);
       refreshData();
     } catch (error) {
       setData(previousData);
@@ -2813,7 +2894,7 @@ export default function App() {
                         <span>
                           <strong>{formatDateLabel(visit.visit_date)}</strong>
                           <small>
-                            {String(visit.start_time).slice(0, 5)} - {String(visit.end_time).slice(0, 5)} · {normalizeStatus(visit.status)}
+                            {formatTimeRange(visit.start_time, visit.end_time)} · {normalizeStatus(visit.status)}
                           </small>
                         </span>
                       </button>
@@ -3112,10 +3193,22 @@ export default function App() {
                 />
               </FormField>
               <FormField label="Start time">
-                <input required type="time" value={visitForm.start_time} onChange={(event) => setVisitForm({ ...visitForm, start_time: event.target.value })} />
+                <select required value={visitForm.start_time} onChange={(event) => setVisitForm({ ...visitForm, start_time: event.target.value })}>
+                  {timePickerOptions.map((option) => (
+                    <option value={option.value} key={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </FormField>
               <FormField label="End time">
-                <input required type="time" value={visitForm.end_time} onChange={(event) => setVisitForm({ ...visitForm, end_time: event.target.value })} />
+                <select required value={visitForm.end_time} onChange={(event) => setVisitForm({ ...visitForm, end_time: event.target.value })}>
+                  {timePickerOptions.map((option) => (
+                    <option value={option.value} key={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </FormField>
               <div className="workScopeList">
                 {visitFormDates.map((date, index) => (
@@ -3362,7 +3455,7 @@ function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, co
                   <span>
                     <strong>{formatDateLabel(visit.visit_date)}</strong>
                     <small>
-                      {String(visit.start_time).slice(0, 5)} - {String(visit.end_time).slice(0, 5)}
+                      {formatTimeRange(visit.start_time, visit.end_time)}
                     </small>
                   </span>
                   <em>{normalizeVisitStatus(visit.status)}</em>
@@ -3442,7 +3535,7 @@ function ActivityFeed({ activities = [], canDeleteItems = false, getProfileName,
                 <div>
                   <strong>{item.message}</strong>
                   <small>
-                    {getProfileName(item.actor_id, "System")} В· {new Date(item.created_at).toLocaleString()}
+                    {getProfileName(item.actor_id, "System")} В· {formatDateTimeLabel(item.created_at)}
                     {visit ? ` В· ${formatDateLabel(visit.visit_date)}` : ""}
                   </small>
                 </div>
@@ -3467,7 +3560,7 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, files, get
         <div>
           <span className={`ticketStatus ${visit.status}`}>{normalizeVisitStatus(visit.status)}</span>
           <h3>{visit.work_scope || "Scheduled work"}</h3>
-          <p>{formatDateLabel(visit.visit_date)} · {String(visit.start_time).slice(0, 5)} - {String(visit.end_time).slice(0, 5)}</p>
+          <p>{formatDateLabel(visit.visit_date)} · {formatTimeRange(visit.start_time, visit.end_time)}</p>
         </div>
         <div className="detailActionRow">
           <button className="outlineButton" type="button" onClick={onEdit}>
@@ -3488,9 +3581,9 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, files, get
       </div>
 
       <dl className="detailFacts">
-        <ProjectFact icon={Calendar} label="Scheduled" value={`${String(visit.start_time).slice(0, 5)} - ${String(visit.end_time).slice(0, 5)}`} />
-        <ProjectFact icon={CheckCircle2} label="Actual start" value={visit.arrived_at ? new Date(visit.arrived_at).toLocaleString() : "Not started"} />
-        <ProjectFact icon={ClipboardCheck} label="Actual finish" value={visit.completed_at ? new Date(visit.completed_at).toLocaleString() : "Not finished"} />
+        <ProjectFact icon={Calendar} label="Scheduled" value={formatTimeRange(visit.start_time, visit.end_time)} />
+        <ProjectFact icon={CheckCircle2} label="Actual start" value={visit.arrived_at ? formatDateTimeLabel(visit.arrived_at) : "Not started"} />
+        <ProjectFact icon={ClipboardCheck} label="Actual finish" value={visit.completed_at ? formatDateTimeLabel(visit.completed_at) : "Not finished"} />
         <ProjectFact icon={MapPin} label="Address" value={project.address || "Not set"} />
         <ProjectFact icon={UserRound} label="Contact" value={`${project.contact_name || "Not set"} ${project.contact_phone || ""}`} />
         <ProjectFact icon={ClipboardCheck} label="Assigned by" value={getProfileName(visit.assigned_by ?? visit.created_by)} />
@@ -3657,7 +3750,7 @@ function AttachmentPreviewCard({ file, onOpen, profiles = [] }) {
       <FilePreviewThumb file={file} />
       <span className="attachmentMeta">
         <strong title={file.file_name}>{file.file_name}</strong>
-        <small>{file.photo_caption ? `${file.photo_caption} · ` : ""}{uploader?.full_name || uploader?.email || "Unknown"} · {new Date(file.created_at).toLocaleString()}</small>
+        <small>{file.photo_caption ? `${file.photo_caption} · ` : ""}{uploader?.full_name || uploader?.email || "Unknown"} · {formatDateTimeLabel(file.created_at)}</small>
       </span>
     </button>
   );
@@ -3671,7 +3764,7 @@ function DocumentListRow({ file, onOpen, profiles = [], project }) {
       <FilePreviewThumb file={file} size="row" />
       <span>
         <strong>{file.file_name}</strong>
-        <small>{project?.name || "Project"} / {file.visit_id ? "Ticket file" : "Project file"} / {file.photo_caption ? `${file.photo_caption} / ` : ""}{file.file_type?.replaceAll("_", " ")} / {uploader?.full_name || uploader?.email || "Unknown"} / {new Date(file.created_at).toLocaleString()}</small>
+        <small>{project?.name || "Project"} / {file.visit_id ? "Ticket file" : "Project file"} / {file.photo_caption ? `${file.photo_caption} / ` : ""}{file.file_type?.replaceAll("_", " ")} / {uploader?.full_name || uploader?.email || "Unknown"} / {formatDateTimeLabel(file.created_at)}</small>
       </span>
     </button>
   );
@@ -3728,7 +3821,7 @@ function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, 
   const absentTeam = team.filter((person) => !presentIds.includes(person.id));
   const signaturesReady = presentTeam.length > 0 && presentTeam.every((person) => form.signatures[person.id]?.trim());
   const canSubmit = form.hazards.length > 0 && signaturesReady;
-  const currentTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const currentTime = formatTimeLabel(`${new Date().getHours()}:${new Date().getMinutes()}`);
 
   function toggleHazard(hazard) {
     const set = new Set(form.hazards);
@@ -3983,7 +4076,7 @@ function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canD
   const nowHour = now.getHours() + now.getMinutes() / 60;
   const showNow = selectedDate === today && nowHour >= scheduleStartHour && nowHour <= scheduleEndHour;
   const nowRatio = Math.max(0, Math.min(1, (nowHour - scheduleStartHour) / (scheduleEndHour - scheduleStartHour)));
-  const nowLabel = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const nowLabel = formatTimeLabel(`${now.getHours()}:${now.getMinutes()}`);
   const shiftCurrentView = (amount) => {
     if (scheduleMode === "month") setSelectedDate(shiftMonth(selectedDate, amount));
     else setSelectedDate(shiftDate(selectedDate, scheduleMode === "week" ? amount * 7 : amount));
@@ -4375,7 +4468,7 @@ function DocumentsViewLegacy({ files, onOpen, profiles, projects }) {
             <span className="searchIcon">{file.file_kind === "photo" ? <ImagePlus size={18} /> : file.file_kind === "excel" ? <FileSpreadsheet size={18} /> : <FileText size={18} />}</span>
             <span>
               <strong>{file.file_name}</strong>
-              <small>{project?.name || "Project"} · {file.file_type?.replaceAll("_", " ")} · {uploader?.full_name || uploader?.email || "Unknown"} · {new Date(file.created_at).toLocaleString()}</small>
+              <small>{project?.name || "Project"} · {file.file_type?.replaceAll("_", " ")} · {uploader?.full_name || uploader?.email || "Unknown"} · {formatDateTimeLabel(file.created_at)}</small>
             </span>
           </button>
         );
@@ -4935,7 +5028,7 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
                 rowId: row.id,
                 left: ((start - scheduleStartHour) / (scheduleEndHour - scheduleStartHour)) * 100,
                 width: ((end - start) / (scheduleEndHour - scheduleStartHour)) * 100,
-                label: `${toTimeValue(start)} - ${toTimeValue(end)}`,
+                label: formatTimeRange(toTimeValue(start), toTimeValue(end)),
               });
             }}
             onDrop={(event) => {
@@ -5048,14 +5141,20 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssign
         event.dataTransfer.setData("application/json", JSON.stringify(assignment));
       }}
       onDragOver={(event) => {
-        if (event.dataTransfer.types.includes("application/x-buildcore-person")) event.preventDefault();
+        if (event.dataTransfer.types.includes("application/x-buildcore-person") || event.dataTransfer.types.includes("application/x-buildcore-assigned-person")) event.preventDefault();
       }}
       onDrop={(event) => {
         const personId = event.dataTransfer.getData("application/x-buildcore-person");
-        if (!personId) return;
+        const assignedPersonRaw = event.dataTransfer.getData("application/x-buildcore-assigned-person");
+        if (!personId && !assignedPersonRaw) return;
         event.preventDefault();
         event.stopPropagation();
-        onAssignPerson?.({ personId, visitId: assignment.visitId });
+        if (personId) {
+          onAssignPerson?.({ personId, visitId: assignment.visitId });
+          return;
+        }
+        const assignedPerson = JSON.parse(assignedPersonRaw);
+        onAssignPerson?.({ personId: assignedPerson.personId, sourceVisitId: assignedPerson.visitId, visitId: assignment.visitId });
       }}
       onKeyDown={(event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
@@ -5140,7 +5239,7 @@ function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading,
       <div className="viewerTopBar">
         <div>
           <strong>{uploader ? `Uploaded by ${uploader.full_name || uploader.email}` : "Photo details"}</strong>
-          <small>{new Date(attachment.created_at).toLocaleString()}</small>
+          <small>{formatDateTimeLabel(attachment.created_at)}</small>
           {attachment.photo_caption && <p className="photoCaption">{attachment.photo_caption}</p>}
         </div>
         <div className="viewerControls">
@@ -5187,7 +5286,7 @@ function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading,
               <Edit3 size={15} />
               <span>
                 <strong>{entry.action?.replaceAll("_", " ") || "Annotation saved"}</strong>
-                <small>{new Date(entry.at).toLocaleString()} / {entry.objectCount ?? 0} object(s)</small>
+                <small>{formatDateTimeLabel(entry.at)} / {entry.objectCount ?? 0} object(s)</small>
               </span>
             </div>
           ))
@@ -5203,7 +5302,7 @@ function DocumentFileViewer({ attachment, canDelete, children, loading, onDelete
       <div className="viewerTopBar">
         <div>
           <strong>{attachment.visit_id ? "Ticket file" : "Project file"}</strong>
-          <small>{new Date(attachment.created_at).toLocaleString()}</small>
+          <small>{formatDateTimeLabel(attachment.created_at)}</small>
         </div>
         <div className="viewerControls">
           <button type="button" title="Download" onClick={onDownload}>

@@ -19,7 +19,29 @@ function dateLabel(value) {
 }
 
 function time(value) {
-  return String(value ?? "").slice(0, 5);
+  const [rawHours, rawMinutes] = String(value ?? "").slice(0, 5).split(":").map(Number);
+  if (!Number.isFinite(rawHours)) return "";
+  const hours = Math.max(0, Math.min(23, rawHours));
+  const minutes = Number.isFinite(rawMinutes) ? rawMinutes : 0;
+  const period = hours >= 12 ? "PM" : "AM";
+  const displayHour = hours % 12 || 12;
+  return `${displayHour}:${String(minutes).padStart(2, "0")} ${period}`;
+}
+
+function timeRange(start, end) {
+  return `${time(start)} - ${time(end)}`;
+}
+
+function dateTimeLabel(value) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(value));
 }
 
 function downloadBlob(blob, fileName) {
@@ -148,7 +170,7 @@ function ticketRow(visit, project, people, equipment, getProfileName) {
     project?.job_number || "",
     project?.name || "",
     dateLabel(visit.visit_date),
-    `${time(visit.start_time)} - ${time(visit.end_time)}`,
+    timeRange(visit.start_time, visit.end_time),
     visit.status || "",
     visit.work_scope || "",
     people.map((person) => person.full_name || person.email).join(", "),
@@ -209,9 +231,9 @@ export async function exportVisitPdf({ visit, project, people = [], equipment = 
   let y = 124;
   y = addSection(doc, "Ticket Details", y);
   y = addWrapped(doc, `Address: ${project?.address || "-"}`, 50, y, 500);
-  y = addWrapped(doc, `Scheduled: ${time(visit.start_time)} - ${time(visit.end_time)}`, 50, y + 4, 500);
-  y = addWrapped(doc, `Actual start: ${visit.arrived_at ? new Date(visit.arrived_at).toLocaleString() : "Not started"}`, 50, y + 4, 500);
-  y = addWrapped(doc, `Actual finish: ${visit.completed_at ? new Date(visit.completed_at).toLocaleString() : "Not finished"}`, 50, y + 4, 500);
+  y = addWrapped(doc, `Scheduled: ${timeRange(visit.start_time, visit.end_time)}`, 50, y + 4, 500);
+  y = addWrapped(doc, `Actual start: ${visit.arrived_at ? dateTimeLabel(visit.arrived_at) : "Not started"}`, 50, y + 4, 500);
+  y = addWrapped(doc, `Actual finish: ${visit.completed_at ? dateTimeLabel(visit.completed_at) : "Not finished"}`, 50, y + 4, 500);
   y = addWrapped(doc, `Assigned by: ${getProfileName?.(visit.assigned_by ?? visit.created_by, "Not set")}`, 50, y + 4, 500);
   y = addWrapped(doc, `People: ${people.map((person) => person.full_name || person.email).join(", ") || "-"}`, 50, y + 4, 500);
   y = addWrapped(doc, `Equipment: ${equipment.map((item) => item.name).join(", ") || "-"}`, 50, y + 4, 500);
@@ -229,7 +251,7 @@ export async function exportVisitPdf({ visit, project, people = [], equipment = 
 
   y = addSection(doc, "Activity Feed", y + 18);
   for (const item of activities.slice().reverse()) {
-    y = addWrapped(doc, `${new Date(item.created_at).toLocaleString()} / ${item.message}`, 50, y, 500);
+    y = addWrapped(doc, `${dateTimeLabel(item.created_at)} / ${item.message}`, 50, y, 500);
     y += 4;
   }
 
@@ -259,7 +281,7 @@ export async function exportProjectPdf({ project, visits = [], people = [], equi
   for (const visit of visits) {
     const visitPeople = people.filter((person) => visit.people_ids?.includes(person.id));
     const visitEquipment = equipment.filter((item) => visit.equipment_ids?.includes(item.id));
-    y = addWrapped(doc, `${dateLabel(visit.visit_date)} / ${time(visit.start_time)} - ${time(visit.end_time)} / ${visit.status || ""}`, 50, y, 500);
+    y = addWrapped(doc, `${dateLabel(visit.visit_date)} / ${timeRange(visit.start_time, visit.end_time)} / ${visit.status || ""}`, 50, y, 500);
     y = addWrapped(doc, `Scope: ${visit.work_scope || "-"}`, 62, y + 2, 486);
     y = addWrapped(doc, `People: ${visitPeople.map((person) => person.full_name || person.email).join(", ") || "-"}`, 62, y + 2, 486);
     y = addWrapped(doc, `Equipment: ${visitEquipment.map((item) => item.name).join(", ") || "-"}`, 62, y + 2, 486);
@@ -275,7 +297,7 @@ export async function exportProjectPdf({ project, visits = [], people = [], equi
 
   y = addSection(doc, "Activity Feed", y + 18);
   for (const item of activities.slice().reverse()) {
-    y = addWrapped(doc, `${new Date(item.created_at).toLocaleString()} / ${item.message}`, 50, y, 500);
+    y = addWrapped(doc, `${dateTimeLabel(item.created_at)} / ${item.message}`, 50, y, 500);
     y += 4;
   }
 
