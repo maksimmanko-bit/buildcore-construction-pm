@@ -3273,7 +3273,7 @@ export default function App() {
                 <DocumentFileViewer attachment={selectedAttachment} canDelete={canManage || selectedAttachment.uploaded_by === profile?.id} loading={loading} onDelete={removeSelectedAttachment} onDownload={() => downloadAttachment(selectedAttachment)}>
                   <div className="documentOpenCard">
                     <FileSpreadsheet size={38} />
-                    <strong>{selectedAttachment.file_name}</strong>
+                    <strong>Excel workbook</strong>
                     <a href={selectedAttachment.viewUrl} target="_blank" rel="noreferrer">
                       Open Excel file
                     </a>
@@ -5139,8 +5139,8 @@ function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading,
     <section className="photoViewer">
       <div className="viewerTopBar">
         <div>
-          <strong>{attachment.file_name}</strong>
-          <small>{uploader?.full_name || uploader?.email || "Unknown"} / {new Date(attachment.created_at).toLocaleString()}</small>
+          <strong>{uploader ? `Uploaded by ${uploader.full_name || uploader.email}` : "Photo details"}</strong>
+          <small>{new Date(attachment.created_at).toLocaleString()}</small>
           {attachment.photo_caption && <p className="photoCaption">{attachment.photo_caption}</p>}
         </div>
         <div className="viewerControls">
@@ -5202,8 +5202,8 @@ function DocumentFileViewer({ attachment, canDelete, children, loading, onDelete
     <section className="documentFileViewer">
       <div className="viewerTopBar">
         <div>
-          <strong>{attachment.file_name}</strong>
-          <small>{attachment.visit_id ? "Ticket file" : "Project file"} / {new Date(attachment.created_at).toLocaleString()}</small>
+          <strong>{attachment.visit_id ? "Ticket file" : "Project file"}</strong>
+          <small>{new Date(attachment.created_at).toLocaleString()}</small>
         </div>
         <div className="viewerControls">
           <button type="button" title="Download" onClick={onDownload}>
