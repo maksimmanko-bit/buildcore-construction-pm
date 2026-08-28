@@ -1,7 +1,9 @@
 {
   "name": "Build Dispatch PM",
   "short_name": "Build PM",
-  "start_url": "/buildcore-construction-pm/",
+  "id": "/buildcore-construction-pm/",
+"start_url": "/buildcore-construction-pm/",
+"scope": "/buildcore-construction-pm/",
   "display": "standalone",
   "background_color": "#f4f5ef",
   "theme_color": "#f4f5ef",
