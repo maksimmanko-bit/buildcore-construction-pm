@@ -827,6 +827,12 @@ export default function App() {
   }, [detailOverlay, isMobileMenuOpen, isSearchOpen, modalType, selectedAttachment]);
 
   useEffect(() => {
+    if (!isLive || loading || !notice) return undefined;
+    const handle = window.setTimeout(() => setNotice(""), 3400);
+    return () => window.clearTimeout(handle);
+  }, [isLive, loading, notice]);
+
+  useEffect(() => {
     function handleKeyDown(event) {
       if (event.key !== "Escape") return;
       if (detailOverlay) {
@@ -2440,7 +2446,7 @@ export default function App() {
 
       <main className="mainWorkspace">
         {(loading || notice) && (
-          <div className={loading ? "noticeToast isLoading" : "noticeToast"}>
+          <div className={loading ? "noticeToast isLoading" : "noticeToast"} key={loading ? `loading-${notice}` : notice}>
             {loading && <span />}
             <strong>{loading ? notice || "Saving changes..." : notice}</strong>
           </div>
@@ -2458,7 +2464,6 @@ export default function App() {
         <header className="workspaceHeader">
           <div>
             <h1>{activeNav === "schedule" ? "Schedule" : navItems.find((item) => item.id === activeNav)?.label}</h1>
-            {notice && <p className="headerNotice">{notice}</p>}
           </div>
 
           <div className="headerActions">
