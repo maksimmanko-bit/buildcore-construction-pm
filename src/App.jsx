@@ -43,6 +43,8 @@ import {
 import { jsPDF } from "jspdf";
 import DocumentUploader from "./components/DocumentUploader.jsx";
 import PhotoAnnotator from "./components/PhotoAnnotator.jsx";
+import { exportProjectPdf, exportProjectsXlsx, exportProjectTicketsXlsx, exportVisitPdf } from "./lib/exporters.js";
+import { overlaps } from "./lib/schedule.js";
 import { isSupabaseConfigured, supabase } from "./lib/supabase.js";
 import { createAttachmentUrls, createProfileAvatarUrl, deleteVisitFile, replaceVisitPhotoWithAnnotation, uploadProfileAvatar, uploadVisitGeneratedFile, uploadVisitPhoto } from "./lib/storage.js";
 import { localGlobalSearch } from "./lib/search.js";
@@ -502,6 +504,31 @@ async function dataUrlToFile(dataUrl, fileName, mimeType = "image/jpeg") {
   return new File([blob], fileName, { type: mimeType });
 }
 
+function describeVisitConflict({ candidate, visits = [], projects = [], people = [], equipment = [], editingVisitId = "" }) {
+  const conflicts = [];
+  const selectedPeople = new Set(candidate.people_ids ?? []);
+  const selectedEquipment = new Set(candidate.equipment_ids ?? []);
+
+  visits.forEach((visit) => {
+    if (editingVisitId && visit.id === editingVisitId) return;
+    if (visit.visit_date !== candidate.visit_date || visit.status === "cancelled") return;
+    if (!overlaps(candidate.start_time, candidate.end_time, String(visit.start_time).slice(0, 5), String(visit.end_time).slice(0, 5))) return;
+
+    const project = projects.find((item) => item.id === visit.project_id);
+    const busyPeople = people.filter((person) => selectedPeople.has(person.id) && visit.people_ids?.includes(person.id));
+    const busyEquipment = equipment.filter((item) => selectedEquipment.has(item.id) && visit.equipment_ids?.includes(item.id));
+
+    if (busyPeople.length) {
+      conflicts.push(`${busyPeople.map((person) => profileDisplayName(person)).join(", ")} already scheduled on ${project?.name || "another project"}`);
+    }
+    if (busyEquipment.length) {
+      conflicts.push(`${busyEquipment.map((item) => item.name).join(", ")} already scheduled on ${project?.name || "another project"}`);
+    }
+  });
+
+  return [...new Set(conflicts)];
+}
+
 function FormField({ label, children }) {
   return (
     <label className="formField">
@@ -514,10 +541,21 @@ function FormField({ label, children }) {
 function DateField({ label, onChange, value }) {
   const [isOpen, setIsOpen] = useState(false);
   const [monthDate, setMonthDate] = useState(value || new Date().toISOString().slice(0, 10));
+  const fieldRef = useRef(null);
   const today = new Date().toISOString().slice(0, 10);
 
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    function handlePointerDown(event) {
+      if (fieldRef.current?.contains(event.target)) return;
+      setIsOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isOpen]);
+
   return (
-    <div className="formField dateField">
+    <div className="formField dateField" ref={fieldRef}>
       <span>{label}</span>
       <button
         className="modernDateButton"
@@ -598,7 +636,7 @@ export default function App() {
   const [projectForm, setProjectForm] = useState(emptyProjectForm);
   const [equipmentForm, setEquipmentForm] = useState(emptyEquipmentForm);
   const [visitForm, setVisitForm] = useState(emptyVisitForm);
-  const [safetyForm, setSafetyForm] = useState({ hazards: [], notes: "", signatures: {} });
+  const [safetyForm, setSafetyForm] = useState({ hazards: [], notes: "", signatures: {}, presentIds: [] });
   const [workflowVisitId, setWorkflowVisitId] = useState("");
   const [photoStep, setPhotoStep] = useState({ kind: "", visitId: "", files: [], captions: {} });
   const [completionForm, setCompletionForm] = useState({ notes: "", files: [], captions: {} });
@@ -869,7 +907,12 @@ export default function App() {
   const workflowPeople = workflowVisit ? rowsSource.people.filter((person) => workflowVisit.people_ids?.includes(person.id)) : currentVisitPeople;
   const selectedPerson = selectedPersonId ? [...(rowsSource.people ?? []), ...(rowsSource.pendingPeople ?? [])].find((person) => person.id === selectedPersonId) : null;
   const todayValue = new Date().toISOString().slice(0, 10);
-  const todayVisits = (rowsSource.visits ?? []).filter((visit) => visit.visit_date === todayValue && (!isLive || visit.people_ids?.includes(profile?.id)));
+  const todayVisits = (rowsSource.visits ?? [])
+    .filter((visit) => visit.visit_date === todayValue && (!isLive || visit.people_ids?.includes(profile?.id)))
+    .sort((a, b) => {
+      const statusOrder = { on_site: 0, planned: 1, completed: 2, cancelled: 3 };
+      return (statusOrder[a.status] ?? 4) - (statusOrder[b.status] ?? 4) || String(a.start_time).localeCompare(String(b.start_time));
+    });
   const projectAttachments = (rowsSource.files ?? [])
     .filter((file) => selectedProject && (file.project_id === selectedProject.id || file.projectId === selectedProject.id) && !file.visit_id);
 
@@ -1228,6 +1271,36 @@ export default function App() {
       return;
     }
 
+    const notAvailablePeople = rowsSource.people.filter((person) => visitForm.people_ids.includes(person.id) && person.availability_status === "not_available");
+    if (notAvailablePeople.length) {
+      setLoading(false);
+      setNotice(`Ticket not saved: ${notAvailablePeople.map((person) => profileDisplayName(person)).join(", ")} marked Not Available.`);
+      return;
+    }
+
+    const conflictMessages = generatedDates.flatMap((visitDate) =>
+      describeVisitConflict({
+        candidate: {
+          visit_date: visitDate,
+          start_time: visitForm.start_time,
+          end_time: visitForm.end_time,
+          people_ids: visitForm.people_ids,
+          equipment_ids: visitForm.equipment_ids,
+        },
+        visits: rowsSource.visits ?? [],
+        projects: rowsSource.projects,
+        people: rowsSource.people,
+        equipment: rowsSource.equipment,
+        editingVisitId,
+      }),
+    );
+
+    if (conflictMessages.length) {
+      setLoading(false);
+      setNotice(`Ticket not saved: ${conflictMessages.slice(0, 3).join("; ")}.`);
+      return;
+    }
+
     try {
       let firstVisit = null;
 
@@ -1529,7 +1602,12 @@ export default function App() {
     }
 
     const files = getVisitFiles(visit);
-    const hasSafety = files.some((file) => file.file_type === "safety_form");
+    const safetyFiles = files.filter((file) => file.file_type === "safety_form");
+    const currentProfileName = profileDisplayName(profile, "").toLowerCase();
+    const currentProfileSignedSafety =
+      !visit.people_ids?.includes(profile?.id) ||
+      safetyFiles.some((file) => `${file.file_name || ""} ${file.search_text || ""}`.toLowerCase().includes(currentProfileName));
+    const hasSafety = safetyFiles.length > 0 && currentProfileSignedSafety;
     const hasBefore = files.some((file) => file.file_type === "before_photo");
 
     setWorkflowVisitId(visit.id);
@@ -1537,11 +1615,13 @@ export default function App() {
     setSelectedVisitId(visit.id);
 
     if (!hasSafety) {
-      const team = rowsSource.people.filter((person) => visit.people_ids?.includes(person.id));
+      const assignedTeam = rowsSource.people.filter((person) => visit.people_ids?.includes(person.id));
+      const team = safetyFiles.length > 0 && profile?.id ? assignedTeam.filter((person) => person.id === profile.id) : assignedTeam;
       setSafetyForm({
         hazards: [],
         notes: "",
         signatures: Object.fromEntries(team.map((person) => [person.id, ""])),
+        presentIds: team.map((person) => person.id),
       });
       setModalType("safety");
       return;
@@ -1578,10 +1658,13 @@ export default function App() {
       return;
     }
 
-    const team = rowsSource.people.filter((person) => activeVisit.people_ids?.includes(person.id));
+    const assignedTeam = rowsSource.people.filter((person) => activeVisit.people_ids?.includes(person.id));
+    const presentIds = new Set(safetyForm.presentIds?.length ? safetyForm.presentIds : assignedTeam.map((person) => person.id));
+    const team = assignedTeam.filter((person) => presentIds.has(person.id));
+    const absentTeam = assignedTeam.filter((person) => !presentIds.has(person.id));
     const missingSignature = team.some((person) => !safetyForm.signatures[person.id]?.trim());
-    if (safetyForm.hazards.length === 0 || missingSignature) {
-      setNotice("Select hazards and collect every team member signature before continuing.");
+    if (safetyForm.hazards.length === 0 || team.length === 0 || missingSignature) {
+      setNotice("Confirm who is on site, select hazards, and collect every present team member signature before continuing.");
       return;
     }
 
@@ -1629,6 +1712,12 @@ export default function App() {
       doc.setFontSize(13);
       doc.text("Team Signatures", 42, y);
       y += 24;
+      if (absentTeam.length > 0) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text(doc.splitTextToSize(`Not on site for this form: ${absentTeam.map((person) => person.full_name || person.email || "Team member").join(", ")}`, 492), 42, y);
+        y += 34;
+      }
       team.forEach((person) => {
         doc.setDrawColor(226, 232, 240);
         doc.roundedRect(42, y, 528, 82, 8, 8);
@@ -1652,6 +1741,7 @@ export default function App() {
         safetyForm.hazards.join(", "),
         safetyForm.notes,
         ...names,
+        ...absentTeam.map((person) => person.full_name || person.email || "Team member"),
       ].join(" ");
       const fileName = `${names.join("-")}-${activeVisit.visit_date}-safety-form.pdf`.replace(/\s+/g, "-");
       setNotice("Saving Safety PDF to Supabase Storage...");
@@ -1668,6 +1758,7 @@ export default function App() {
       await logVisitActivity(activeVisit, "safety_form_saved", `${currentUserName} saved the digital safety form.`, {
         hazards: safetyForm.hazards,
         team: names,
+        absentTeam: absentTeam.map((person) => person.full_name || person.email || "Team member"),
       });
       setWorkflowVisitId(activeVisit.id);
       setPhotoStep({ kind: "before", visitId: activeVisit.id, files: [], captions: {} });
@@ -2185,6 +2276,96 @@ export default function App() {
     }
   }
 
+  async function hydrateExportFiles(files = []) {
+    return Promise.all(
+      files.map(async (file) => {
+        try {
+          return { ...file, ...(file.viewUrl ? {} : await createAttachmentUrls(file)) };
+        } catch {
+          return file;
+        }
+      }),
+    );
+  }
+
+  async function exportCurrentProjectPdf(project = selectedProject) {
+    if (!project) return;
+    setLoading(true);
+    setNotice("Preparing project PDF...");
+    try {
+      const visits = (rowsSource.visits ?? [])
+        .filter((visit) => visit.project_id === project.id)
+        .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`));
+      const files = await hydrateExportFiles((rowsSource.files ?? []).filter((file) => file.project_id === project.id));
+      const activities = (rowsSource.activities ?? []).filter((item) => item.project_id === project.id);
+      await exportProjectPdf({ project, visits, files, activities, people: rowsSource.people, equipment: rowsSource.equipment, getProfileName });
+      setNotice("Project PDF exported.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function exportCurrentVisitPdf(visit = currentVisit) {
+    if (!visit) return;
+    const project = rowsSource.projects.find((item) => item.id === visit.project_id) ?? selectedProject;
+    setLoading(true);
+    setNotice("Preparing ticket PDF...");
+    try {
+      const files = await hydrateExportFiles((rowsSource.files ?? []).filter((file) => file.visit_id === visit.id));
+      const activities = (rowsSource.activities ?? []).filter((item) => item.visit_id === visit.id);
+      await exportVisitPdf({
+        visit,
+        project,
+        files,
+        activities,
+        people: rowsSource.people.filter((person) => visit.people_ids?.includes(person.id)),
+        equipment: rowsSource.equipment.filter((item) => visit.equipment_ids?.includes(item.id)),
+        getProfileName,
+      });
+      setNotice("Ticket PDF exported.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function exportAllProjectsToExcel() {
+    exportProjectsXlsx(rowsSource.projects, getProfileName);
+    setNotice("Projects Excel exported.");
+  }
+
+  function exportProjectTicketsToExcel(project = selectedProject) {
+    if (!project) return;
+    const visits = (rowsSource.visits ?? [])
+      .filter((visit) => visit.project_id === project.id)
+      .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`));
+    exportProjectTicketsXlsx({ project, visits, people: rowsSource.people, equipment: rowsSource.equipment, getProfileName });
+    setNotice("Project tickets Excel exported.");
+  }
+
+  async function deleteActivityItem(item) {
+    if (!supabase || !item?.id || !canDeleteTickets) {
+      setNotice("Only non-Builder users can delete Activity Feed rows.");
+      return;
+    }
+    const confirmed = window.confirm("Delete this Activity Feed row?");
+    if (!confirmed) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("visit_activity").delete().eq("id", item.id);
+      if (error) throw error;
+      setNotice("Activity Feed row deleted.");
+      refreshData();
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function handleSearchSelect(result) {
     if (result.type === "project") {
       const project = rowsSource.projects.find((item) => item.id === result.id.replace("project-", ""));
@@ -2326,7 +2507,16 @@ export default function App() {
     if (activeNav === "projects") {
       return (
         <>
-          <SectionToolbar label="Projects" onAdd={openAddModal} />
+          <SectionToolbar
+            label="Projects"
+            onAdd={openAddModal}
+            actions={
+              <button className="outlineButton" type="button" onClick={exportAllProjectsToExcel}>
+                <FileSpreadsheet size={17} />
+                Export Excel
+              </button>
+            }
+          />
           <ProjectsView canManage={canManage} getProfileName={getProfileName} projects={rowsSource.projects} onDelete={deleteProject} onEdit={editProject} onSelect={selectProject} />
         </>
       );
@@ -2724,9 +2914,12 @@ export default function App() {
             onClose={closeDetailOverlay}
             onEditProject={() => editProject(selectedProject)}
             onEditVisit={editVisit}
+            onExportPdf={() => exportCurrentProjectPdf(selectedProject)}
+            onExportTicketsExcel={() => exportProjectTicketsToExcel(selectedProject)}
             onOpenAttachment={openAttachment}
             onOpenVisit={openVisitOverlay}
             onRemoveVisit={deleteVisit}
+            onRemoveActivity={deleteActivityItem}
             onUploaded={(message) => {
               setNotice(message);
               refreshData();
@@ -2750,6 +2943,7 @@ export default function App() {
             onClose={closeDetailOverlay}
             onComplete={() => startCompletionWorkflow(currentVisit)}
             onEdit={() => editVisit(currentVisit)}
+            onExportPdf={() => exportCurrentVisitPdf(currentVisit)}
             onOpenAttachment={openAttachment}
             onUploaded={(message) => {
               setNotice(message);
@@ -3086,7 +3280,7 @@ function DetailOverlayShell({ children, onClose, title }) {
   );
 }
 
-function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, companyId, currentVisit, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onOpenAttachment, onOpenVisit, onRemoveVisit, onUploaded, people, profileId, project, visits }) {
+function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, companyId, currentVisit, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onExportPdf, onExportTicketsExcel, onOpenAttachment, onOpenVisit, onRemoveActivity, onRemoveVisit, onUploaded, people, profileId, project, visits }) {
   return (
     <DetailOverlayShell title={project.name} onClose={onClose}>
       <div className="detailHero projectDetailHeroTextOnly">
@@ -3106,6 +3300,14 @@ function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, co
               Edit Project
             </button>
           )}
+          <button className="outlineButton" type="button" onClick={onExportPdf}>
+            <Download size={17} />
+            Export PDF
+          </button>
+          <button className="outlineButton" type="button" onClick={onExportTicketsExcel}>
+            <FileSpreadsheet size={17} />
+            Tickets Excel
+          </button>
         </div>
       </div>
 
@@ -3158,23 +3360,31 @@ function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, co
         )}
       </div>
 
-      <ActivityFeed activities={activities} getProfileName={getProfileName} visits={visits} />
+      <AttachmentSections
+        files={files}
+        onOpen={onOpenAttachment}
+        profiles={people}
+        uploader={
+          canManage
+            ? {
+                attachments: files,
+                companyId,
+                profileId,
+                projectId: project.id,
+                visitId: null,
+                onOpen: onOpenAttachment,
+                onUploaded,
+              }
+            : null
+        }
+      />
 
-      {canManage && (
-        <div className="detailSection">
-          <div className="panelSectionHeader">
-            <h3>Project Files</h3>
-          </div>
-          <DocumentUploader attachments={files} companyId={companyId} profileId={profileId} projectId={project.id} visitId={null} onOpen={onOpenAttachment} onUploaded={onUploaded} />
-        </div>
-      )}
-
-      <AttachmentSections files={files} onOpen={onOpenAttachment} profiles={people} />
+      <ActivityFeed activities={activities} canDeleteItems={canDeleteTickets} getProfileName={getProfileName} onDelete={onRemoveActivity} visits={visits} />
     </DetailOverlayShell>
   );
 }
 
-function ActivityFeed({ activities = [], getProfileName, visits = [] }) {
+function ActivityFeed({ activities = [], canDeleteItems = false, getProfileName, onDelete, visits = [] }) {
   const visitById = new Map(visits.map((visit) => [visit.id, visit]));
   const iconMap = {
     arrived: CheckCircle2,
@@ -3211,6 +3421,11 @@ function ActivityFeed({ activities = [], getProfileName, visits = [] }) {
                     {visit ? ` В· ${formatDateLabel(visit.visit_date)}` : ""}
                   </small>
                 </div>
+                {canDeleteItems && (
+                  <button className="activityDeleteButton" type="button" title="Delete activity row" onClick={() => onDelete?.(item)}>
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </article>
             );
           })}
@@ -3220,7 +3435,7 @@ function ActivityFeed({ activities = [], getProfileName, visits = [] }) {
   );
 }
 
-function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, files, getProfileName, onArrive, onClose, onComplete, onEdit, onOpenAttachment, onRemove, onUploaded, people, profileId, profiles, project, visit }) {
+function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, files, getProfileName, onArrive, onClose, onComplete, onEdit, onExportPdf, onOpenAttachment, onRemove, onUploaded, people, profileId, profiles, project, visit }) {
   return (
     <DetailOverlayShell title={`${project.name} Ticket`} onClose={onClose}>
       <div className="ticketHeaderCard">
@@ -3233,6 +3448,10 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, files, get
           <button className="outlineButton" type="button" onClick={onEdit}>
             <Edit3 size={17} />
             Edit
+          </button>
+          <button className="outlineButton" type="button" onClick={onExportPdf}>
+            <Download size={17} />
+            Export PDF
           </button>
           {canDeleteTickets && (
             <button className="dangerAction" type="button" onClick={() => onRemove(visit)}>
@@ -3284,14 +3503,20 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, files, get
         <div className="thanksBox">Thank you. This ticket is Done.</div>
       )}
 
-      <div className="detailSection">
-        <div className="panelSectionHeader">
-          <h3>Ticket Files</h3>
-        </div>
-        <DocumentUploader attachments={files} companyId={companyId} profileId={profileId} projectId={project.id} visitId={visit.id} onOpen={onOpenAttachment} onUploaded={onUploaded} />
-      </div>
-
-      <AttachmentSections files={files} onOpen={onOpenAttachment} profiles={profiles} />
+      <AttachmentSections
+        files={files}
+        onOpen={onOpenAttachment}
+        profiles={profiles}
+        uploader={{
+          attachments: files,
+          companyId,
+          profileId,
+          projectId: project.id,
+          visitId: visit.id,
+          onOpen: onOpenAttachment,
+          onUploaded,
+        }}
+      />
     </DetailOverlayShell>
   );
 }
@@ -3427,7 +3652,7 @@ function DocumentListRow({ file, onOpen, profiles = [], project }) {
   );
 }
 
-function AttachmentSections({ files, onOpen, profiles = [] }) {
+function AttachmentSections({ files, onOpen, profiles = [], uploader = null }) {
   const groups = [
     { id: "safety", label: "Safety Forms", icon: FileText, items: files.filter((file) => file.file_type === "safety_form") },
     { id: "projectPhotos", label: "Project Photos", icon: Camera, items: files.filter((file) => file.file_kind === "photo" && !file.visit_id) },
@@ -3439,6 +3664,14 @@ function AttachmentSections({ files, onOpen, profiles = [] }) {
 
   return (
     <div className="attachmentSections">
+      {uploader && (
+        <section className="attachmentUploadSection">
+          <div className="panelSectionHeader">
+            <h3>Add files</h3>
+          </div>
+          <DocumentUploader {...uploader} showPreview={false} />
+        </section>
+      )}
       {groups.map((group) => {
         const Icon = group.icon;
         return (
@@ -3465,7 +3698,10 @@ function AttachmentSections({ files, onOpen, profiles = [] }) {
 }
 
 function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, team, visit }) {
-  const signaturesReady = team.length > 0 && team.every((person) => form.signatures[person.id]?.trim());
+  const presentIds = form.presentIds?.length ? form.presentIds : team.map((person) => person.id);
+  const presentTeam = team.filter((person) => presentIds.includes(person.id));
+  const absentTeam = team.filter((person) => !presentIds.includes(person.id));
+  const signaturesReady = presentTeam.length > 0 && presentTeam.every((person) => form.signatures[person.id]?.trim());
   const canSubmit = form.hazards.length > 0 && signaturesReady;
   const currentTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -3474,6 +3710,17 @@ function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, 
     if (set.has(hazard)) set.delete(hazard);
     else set.add(hazard);
     onChange({ ...form, hazards: [...set] });
+  }
+
+  function togglePresent(personId) {
+    const set = new Set(presentIds);
+    if (set.has(personId)) set.delete(personId);
+    else set.add(personId);
+    onChange({
+      ...form,
+      presentIds: [...set],
+      signatures: set.has(personId) ? form.signatures : { ...form.signatures, [personId]: "" },
+    });
   }
 
   return (
@@ -3497,6 +3744,24 @@ function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, 
         ))}
       </fieldset>
 
+      <fieldset className="pickerList safetySwitchList attendanceList">
+        <legend>Who is on site?</legend>
+        {team.length === 0 ? (
+          <span className="mutedLine">No team members assigned to this ticket.</span>
+        ) : (
+          team.map((person) => (
+            <label className="safetySwitch" key={person.id}>
+              <input type="checkbox" checked={presentIds.includes(person.id)} onChange={() => togglePresent(person.id)} />
+              <span className="switchTrack" aria-hidden="true">
+                <span />
+              </span>
+              <strong>{person.full_name || person.email || "Team member"}</strong>
+            </label>
+          ))
+        )}
+        {absentTeam.length > 0 && <small className="attendanceNote">Absent team members will need their own Safety Form when they arrive.</small>}
+      </fieldset>
+
       <FormField label="Safety notes">
         <textarea value={form.notes} onChange={(event) => onChange({ ...form, notes: event.target.value })} />
       </FormField>
@@ -3505,8 +3770,10 @@ function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, 
         <h3>Team signatures</h3>
         {team.length === 0 ? (
           <div className="emptyPanelState">No team members assigned to this ticket.</div>
+        ) : presentTeam.length === 0 ? (
+          <div className="emptyPanelState">Select at least one team member who is on site.</div>
         ) : (
-          team.map((person) => (
+          presentTeam.map((person) => (
             <SignaturePad
               key={person.id}
               label={person.full_name || person.email || "Team member"}
@@ -3685,6 +3952,7 @@ function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canD
   const [dragPreview, setDragPreview] = useState(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(selectedDate);
+  const calendarWrapRef = useRef(null);
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const nowHour = now.getHours() + now.getMinutes() / 60;
@@ -3704,6 +3972,16 @@ function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canD
     setPickerMonth(selectedDate);
     setIsCalendarOpen((value) => !value);
   };
+
+  useEffect(() => {
+    if (!isCalendarOpen) return undefined;
+    function handlePointerDown(event) {
+      if (calendarWrapRef.current?.contains(event.target)) return;
+      setIsCalendarOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isCalendarOpen]);
 
   return (
     <>
@@ -3725,19 +4003,9 @@ function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canD
           </button>
         </div>
 
-        <div className="dateDisplay" aria-label="Selected schedule date">
-          <Calendar size={18} />
-          <span>{formatDateLabel(selectedDate)}</span>
-        </div>
-
-        <div className="toolbarSpacer" />
-
-        <button className="outlineButton" type="button" onClick={jumpToToday}>
-          Today
-        </button>
-        <div className="calendarPickerWrap">
-          <button className="squareButton" type="button" title="Open calendar" onClick={toggleCalendar}>
-            <Calendar size={18} />
+        <div className="calendarPickerWrap scheduleDatePicker" ref={calendarWrapRef}>
+          <button className="dateDisplay" type="button" aria-label="Open schedule calendar" onClick={toggleCalendar}>
+            <span>{formatDateLabel(selectedDate)}</span>
           </button>
           {isCalendarOpen && (
             <MiniCalendarPicker
@@ -3753,6 +4021,12 @@ function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canD
             />
           )}
         </div>
+
+        <div className="toolbarSpacer" />
+
+        <button className="outlineButton" type="button" onClick={jumpToToday}>
+          Today
+        </button>
         <button className="addButton" type="button" onClick={onAdd}>
           <Plus size={18} />
           Add
@@ -3906,14 +4180,17 @@ function CalendarTileGrid({ equipment = [], mode, people = [], projects = [], se
   );
 }
 
-function SectionToolbar({ label, onAdd }) {
+function SectionToolbar({ actions, label, onAdd }) {
   return (
     <div className="sectionToolbar">
       <strong>{label}</strong>
-      <button className="addButton" type="button" onClick={onAdd}>
-        <Plus size={18} />
-        Add
-      </button>
+      <div className="toolbarButtonGroup">
+        {actions}
+        <button className="addButton" type="button" onClick={onAdd}>
+          <Plus size={18} />
+          Add
+        </button>
+      </div>
     </div>
   );
 }
@@ -4590,6 +4867,11 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
             onClick={() => {
               if (row.kind === "project") onOpenProject?.(row);
             }}
+            onPointerUp={(event) => {
+              if (event.pointerType !== "touch" || row.kind !== "project") return;
+              event.preventDefault();
+              onOpenProject?.(row);
+            }}
             aria-disabled={row.kind !== "project"}
             title={row.kind === "project" ? "Open project" : undefined}
           >
@@ -4729,6 +5011,11 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssign
       style={{ left: `${left}%`, width: `${width}%`, ...verticalStyle }}
       tabIndex={0}
       onClick={openAssignment}
+      onPointerUp={(event) => {
+        if (event.pointerType !== "touch") return;
+        event.preventDefault();
+        openAssignment();
+      }}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("application/json", JSON.stringify(assignment));

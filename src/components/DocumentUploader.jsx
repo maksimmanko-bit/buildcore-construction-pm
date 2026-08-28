@@ -60,7 +60,7 @@ function AttachmentThumbnail({ attachment, onOpen }) {
   );
 }
 
-export default function DocumentUploader({ companyId, projectId, visitId, profileId, attachments = [], onUploaded, onOpen }) {
+export default function DocumentUploader({ companyId, projectId, visitId, profileId, attachments = [], onUploaded, onOpen, showPreview = true }) {
   const documentInputRef = useRef(null);
   const photoInputRef = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -125,28 +125,32 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
         </button>
       </div>
 
-      <div className="attachmentLegend">
-        <span>
-          <Image size={15} />
-          Photos
-        </span>
-        <span>
-          <FileText size={15} />
-          PDF
-        </span>
-        <span>
-          <FileSpreadsheet size={15} />
-          Excel
-        </span>
-      </div>
+      {showPreview && (
+        <div className="attachmentLegend">
+          <span>
+            <Image size={15} />
+            Photos
+          </span>
+          <span>
+            <FileText size={15} />
+            PDF
+          </span>
+          <span>
+            <FileSpreadsheet size={15} />
+            Excel
+          </span>
+        </div>
+      )}
 
-      <div className="attachmentStrip" aria-label="Saved attachments">
-        {attachments.length ? (
-          attachments.slice(0, 6).map((attachment) => <AttachmentThumbnail attachment={attachment} key={attachment.id} onOpen={onOpen} />)
-        ) : (
-          <div className="emptyAttachments">No saved files yet</div>
-        )}
-      </div>
+      {showPreview && (
+        <div className="attachmentStrip" aria-label="Saved attachments">
+          {attachments.length ? (
+            attachments.slice(0, 6).map((attachment) => <AttachmentThumbnail attachment={attachment} key={attachment.id} onOpen={onOpen} />)
+          ) : (
+            <div className="emptyAttachments">No saved files yet</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
