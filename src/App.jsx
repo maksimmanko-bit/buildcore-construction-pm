@@ -615,7 +615,6 @@ export default function App() {
   const refreshData = useCallback(async () => {
     if (!supabase || !session) return;
     setLoading(true);
-    setNotice("");
 
     try {
       let profileResult = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
@@ -1279,7 +1278,7 @@ export default function App() {
       setSelectedDate(firstVisit.visit_date);
       setSelectedProjectId(firstVisit.project_id);
       setSelectedVisitId(firstVisit.id);
-      setNotice(editingVisitId ? "Visit changes saved." : `${generatedDates.length} visit${generatedDates.length === 1 ? "" : "s"} scheduled. Weekends skipped.`);
+      setNotice(editingVisitId ? "Ticket changes saved." : `${generatedDates.length} ticket${generatedDates.length === 1 ? "" : "s"} saved. Weekends skipped.`);
       refreshData();
     } catch (error) {
       if (!editingVisitId && createdVisitIds.length > 0) await supabase.from("visits").delete().in("id", createdVisitIds);

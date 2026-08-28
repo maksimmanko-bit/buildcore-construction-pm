@@ -5782,3 +5782,166 @@ body.overlayLocked {
     border-radius: 18px;
   }
 }
+
+/* Search overlay polish */
+.searchOverlay {
+  padding: max(52px, 7vh) 20px 24px;
+  overflow: hidden;
+}
+
+.searchPanel {
+  position: relative;
+  width: min(780px, calc(100vw - 32px));
+  height: min(640px, calc(100dvh - 92px));
+  max-height: min(640px, calc(100dvh - 92px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+  padding: 42px 14px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(248, 250, 252, 0.82)),
+    color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow:
+    0 38px 90px rgba(15, 23, 42, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  -webkit-backdrop-filter: blur(30px) saturate(1.18);
+  backdrop-filter: blur(30px) saturate(1.18);
+}
+
+.searchPanel::before {
+  content: "";
+  position: absolute;
+  top: 17px;
+  left: 19px;
+  width: 54px;
+  height: 12px;
+  background:
+    radial-gradient(circle at 6px 6px, #ff5f57 0 5px, transparent 5.8px),
+    radial-gradient(circle at 27px 6px, #ffbd2e 0 5px, transparent 5.8px),
+    radial-gradient(circle at 48px 6px, #28c840 0 5px, transparent 5.8px);
+}
+
+.searchPanel::after {
+  content: "Search";
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(15, 23, 42, 0.58);
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.searchPanelInput {
+  min-height: 58px;
+  padding: 0 9px 0 17px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.searchPanelInput:focus-within {
+  border-color: rgba(207, 46, 46, 0.34);
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.1), 0 0 0 4px rgba(207, 46, 46, 0.08);
+}
+
+.searchPanelInput input {
+  font-size: 17px;
+  font-weight: 780;
+}
+
+.searchPanelInput button {
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.06);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.searchPanelInput button:hover {
+  background: rgba(207, 46, 46, 0.1);
+  transform: scale(1.04);
+}
+
+.searchPanelResults {
+  min-height: 0;
+  height: 100%;
+  max-height: none;
+  align-content: start;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 18px;
+  scrollbar-gutter: stable;
+}
+
+.searchEmptyState {
+  min-height: 100%;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.54), rgba(248, 250, 252, 0.42));
+  color: rgba(71, 85, 105, 0.82);
+}
+
+.searchResult {
+  grid-template-columns: 46px minmax(0, 1fr);
+  min-height: 78px;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(226, 232, 240, 0.74);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.64);
+  transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.searchResult:hover {
+  border-color: rgba(207, 46, 46, 0.2);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.1);
+  transform: translateY(-1px);
+}
+
+.searchResult strong {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.searchResult small,
+.searchResult em {
+  color: rgba(71, 85, 105, 0.82);
+}
+
+.searchIcon {
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  color: var(--brand-red);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(207, 46, 46, 0.1)),
+    rgba(207, 46, 46, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+@media (max-width: 860px) {
+  .searchOverlay {
+    padding: max(18px, env(safe-area-inset-top)) 12px max(18px, env(safe-area-inset-bottom));
+  }
+
+  .searchPanel {
+    width: min(100%, 560px);
+    height: calc(100dvh - max(36px, env(safe-area-inset-top)) - max(36px, env(safe-area-inset-bottom)));
+    max-height: calc(100dvh - max(36px, env(safe-area-inset-top)) - max(36px, env(safe-area-inset-bottom)));
+    padding: 42px 12px 12px;
+    border-radius: 24px;
+  }
+
+  .searchPanelInput {
+    min-height: 56px;
+  }
+
+  .searchPanelResults {
+    padding: 3px;
+  }
+}
