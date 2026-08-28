@@ -507,24 +507,40 @@ function FormField({ label, children }) {
 }
 
 function DateField({ label, onChange, value }) {
-  const inputRef = useRef(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [monthDate, setMonthDate] = useState(value || new Date().toISOString().slice(0, 10));
+  const today = new Date().toISOString().slice(0, 10);
 
   return (
-    <label className="formField dateField">
+    <div className="formField dateField">
       <span>{label}</span>
       <button
         className="modernDateButton"
         type="button"
         onClick={() => {
-          if (inputRef.current?.showPicker) inputRef.current.showPicker();
-          else inputRef.current?.focus();
+          setMonthDate(value || today);
+          setIsOpen((current) => !current);
         }}
       >
         <Calendar size={17} />
         <strong>{value ? formatDateLabel(value) : "Select date"}</strong>
       </button>
-      <input ref={inputRef} required className="nativeDateInput" type="date" value={value} onChange={(event) => onChange(event.target.value)} />
-    </label>
+      {isOpen && (
+        <div className="formCalendarPopover">
+          <MiniCalendarPicker
+            monthDate={monthDate}
+            selectedDate={value}
+            today={today}
+            onClose={() => setIsOpen(false)}
+            onMonthChange={setMonthDate}
+            onSelect={(date) => {
+              onChange(date);
+              setIsOpen(false);
+            }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -792,17 +808,6 @@ export default function App() {
 
     return () => window.clearTimeout(handle);
   }, [data, liveAssignments, profile, searchQuery, session]);
-
-  useEffect(() => {
-    function handlePointerDown(event) {
-      if (!globalSearchRef.current?.contains(event.target)) {
-        setSearchResults([]);
-      }
-    }
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, []);
 
   useEffect(() => {
     if (!isSearchOpen) return;
@@ -4006,7 +4011,7 @@ function PendingPersonRow({ avatarUrl, onApprove, onSelect, person }) {
   );
 }
 
-function OverviewView({ getProfileName, getVisitFiles, onArrive, onComplete, onOpenVisit, projects, todayVisits }) {
+function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplete, onOpenVisit, projects, todayVisits }) {
   const [weather, setWeather] = useState({ status: "idle", data: null });
   const firstVisit = todayVisits[0];
   const firstProject = firstVisit ? projects.find((project) => project.id === firstVisit.project_id) : null;
@@ -4043,6 +4048,8 @@ function OverviewView({ getProfileName, getVisitFiles, onArrive, onComplete, onO
         const hasAfter = files.some((file) => file.file_type === "completion_photo");
         const sitePhone = project?.contact_phone || "";
         const callablePhone = sitePhone.replace(/[^\d+]/g, "");
+        const assignedPeople = (data.people ?? []).filter((person) => visit.people_ids?.includes(person.id));
+        const assignedEquipment = (data.equipment ?? []).filter((item) => visit.equipment_ids?.includes(item.id));
 
         return (
           <section className="todayTicket" key={visit.id}>
@@ -4053,7 +4060,16 @@ function OverviewView({ getProfileName, getVisitFiles, onArrive, onComplete, onO
               </button>
             </div>
             <h2>{project?.name || "Project visit"}</h2>
-            <p>{visit.work_scope || "Today's scheduled work"}</p>
+            <div className="overviewScopeGrid">
+              <section>
+                <span>Project work description</span>
+                <p>{project?.description || "No project description saved yet."}</p>
+              </section>
+              <section>
+                <span>Today's work scope</span>
+                <p>{visit.work_scope || "Today's scheduled work"}</p>
+              </section>
+            </div>
 
             <dl className="detailFacts compact">
               <ProjectFact icon={Calendar} label="Ticket Date" value={formatDateLabel(visit.visit_date)} />
@@ -4093,6 +4109,33 @@ function OverviewView({ getProfileName, getVisitFiles, onArrive, onComplete, onO
               <ProjectFact icon={ClipboardCheck} label="Assigned by" value={getProfileName(visit.assigned_by ?? visit.created_by)} />
               <ProjectFact icon={ClipboardCheck} label="Checklist" value={`Safety ${hasSafety ? "done" : "needed"} · Before ${hasBefore ? "done" : "needed"} · After ${hasAfter ? "done" : "needed"}`} />
             </dl>
+
+            <div className="overviewAssignmentGrid">
+              <section>
+                <h3>Assigned people</h3>
+                {assignedPeople.length ? (
+                  <div className="overviewChipList">
+                    {assignedPeople.map((person) => (
+                      <span key={person.id}>{profileDisplayName(person)}</span>
+                    ))}
+                  </div>
+                ) : (
+                  <p>No people assigned.</p>
+                )}
+              </section>
+              <section>
+                <h3>Equipment</h3>
+                {assignedEquipment.length ? (
+                  <div className="overviewChipList">
+                    {assignedEquipment.map((item) => (
+                      <span key={item.id}>{item.name}</span>
+                    ))}
+                  </div>
+                ) : (
+                  <p>No equipment assigned.</p>
+                )}
+              </section>
+            </div>
 
             {visit.status === "planned" && (
               <div className="visitActions wideActions">
@@ -4166,11 +4209,17 @@ function SettingsView({ avatarUrl, form, isConfigured, loading, onChange, onSubm
         <FormField label="Phone">
           <input autoComplete="tel" required type="tel" value={form.phone} onChange={(event) => onChange({ ...form, phone: event.target.value })} />
         </FormField>
-        <FormField label="Avatar photo">
+        <label className="fileDropControl settingsAvatarUpload">
+          <Upload size={22} />
+          <strong>Choose avatar photo</strong>
+          <span>{form.avatarFile?.name || "JPG, PNG, or WebP"}</span>
           <input accept="image/jpeg,image/png,image/webp" type="file" onChange={(event) => onChange({ ...form, avatarFile: event.target.files?.[0] ?? null, removeAvatar: false })} />
-        </FormField>
-        <label className="checkLine">
+        </label>
+        <label className="checkLine switchLine">
           <input type="checkbox" checked={form.removeAvatar} onChange={(event) => onChange({ ...form, removeAvatar: event.target.checked, avatarFile: null })} />
+          <span className="switchTrack" aria-hidden="true">
+            <span />
+          </span>
           Remove avatar and use no-name icon
         </label>
         <div className="formActions">

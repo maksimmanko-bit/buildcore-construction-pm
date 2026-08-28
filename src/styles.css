@@ -642,6 +642,58 @@ h1 {
   line-height: 1.55;
 }
 
+.overviewScopeGrid,
+.overviewAssignmentGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.overviewScopeGrid section,
+.overviewAssignmentGrid section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.78);
+}
+
+.overviewScopeGrid span,
+.overviewAssignmentGrid h3 {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.overviewScopeGrid p,
+.overviewAssignmentGrid p {
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.48;
+}
+
+.overviewChipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.overviewChipList span {
+  min-height: 28px;
+  padding: 6px 9px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #111827;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .detailActionRow {
   display: flex;
   flex-wrap: wrap;
@@ -1139,21 +1191,32 @@ h1 {
 .settingsProfileForm {
   display: grid;
   gap: 14px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.78);
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.78)),
+    rgba(255, 255, 255, 0.84);
+  box-shadow: var(--card-shadow);
 }
 
 .settingsAvatarBlock {
   display: flex;
   align-items: center;
   gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.76);
 }
 
 .settingsAvatarBlock span {
   display: grid;
   gap: 4px;
+}
+
+.settingsAvatarUpload {
+  min-height: 132px;
 }
 
 .safetySummary span {
@@ -1772,7 +1835,7 @@ h1 {
 .resourceRow {
   display: grid;
   grid-template-columns: var(--resource-col) minmax(0, 1fr);
-  min-height: max(128px, calc(var(--lane-count, 1) * 116px));
+  min-height: max(140px, calc(var(--lane-count, 1) * 138px));
   border-bottom: 1px solid var(--line);
 }
 
@@ -2010,17 +2073,17 @@ h1 {
 }
 
 .assignmentCrew .avatar {
-  width: 23px;
-  height: 23px;
+  width: 34px;
+  height: 34px;
   border-width: 2px;
 }
 
 .crewAvatarButton {
   position: relative;
   display: grid;
-  flex: 0 0 23px;
-  width: 23px;
-  height: 23px;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
   min-height: 0;
   padding: 0;
   border: 0;
@@ -2032,7 +2095,7 @@ h1 {
 }
 
 .crewAvatarButton + .crewAvatarButton {
-  margin-left: -7px;
+  margin-left: -10px;
 }
 
 .crewAvatarButton:active {
@@ -2739,8 +2802,12 @@ h1 {
   place-items: center;
   min-height: min(72vh, 720px);
   overflow: hidden;
-  border-radius: 12px;
-  background: #090e18;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 50% 0, rgba(255, 255, 255, 0.08), transparent 32%),
+    #090e18;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .attachmentViewer img,
@@ -2778,6 +2845,16 @@ h1 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   padding-top: 18px;
+}
+
+.todayTicket .visitActions {
+  justify-content: center;
+  justify-items: center;
+}
+
+.todayTicket .visitActions button {
+  width: min(320px, 100%);
+  justify-content: center;
 }
 
 .visitActions button,
@@ -3212,6 +3289,20 @@ canvas {
 
 .dateField {
   position: relative;
+}
+
+.formCalendarPopover {
+  position: relative;
+  z-index: 35;
+}
+
+.formCalendarPopover .miniCalendarPopover {
+  position: static;
+  width: min(318px, 100%);
+  margin-top: 10px;
+  right: auto;
+  top: auto;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.16);
 }
 
 .modernDateButton {
@@ -3722,6 +3813,8 @@ canvas {
   .detailFacts,
   .detailFacts.compact,
   .detailVisitGrid,
+  .overviewScopeGrid,
+  .overviewAssignmentGrid,
   .pendingRow,
   .wideActions {
     grid-template-columns: 1fr;
@@ -4470,10 +4563,17 @@ textarea:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: rgba(248, 250, 252, 0.82);
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.78)),
+    rgba(255, 255, 255, 0.84);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 14px 36px rgba(15, 23, 42, 0.08);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  backdrop-filter: blur(18px) saturate(1.1);
 }
 
 .viewerTopBar strong,
@@ -4486,6 +4586,14 @@ textarea:focus-visible {
   color: #64748b;
   font-size: 12px;
   font-weight: 700;
+}
+
+.viewerTopBar strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-size: 15px;
+  font-weight: 950;
 }
 
 .photoCaption {
@@ -4507,13 +4615,19 @@ textarea:focus-visible {
 
 .viewerControls button {
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 42px;
   place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: #fff;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.86);
   color: #0f172a;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.055);
+}
+
+.viewerControls button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(207, 46, 46, 0.26);
 }
 
 .viewerControls span {
@@ -4529,8 +4643,12 @@ textarea:focus-visible {
   place-items: center;
   height: min(60vh, 620px);
   overflow: hidden;
-  border-radius: 18px;
-  background: #090e18;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 50% 0, rgba(255, 255, 255, 0.08), transparent 32%),
+    #090e18;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .photoStage img {
