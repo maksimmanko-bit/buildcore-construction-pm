@@ -68,6 +68,7 @@ const equipmentAvatarOptions = [
   { key: "tools", label: "Tools", Icon: Wrench },
 ];
 const profileEmojiOptions = ["👷", "🛠️", "🏗️", "🚧", "📋", "🧰", "🚚", "⚡", "🔩", "🦺", "🏠", "⭐"];
+const defaultProfileAvatarOptions = ["👷", "🛠️", "🏗️", "🚧", "📋", "🧰", "🚚", "⚡", "🔩", "🦺", "🏠", "⭐"];
 
 const demo = {
   companyId: "00000000-0000-0000-0000-000000000001",
@@ -577,6 +578,12 @@ function makeInitials(name, fallback = "BC") {
     .toUpperCase();
 }
 
+function hashString(value) {
+  return String(value || "")
+    .split("")
+    .reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0, 7);
+}
+
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -720,9 +727,23 @@ function DateField({ label, onChange, value }) {
 }
 
 function Avatar({ profile, small = false, url }) {
-  const emoji = !url ? String(profile?.avatar_emoji || "").trim() : "";
+  const identity = profile?.id || profile?.email || profile?.full_name || "No Name";
+  const avatarSeed = hashString(identity);
+  const selectedEmoji = !url ? String(profile?.avatar_emoji || "").trim() : "";
+  const defaultEmoji = !url && !selectedEmoji ? defaultProfileAvatarOptions[avatarSeed % defaultProfileAvatarOptions.length] : "";
+  const emoji = selectedEmoji || defaultEmoji;
+  const avatarClasses = [
+    "avatar",
+    "face",
+    small ? "small" : "",
+    emoji ? "emoji" : "",
+    defaultEmoji ? "defaultIcon" : "",
+    `avatarVariant${avatarSeed % 6}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <div className={`${small ? "avatar face small" : "avatar face"}${emoji ? " emoji" : ""}`}>
+    <div className={avatarClasses}>
       {url ? <img src={url} alt="" /> : emoji ? <span className="avatarEmoji">{emoji}</span> : makeInitials(profile?.full_name || profile?.email || "No Name", "NN")}
     </div>
   );
@@ -4429,7 +4450,7 @@ function DetailOverlayShell({ children, onClose, title }) {
       <section className="detailPanel">
         <div className="detailHeader">
           <h2>{title}</h2>
-          <button type="button" title="Close" onClick={onClose}>
+          <button className="detailCloseButton" type="button" title="Close" onClick={onClose}>
             <X size={20} />
           </button>
         </div>
@@ -5866,7 +5887,7 @@ function ProfileEditForm({ avatarUrl, form, loading, onChange, onSubmit, profile
         <span className="switchTrack" aria-hidden="true">
           <span />
         </span>
-        Remove avatar and use no-name icon
+        Remove avatar and use automatic default icon
       </label>
       <div className="formActions">
         <button className="addButton" type="submit" disabled={loading}>

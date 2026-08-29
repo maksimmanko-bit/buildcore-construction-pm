@@ -507,6 +507,34 @@ button:disabled {
     0 8px 18px rgba(15, 23, 42, 0.08);
 }
 
+.avatar.face.defaultIcon.avatarVariant0 {
+  background: linear-gradient(145deg, #eff6ff, #fee2e2);
+}
+
+.avatar.face.defaultIcon.avatarVariant1 {
+  background: linear-gradient(145deg, #ecfdf5, #e0f2fe);
+}
+
+.avatar.face.defaultIcon.avatarVariant2 {
+  background: linear-gradient(145deg, #fff7ed, #f1f5f9);
+}
+
+.avatar.face.defaultIcon.avatarVariant3 {
+  background: linear-gradient(145deg, #f8fafc, #ede9fe);
+}
+
+.avatar.face.defaultIcon.avatarVariant4 {
+  background: linear-gradient(145deg, #fefce8, #dcfce7);
+}
+
+.avatar.face.defaultIcon.avatarVariant5 {
+  background: linear-gradient(145deg, #fdf2f8, #e0f2fe);
+}
+
+.avatar.face.defaultIcon .avatarEmoji {
+  filter: saturate(0.95);
+}
+
 .avatarEmoji {
   display: inline-grid;
   place-items: center;
@@ -772,6 +800,35 @@ h1 {
   border-radius: 12px;
   background: rgba(15, 23, 42, 0.06);
   color: var(--ink);
+}
+
+.detailHeader .detailCloseButton {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.82)),
+    rgba(255, 255, 255, 0.88);
+  color: #0f172a;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 12px 24px rgba(15, 23, 42, 0.08);
+  transition:
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.detailHeader .detailCloseButton:hover,
+.detailHeader .detailCloseButton:focus-visible {
+  outline: none;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 16px 30px rgba(15, 23, 42, 0.12);
+  transform: translateY(-1px) scale(1.03);
 }
 
 .detailHero {
@@ -2403,7 +2460,7 @@ h1 {
   gap: 6px;
   min-width: 120px;
   padding: 10px 34px 10px 12px;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid rgba(15, 23, 42, 0.07);
   border-radius: 12px;
   color: #111827;
@@ -2785,8 +2842,8 @@ h1 {
 }
 
 .availableAvatarStrip {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   overflow: visible;
 }
@@ -2902,7 +2959,7 @@ h1 {
 
 .availableAvatarCard {
   display: inline-grid;
-  min-width: 92px;
+  min-width: 0;
   justify-items: center;
   gap: 7px;
   padding: 10px;
@@ -7498,6 +7555,32 @@ body.overlayLocked {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.88),
     0 16px 36px rgba(15, 23, 42, 0.08);
+}
+
+.detailHeader {
+  min-height: 68px;
+  align-items: center;
+  padding: 12px 12px 12px 18px !important;
+  overflow: visible;
+}
+
+.detailHeader h2 {
+  min-width: 0;
+  padding-right: 8px;
+  overflow-wrap: anywhere;
+}
+
+.detailHeader .detailCloseButton {
+  margin-left: auto;
+  border-radius: 999px !important;
+}
+
+.scheduleBlock .crewAvatarTooltip strong {
+  font-size: 12px;
+}
+
+.scheduleBlock .crewAvatarTooltip small {
+  font-size: 11px;
 }
 
 .workflowForm fieldset,
