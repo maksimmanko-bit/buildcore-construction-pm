@@ -1951,6 +1951,11 @@ h1 {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.76),
     0 12px 24px rgba(15, 23, 42, 0.12);
+  transition:
+    transform 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
 }
 
 .equipmentAvatar.small {
@@ -2134,7 +2139,10 @@ h1 {
   background: transparent;
   color: inherit;
   cursor: grab;
-  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    transform 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
 }
 
 .crewAvatarButton + .crewAvatarButton {
@@ -2145,9 +2153,22 @@ h1 {
   cursor: grabbing;
 }
 
-.crewAvatarButton:hover {
+.crewAvatarButton:hover,
+.crewAvatarButton:focus-visible {
   z-index: 2;
-  transform: translateY(-1px) scale(1.05);
+  outline: none;
+  transform: translateY(-4px) scale(1.08);
+  filter: saturate(1.08);
+}
+
+.crewAvatarButton:hover .avatar,
+.crewAvatarButton:focus-visible .avatar,
+.crewAvatarButton:hover .equipmentAvatar,
+.crewAvatarButton:focus-visible .equipmentAvatar {
+  box-shadow:
+    0 0 0 4px rgba(255, 255, 255, 0.82),
+    0 0 0 7px rgba(37, 99, 235, 0.16),
+    0 18px 34px rgba(15, 23, 42, 0.2);
 }
 
 .crewAvatarButton .avatar,
@@ -2340,6 +2361,35 @@ h1 {
   background: rgba(248, 250, 252, 0.82);
   color: #111827;
   cursor: grab;
+  transition:
+    transform 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.availableAvatarCard:hover,
+.availableAvatarCard:focus-visible {
+  outline: none;
+  border-color: rgba(37, 99, 235, 0.22);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    0 0 0 5px rgba(37, 99, 235, 0.08),
+    0 18px 34px rgba(15, 23, 42, 0.12);
+  transform: translateY(-4px) scale(1.03);
+}
+
+.availableAvatarCard:hover .avatar,
+.availableAvatarCard:focus-visible .avatar,
+.availableAvatarCard:hover .equipmentAvatar,
+.availableAvatarCard:focus-visible .equipmentAvatar {
+  filter: saturate(1.08);
+  transform: translateY(-1px) scale(1.04);
+  box-shadow:
+    0 0 0 4px rgba(255, 255, 255, 0.86),
+    0 0 0 7px rgba(37, 99, 235, 0.12),
+    0 16px 30px rgba(15, 23, 42, 0.16);
 }
 
 .availableAvatarCard:active {
@@ -5776,9 +5826,23 @@ body.overlayLocked {
   .detailPanel,
   .attachmentViewer,
   .confirmSheet,
-  .confirmBackdrop {
+  .confirmBackdrop,
+  .crewAvatarButton,
+  .availableAvatarCard,
+  .equipmentAvatar {
     animation: none !important;
     transition: none !important;
+  }
+
+  .crewAvatarButton:hover,
+  .crewAvatarButton:focus-visible,
+  .availableAvatarCard:hover,
+  .availableAvatarCard:focus-visible,
+  .availableAvatarCard:hover .avatar,
+  .availableAvatarCard:focus-visible .avatar,
+  .availableAvatarCard:hover .equipmentAvatar,
+  .availableAvatarCard:focus-visible .equipmentAvatar {
+    transform: none !important;
   }
 }
 
