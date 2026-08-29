@@ -29,11 +29,12 @@ create table if not exists public.companies (
   name text not null,
   province text not null default 'Manitoba',
   country text not null default 'Canada',
+  feature_flags jsonb not null default '{"safetyForm": true, "beforeAfterPhotos": true, "testBots": false}'::jsonb,
   created_at timestamptz not null default now()
 );
 
 create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
+  id uuid primary key,
   company_id uuid references public.companies(id) on delete set null,
   first_name text not null default '',
   last_name text not null default '',
@@ -45,6 +46,7 @@ create table if not exists public.profiles (
   phone text,
   availability_status text not null default 'available',
   is_active boolean not null default true,
+  is_bot boolean not null default false,
   created_at timestamptz not null default now(),
   constraint profiles_availability_status_check check (availability_status in ('available', 'not_available'))
 );
@@ -150,6 +152,7 @@ create table if not exists public.visit_files (
 
 create index if not exists projects_company_idx on public.projects(company_id);
 create index if not exists equipment_company_idx on public.equipment(company_id);
+create index if not exists profiles_company_bot_idx on public.profiles(company_id, is_bot);
 create index if not exists visits_company_date_idx on public.visits(company_id, visit_date);
 create index if not exists visit_files_search_idx on public.visit_files using gin(search_vector);
 
@@ -706,12 +709,13 @@ alter table public.visit_people replica identity full;
 alter table public.visit_equipment replica identity full;
 alter table public.visit_activity replica identity full;
 alter table public.visit_files replica identity full;
+alter table public.companies replica identity full;
 
 do $$
 declare
   table_name text;
 begin
-  foreach table_name in array array['visits', 'visit_people', 'visit_equipment', 'visit_activity', 'visit_files']
+  foreach table_name in array array['companies', 'visits', 'visit_people', 'visit_equipment', 'visit_activity', 'visit_files']
   loop
     if not exists (
       select 1
@@ -729,6 +733,12 @@ drop policy if exists "company members read company" on public.companies;
 create policy "company members read company" on public.companies
 for select to authenticated
 using (id = public.current_company_id());
+
+drop policy if exists "managers update company settings" on public.companies;
+create policy "managers update company settings" on public.companies
+for update to authenticated
+using (id = public.current_company_id() and public.can_manage())
+with check (id = public.current_company_id() and public.can_manage());
 
 drop policy if exists "own profile visible" on public.profiles;
 create policy "own profile visible" on public.profiles
@@ -1001,6 +1011,75 @@ grant execute on function public.acquire_edit_lock(text, text, uuid, text, integ
 revoke all on function public.release_edit_lock(text, integer) from public;
 revoke all on function public.release_edit_lock(text, integer) from anon;
 grant execute on function public.release_edit_lock(text, integer) to authenticated;
+
+create or replace function public.create_test_bots(bot_count integer)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_company uuid := public.current_company_id();
+  safe_count integer := greatest(0, least(coalesce(bot_count, 0), 100));
+  trades text[] := array['Demo/Asbestos', 'Drywall/Mud/Taping/Flooring', 'General Construction', 'Management', 'Shop/Trucking'];
+  i integer;
+begin
+  if current_company is null or not public.can_manage() then
+    raise exception 'Only Owner, PM, or Office Manager can create test bots.';
+  end if;
+
+  for i in 1..safe_count loop
+    insert into public.profiles (id, company_id, first_name, last_name, full_name, email, role, trade, phone, availability_status, is_active, is_bot)
+    values (
+      gen_random_uuid(),
+      current_company,
+      'Test',
+      'Builder ' || lpad(i::text, 2, '0'),
+      'Test Builder ' || lpad(i::text, 2, '0'),
+      null,
+      'builder',
+      trades[((i - 1) % array_length(trades, 1)) + 1],
+      '(204) 555-' || lpad((1000 + i)::text, 4, '0'),
+      'available',
+      true,
+      true
+    );
+  end loop;
+
+  return safe_count;
+end;
+$$;
+
+revoke all on function public.create_test_bots(integer) from public;
+revoke all on function public.create_test_bots(integer) from anon;
+grant execute on function public.create_test_bots(integer) to authenticated;
+
+create or replace function public.delete_test_bots()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_company uuid := public.current_company_id();
+  deleted_count integer := 0;
+begin
+  if current_company is null or not public.can_manage() then
+    raise exception 'Only Owner, PM, or Office Manager can delete test bots.';
+  end if;
+
+  delete from public.profiles
+  where company_id = current_company
+    and is_bot = true;
+
+  get diagnostics deleted_count = row_count;
+  return deleted_count;
+end;
+$$;
+
+revoke all on function public.delete_test_bots() from public;
+revoke all on function public.delete_test_bots() from anon;
+grant execute on function public.delete_test_bots() to authenticated;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values

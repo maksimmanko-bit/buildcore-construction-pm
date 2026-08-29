@@ -366,25 +366,104 @@ button:disabled {
   background: #f1f5f9;
 }
 
+.sidebarUserWrap {
+  position: relative;
+  margin-top: auto;
+}
+
 .sidebarUser {
   display: grid;
   grid-template-columns: 46px minmax(0, 1fr) 18px;
   align-items: center;
   gap: 13px;
-  margin-top: auto;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.24s ease;
+}
+
+.sidebarUser:hover,
+.sidebarUser.active {
+  transform: translateY(-1px);
+  filter: drop-shadow(0 14px 22px rgba(15, 23, 42, 0.12));
+}
+
+.sidebarUser > span {
+  min-width: 0;
+}
+
+.sidebarUser small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.accountMenu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 12px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.86)),
+    rgba(255, 255, 255, 0.86);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 24px 55px rgba(15, 23, 42, 0.18);
+  -webkit-backdrop-filter: blur(22px) saturate(1.15);
+  backdrop-filter: blur(22px) saturate(1.15);
+  animation: accountMenuIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.accountMenu button {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #111827;
+  font-weight: 850;
+  text-align: left;
+}
+
+.accountMenu button:hover {
+  background: rgba(23, 105, 255, 0.09);
+  color: #0b47d9;
+}
+
+@keyframes accountMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .drawerOnly,
 .mobileTopBar,
 .mobileDrawerBackdrop {
   display: none;
-}
-
-.sidebarUser span {
-  display: block;
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 14px;
 }
 
 .avatar {
@@ -1236,6 +1315,79 @@ h1 {
 
 .settingsAvatarUpload {
   min-height: 132px;
+}
+
+.settingsSummaryPanel,
+.developerModeForm {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.78)),
+    rgba(255, 255, 255, 0.84);
+  box-shadow: var(--card-shadow);
+}
+
+.settingsSummaryPanel strong,
+.developerSwitch strong {
+  color: #111827;
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.settingsSummaryPanel small,
+.developerSwitch small {
+  display: block;
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.settingsFeatureGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.featurePill {
+  min-height: 34px;
+  padding: 8px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.featurePill.on {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+.featurePill.off {
+  background: rgba(148, 163, 184, 0.14);
+  color: #64748b;
+}
+
+.developerSwitch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 82px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+}
+
+.developerSwitch:hover {
+  border-color: rgba(37, 99, 235, 0.18);
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .safetySummary span {
@@ -3758,6 +3910,10 @@ canvas {
   pointer-events: none;
 }
 
+.switchLine {
+  position: relative;
+}
+
 .switchLine input:checked + .switchTrack,
 .pickerOption input:checked + .switchTrack {
   background: var(--brand-red);
@@ -4039,13 +4195,19 @@ canvas {
     border-radius: 14px;
   }
 
-  .sidebarUser {
-    display: grid;
+  .sidebarUserWrap {
     margin-top: auto;
+  }
+
+  .sidebarUser {
     padding: 12px;
     border: 1px solid rgba(148, 163, 184, 0.16);
     border-radius: 18px;
     background: rgba(255, 255, 255, 0.72);
+  }
+
+  .accountMenu {
+    bottom: calc(100% + 10px);
   }
 
   .drawerOnly {

@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   CircleGauge,
   ClipboardCheck,
   Construction,
@@ -197,6 +198,15 @@ const timeLabels = ["7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "
 const colors = ["blue", "green", "yellow", "purple", "orange"];
 const scheduleStartHour = 7;
 const scheduleEndHour = 22;
+const defaultFeatureFlags = {
+  safetyForm: true,
+  beforeAfterPhotos: true,
+  testBots: false,
+};
+
+function normalizeFeatureFlags(flags) {
+  return { ...defaultFeatureFlags, ...(flags && typeof flags === "object" ? flags : {}) };
+}
 
 const demoAssignments = [
   { id: "a1", type: "person", resourceId: "person-1", projectId: "project-1", title: "Riverside Building", subtitle: "Site Supervision", start: 7.55, end: 12.7, color: "blue" },
@@ -793,12 +803,18 @@ export default function App() {
   const [uploadProgress, setUploadProgress] = useState(null);
   const [profileForm, setProfileForm] = useState({ first_name: "", last_name: "", phone: "", avatarFile: null, removeAvatar: false });
   const [personForm, setPersonForm] = useState({ first_name: "", last_name: "", phone: "", role: "builder", trade: "", availability_status: "available" });
+  const [featureFlags, setFeatureFlags] = useState(defaultFeatureFlags);
+  const [developerForm, setDeveloperForm] = useState({ ...defaultFeatureFlags, botCount: "10" });
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [avatarUrls, setAvatarUrls] = useState({});
+  const accountMenuRef = useRef(null);
 
   const isLive = Boolean(session && profile?.is_active);
   const canManage = Boolean(profile?.is_active && ["owner", "project_manager", "office_manager"].includes(profile?.role));
   const canDeleteTickets = Boolean(profile?.is_active && profile?.role !== "builder");
-  const visibleNavItems = canManage ? navItems : navItems.filter((item) => !["people", "equipment"].includes(item.id));
+  const activeFeatureFlags = normalizeFeatureFlags(featureFlags);
+  const canUseDeveloperMode = Boolean(profile?.is_active && profile?.role !== "builder");
+  const visibleNavItems = (canManage ? navItems : navItems.filter((item) => !["people", "equipment"].includes(item.id))).filter((item) => activeFeatureFlags.safetyForm || item.id !== "safetyReports");
   const currentUserName = profile?.full_name || session?.user?.email || "James Carter";
 
   const refreshData = useCallback(async () => {
@@ -850,7 +866,14 @@ export default function App() {
       }
 
       if (canUseCachedWorkspace && cachedWorkspace.data.companyId === nextProfile.company_id) {
-        setData(cachedWorkspace.data);
+        const cachedFeatureFlags = normalizeFeatureFlags(cachedWorkspace.data.featureFlags);
+        setData({
+          ...cachedWorkspace.data,
+          featureFlags: cachedFeatureFlags,
+          people: (cachedWorkspace.data.people ?? []).filter((person) => !person.is_bot || cachedFeatureFlags.testBots),
+          pendingPeople: (cachedWorkspace.data.pendingPeople ?? []).filter((person) => !person.is_bot),
+        });
+        setFeatureFlags(cachedFeatureFlags);
       }
 
       const nextCanManage = ["owner", "project_manager", "office_manager"].includes(nextProfile.role);
@@ -858,7 +881,8 @@ export default function App() {
         ? supabase.from("profiles").select("*").order("is_active", { ascending: true }).order("full_name")
         : supabase.from("profiles").select("*").eq("is_active", true).order("full_name");
 
-      const [projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult] = await Promise.all([
+      const [companyResult, projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult] = await Promise.all([
+        supabase.from("companies").select("feature_flags").eq("id", nextProfile.company_id).single(),
         supabase.from("projects").select("*").order("created_at", { ascending: false }),
         peopleQuery,
         supabase.from("equipment").select("*").order("name"),
@@ -867,16 +891,19 @@ export default function App() {
         supabase.from("visit_activity").select("*").order("created_at", { ascending: false }).limit(500),
       ]);
 
-      const failed = [projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult].find((result) => result.error);
+      const failed = [companyResult, projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult].find((result) => result.error);
       if (failed) throw failed.error;
 
       const nextProjects = projectsResult.data ?? [];
       const allPeople = peopleResult.data ?? [];
+      const nextFeatureFlags = normalizeFeatureFlags(companyResult.data?.feature_flags);
+      setFeatureFlags(nextFeatureFlags);
       const nextData = {
         companyId: nextProfile.company_id,
+        featureFlags: nextFeatureFlags,
         projects: nextProjects,
-        people: allPeople.filter((person) => person.is_active),
-        pendingPeople: allPeople.filter((person) => !person.is_active),
+        people: allPeople.filter((person) => person.is_active && (!person.is_bot || nextFeatureFlags.testBots)),
+        pendingPeople: allPeople.filter((person) => !person.is_active && !person.is_bot),
         equipment: equipmentResult.data ?? [],
         visits: visitsResult.data ?? [],
         files: filesResult.data ?? [],
@@ -916,7 +943,18 @@ export default function App() {
 
   useEffect(() => {
     if ((activeNav === "people" || activeNav === "equipment") && !canManage) setActiveNav("overview");
-  }, [activeNav, canManage]);
+    if (activeNav === "safetyReports" && !activeFeatureFlags.safetyForm) setActiveNav("overview");
+  }, [activeFeatureFlags.safetyForm, activeNav, canManage]);
+
+  useEffect(() => {
+    if (!isAccountMenuOpen) return undefined;
+    function handlePointerDown(event) {
+      if (accountMenuRef.current?.contains(event.target)) return;
+      setIsAccountMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isAccountMenuOpen]);
 
   useEffect(() => {
     if (!session) return;
@@ -978,6 +1016,11 @@ export default function App() {
 
     const channel = supabase
       .channel(`buildcore-workspace-${profile.company_id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "companies", filter: `id=eq.${profile.company_id}` }, (payload) => {
+        const nextFeatureFlags = normalizeFeatureFlags(payload.new?.feature_flags);
+        setFeatureFlags(nextFeatureFlags);
+        setData((current) => ({ ...current, featureFlags: nextFeatureFlags }));
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "visits", filter: `company_id=eq.${profile.company_id}` }, () => {
         void loadVisits();
       })
@@ -1841,6 +1884,10 @@ export default function App() {
   }
 
   function editPerson(person) {
+    if (person?.id === profile?.id && !canManage) {
+      editMyProfile();
+      return;
+    }
     if (!canManage) {
       setNotice("Only Owner, PM, or Office Manager can edit employees.");
       return;
@@ -1897,6 +1944,62 @@ export default function App() {
     refreshData();
   }
 
+  async function saveDeveloperSettings(event) {
+    event.preventDefault();
+    if (!supabase || !profile?.company_id || !canUseDeveloperMode) {
+      setNotice("Developer mode is available to non-Builder roles only.");
+      return;
+    }
+
+    const nextFlags = normalizeFeatureFlags({
+      safetyForm: Boolean(developerForm.safetyForm),
+      beforeAfterPhotos: Boolean(developerForm.beforeAfterPhotos),
+      testBots: Boolean(developerForm.testBots),
+    });
+    const shouldCreateBots = nextFlags.testBots && !activeFeatureFlags.testBots;
+    const shouldDeleteBots = !nextFlags.testBots && activeFeatureFlags.testBots;
+    const parsedBotCount = Number.parseInt(developerForm.botCount, 10);
+    const botCount = Math.max(1, Math.min(100, Number.isFinite(parsedBotCount) ? parsedBotCount : 0));
+    const currentBotCount = (rowsSource.people ?? []).filter((person) => person.is_bot).length;
+    const shouldSyncBots = nextFlags.testBots && (shouldCreateBots || currentBotCount !== botCount);
+
+    if (nextFlags.testBots && shouldSyncBots && (!Number.isFinite(parsedBotCount) || parsedBotCount < 1)) {
+      setNotice("Enter how many test bots to create.");
+      return;
+    }
+
+    const previousFlags = featureFlags;
+    setLoading(true);
+    setFeatureFlags(nextFlags);
+    setNotice("Saving developer mode...");
+    try {
+      const { error } = await supabase.from("companies").update({ feature_flags: nextFlags }).eq("id", profile.company_id);
+      if (error) throw error;
+
+      if (shouldDeleteBots) {
+        const { error: deleteError } = await supabase.rpc("delete_test_bots");
+        if (deleteError) throw deleteError;
+      }
+
+      if (shouldSyncBots) {
+        const deleteResult = await supabase.rpc("delete_test_bots");
+        if (deleteResult.error) throw deleteResult.error;
+        const createResult = await supabase.rpc("create_test_bots", { bot_count: botCount });
+        if (createResult.error) throw createResult.error;
+      }
+
+      triggerSoftPulse();
+      setNotice(shouldSyncBots ? `${botCount} test bots ready.` : shouldDeleteBots ? "Test bots removed." : "Developer settings saved.");
+      setModalType(null);
+      refreshData();
+    } catch (error) {
+      setFeatureFlags(previousFlags);
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function saveProfileSettings(event) {
     event.preventDefault();
     if (!supabase || !profile) return;
@@ -1910,7 +2013,7 @@ export default function App() {
     }
 
     setLoading(true);
-    setNotice("Generating Safety PDF...");
+    setNotice("Saving profile...");
     try {
       let avatarPath = profile.avatar_path || null;
       if (profileForm.removeAvatar) avatarPath = null;
@@ -1932,6 +2035,7 @@ export default function App() {
       if (error) throw error;
       triggerSoftPulse();
       setNotice("Profile saved.");
+      setModalType(null);
       refreshData();
     } catch (error) {
       setNotice(error.message);
@@ -2072,6 +2176,37 @@ export default function App() {
     showDetailOverlay("person");
   }
 
+  function openMyProfile() {
+    if (!profile?.id) return;
+    setIsAccountMenuOpen(false);
+    setSelectedPersonId(profile.id);
+    showDetailOverlay("person");
+  }
+
+  function editMyProfile() {
+    if (!profile?.id) return;
+    const [first = "", ...rest] = String(profile.first_name || profile.full_name || "").split(" ").filter(Boolean);
+    setProfileForm({
+      first_name: profile.first_name || first,
+      last_name: profile.last_name || rest.join(" "),
+      phone: profile.phone || "",
+      avatarFile: null,
+      removeAvatar: false,
+    });
+    setIsAccountMenuOpen(false);
+    setModalType("profileEdit");
+  }
+
+  function openDeveloperMode() {
+    if (!canUseDeveloperMode) {
+      setNotice("Developer mode is available to Owner, PM, and Office Manager roles.");
+      return;
+    }
+    setDeveloperForm({ ...normalizeFeatureFlags(featureFlags), botCount: "10" });
+    setIsAccountMenuOpen(false);
+    setModalType("developerMode");
+  }
+
   function startArrivalWorkflow(visit = currentVisit) {
     if (!visit?.id) {
       setNotice("Select today's visit first.");
@@ -2091,7 +2226,7 @@ export default function App() {
     setSelectedProjectId(visit.project_id);
     setSelectedVisitId(visit.id);
 
-    if (!hasSafety) {
+    if (activeFeatureFlags.safetyForm && !hasSafety) {
       const assignedTeam = rowsSource.people.filter((person) => visit.people_ids?.includes(person.id));
       const team = safetyFiles.length > 0 && profile?.id ? assignedTeam.filter((person) => person.id === profile.id) : assignedTeam;
       setSafetyForm({
@@ -2104,13 +2239,20 @@ export default function App() {
       return;
     }
 
-    if (!hasBefore) {
+    if (activeFeatureFlags.beforeAfterPhotos && !hasBefore) {
       setPhotoStep({ kind: "before", visitId: visit.id, files: [], captions: {} });
       setModalType("beforePhotos");
       return;
     }
 
-    updateVisitStatusById(visit.id, "on_site");
+    updateVisitStatusById(visit.id, "on_site").then((updated) => {
+      if (!updated) return;
+      logVisitActivity(visit, "arrived", `${currentUserName} arrived and started work.`, {
+        arrivedAt: new Date().toISOString(),
+        skippedSafetyForm: !activeFeatureFlags.safetyForm,
+        skippedBeforePhotos: !activeFeatureFlags.beforeAfterPhotos,
+      });
+    });
   }
 
   function startCompletionWorkflow(visit = currentVisit) {
@@ -2238,6 +2380,24 @@ export default function App() {
         team: names,
         absentTeam: absentTeam.map((person) => person.full_name || person.email || "Team member"),
       });
+
+      if (!activeFeatureFlags.beforeAfterPhotos) {
+        await updateVisitStatusById(activeVisit.id, "on_site");
+        await logVisitActivity(activeVisit, "arrived", `${currentUserName} arrived and started work.`, {
+          arrivedAt: new Date().toISOString(),
+          skippedBeforePhotos: true,
+        });
+        setModalType(null);
+        setWorkflowVisitId("");
+        setSafetyForm({ hazards: [], notes: "", signatures: {}, presentIds: [] });
+        triggerSoftPulse();
+        setNotice("Safety form saved. Work started.");
+        loadVisits();
+        loadActivities();
+        loadFiles();
+        return;
+      }
+
       setWorkflowVisitId(activeVisit.id);
       setPhotoStep({ kind: "before", visitId: activeVisit.id, files: [], captions: {} });
       setModalType("beforePhotos");
@@ -2308,31 +2468,34 @@ export default function App() {
       setNotice("Select a visit before completing work.");
       return;
     }
-    if (completionForm.files.length === 0) {
+    if (activeFeatureFlags.beforeAfterPhotos && completionForm.files.length === 0) {
       setNotice("Upload at least one after photo before completing work.");
       return;
     }
 
     setLoading(true);
     try {
-      setNotice(`Uploading ${completionForm.files.length} after photo${completionForm.files.length === 1 ? "" : "s"}...`);
-      setUploadProgress({ current: 0, total: completionForm.files.length, label: "After photos" });
-      await uploadPhotosWithProgress({
-        captions: completionForm.captions,
-        fileType: "completion_photo",
-        files: completionForm.files,
-        label: "After photos",
-        project: activeProject,
-        visit: activeVisit,
-        searchTextForFile: (_file, caption) => `After photo uploaded by ${currentUserName} at ${new Date().toISOString()}. ${completionForm.notes} ${caption}`,
-      });
-      await logVisitActivity(activeVisit, "after_photos_uploaded", `${currentUserName} uploaded ${completionForm.files.length} after photo${completionForm.files.length === 1 ? "" : "s"}.`, {
-        count: completionForm.files.length,
-      });
+      if (completionForm.files.length > 0) {
+        setNotice(`Uploading ${completionForm.files.length} after photo${completionForm.files.length === 1 ? "" : "s"}...`);
+        setUploadProgress({ current: 0, total: completionForm.files.length, label: "After photos" });
+        await uploadPhotosWithProgress({
+          captions: completionForm.captions,
+          fileType: "completion_photo",
+          files: completionForm.files,
+          label: "After photos",
+          project: activeProject,
+          visit: activeVisit,
+          searchTextForFile: (_file, caption) => `After photo uploaded by ${currentUserName} at ${new Date().toISOString()}. ${completionForm.notes} ${caption}`,
+        });
+        await logVisitActivity(activeVisit, "after_photos_uploaded", `${currentUserName} uploaded ${completionForm.files.length} after photo${completionForm.files.length === 1 ? "" : "s"}.`, {
+          count: completionForm.files.length,
+        });
+      }
       await updateVisitStatusById(activeVisit.id, "completed", { completion_notes: completionForm.notes });
       await logVisitActivity(activeVisit, "completed", `${currentUserName} completed the visit.`, {
         completedAt: new Date().toISOString(),
         notes: completionForm.notes,
+        skippedAfterPhotos: !activeFeatureFlags.beforeAfterPhotos,
       });
       setModalType(null);
       setWorkflowVisitId("");
@@ -3375,13 +3538,16 @@ export default function App() {
       );
     }
     if (activeNav === "documents") {
-      return <DocumentsView files={rowsSource.files ?? []} isRefreshing={isRefreshingWorkspace} onOpen={openAttachment} profiles={rowsSource.people} projects={rowsSource.projects} />;
+      return <DocumentsView featureFlags={activeFeatureFlags} files={rowsSource.files ?? []} isRefreshing={isRefreshingWorkspace} onOpen={openAttachment} profiles={rowsSource.people} projects={rowsSource.projects} />;
     }
     if (activeNav === "safetyReports") {
+      if (!activeFeatureFlags.safetyForm) {
+        return <InfoView icon={FileBarChart2} title="Safety Reports hidden" text="Safety Form is disabled in Developer mode. Existing reports are kept in Supabase and will reappear when the feature is enabled." />;
+      }
       return <SafetyReportsView files={rowsSource.files ?? []} onOpen={openAttachment} profiles={rowsSource.people} projects={rowsSource.projects} />;
     }
     if (activeNav === "settings") {
-      return <SettingsView avatarUrl={avatarUrls[profile?.id]} form={profileForm} isConfigured={isSupabaseConfigured} loading={loading} onChange={setProfileForm} onSubmit={saveProfileSettings} profile={profile} session={session} />;
+      return <SettingsView featureFlags={activeFeatureFlags} isConfigured={isSupabaseConfigured} profile={profile} />;
     }
     if (activeNav === "overview") {
       return <OverviewView data={rowsSource} getProfileName={getProfileName} getVisitFiles={getVisitFiles} onArrive={startArrivalWorkflow} onComplete={startCompletionWorkflow} onOpenVisit={openVisitOverlay} profile={profile} projects={rowsSource.projects} todayVisits={todayVisits} />;
@@ -3455,19 +3621,35 @@ export default function App() {
             <Bell size={20} />
             <span>Notifications</span>
           </button>
-          <button className="sideNavItem drawerOnly" type="button" onClick={signOut}>
-            <LogOut size={20} />
-            <span>Sign out</span>
-          </button>
         </nav>
 
-        <div className="sidebarUser">
-          <Avatar profile={profile} url={avatarUrls[profile?.id]} />
-          <div>
-            <strong>{currentUserName}</strong>
-            <span>{profile ? roleLabel(profile.role) : "Project Manager"}</span>
-          </div>
-          <ChevronDown size={18} />
+        <div className="sidebarUserWrap" ref={accountMenuRef}>
+          {isAccountMenuOpen && (
+            <div className="accountMenu">
+              <button type="button" onClick={openMyProfile}>
+                <UserRound size={18} />
+                <span>My profile</span>
+              </button>
+              {canUseDeveloperMode && (
+                <button type="button" onClick={openDeveloperMode}>
+                  <Wrench size={18} />
+                  <span>Developer mode</span>
+                </button>
+              )}
+              <button type="button" onClick={signOut}>
+                <LogOut size={18} />
+                <span>Sign out</span>
+              </button>
+            </div>
+          )}
+          <button className={isAccountMenuOpen ? "sidebarUser active" : "sidebarUser"} type="button" onClick={() => setIsAccountMenuOpen((value) => !value)}>
+            <Avatar profile={profile} url={avatarUrls[profile?.id]} />
+            <span>
+              <strong>{currentUserName}</strong>
+              <small>{profile ? roleLabel(profile.role) : "Project Manager"}</small>
+            </span>
+            <ChevronUp size={18} />
+          </button>
         </div>
       </aside>
 
@@ -3725,8 +3907,8 @@ export default function App() {
               <div className="searchPanelResults">
                 {searchQuery.trim().length < 2 ? (
                   <div className="searchEmptyState">Type at least 2 characters to search across projects, visits, PDFs, and Excel files.</div>
-                ) : searchResults.length > 0 ? (
-                  searchResults.map((result) => (
+                ) : searchResults.filter((result) => activeFeatureFlags.safetyForm || (result.file_type ?? result.fileType) !== "safety_form").length > 0 ? (
+                  searchResults.filter((result) => activeFeatureFlags.safetyForm || (result.file_type ?? result.fileType) !== "safety_form").map((result) => (
                     <button className="searchResult" key={result.id} type="button" onClick={() => handleSearchSelect(result)}>
                       <span className="searchIcon">{renderSearchIcon(result)}</span>
                       <span>
@@ -3751,6 +3933,7 @@ export default function App() {
             canManage={canManage}
             companyId={rowsSource.companyId}
             currentVisit={currentVisit}
+            featureFlags={activeFeatureFlags}
             files={projectAttachments}
             getProfileName={getProfileName}
             onAddVisit={() => openVisitModal(selectedProject.id)}
@@ -3780,6 +3963,7 @@ export default function App() {
             canDeleteTickets={canDeleteTickets}
             companyId={rowsSource.companyId}
             equipment={currentVisitEquipment}
+            featureFlags={activeFeatureFlags}
             files={currentVisitFiles}
             getProfileName={getProfileName}
             onArrive={() => startArrivalWorkflow(currentVisit)}
@@ -3804,8 +3988,8 @@ export default function App() {
         {detailOverlay === "person" && selectedPerson && (
           <PersonDetailOverlay
             avatarUrl={avatarUrls[selectedPerson.id]}
-            canManage={canManage}
-            onEdit={() => editPerson(selectedPerson)}
+            canEdit={canManage || selectedPerson.id === profile?.id}
+            onEdit={() => (selectedPerson.id === profile?.id ? editMyProfile() : editPerson(selectedPerson))}
             onClose={closeDetailOverlay}
             person={selectedPerson}
           />
@@ -4032,7 +4216,7 @@ export default function App() {
 
         {modalType === "completeVisit" && workflowVisit && workflowProject && (
           <AppModal confirmOnClose={completionHasDraft} title="Complete Work" onClose={() => closeModalWithConfirmation(completionHasDraft)}>
-            <CompleteVisitModal form={completionForm} loading={loading} onChange={setCompletionForm} onSubmit={saveCompletion} />
+            <CompleteVisitModal form={completionForm} loading={loading} onChange={setCompletionForm} onSubmit={saveCompletion} requirePhotos={activeFeatureFlags.beforeAfterPhotos} />
           </AppModal>
         )}
 
@@ -4141,6 +4325,18 @@ export default function App() {
           </AppModal>
         )}
 
+        {modalType === "profileEdit" && (
+          <AppModal title="Edit my profile" onClose={() => setModalType(null)}>
+            <ProfileEditForm avatarUrl={avatarUrls[profile?.id]} form={profileForm} loading={loading} onChange={setProfileForm} onSubmit={saveProfileSettings} profile={profile} />
+          </AppModal>
+        )}
+
+        {modalType === "developerMode" && (
+          <AppModal title="Developer mode" onClose={() => setModalType(null)}>
+            <DeveloperModeForm form={developerForm} loading={loading} onChange={setDeveloperForm} onSubmit={saveDeveloperSettings} />
+          </AppModal>
+        )}
+
         {confirmation && <ConfirmationSheet confirmation={confirmation} onResolve={resolveConfirmation} />}
       </main>
     </div>
@@ -4209,7 +4405,7 @@ function DetailOverlayShell({ children, onClose, title }) {
   );
 }
 
-function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, companyId, currentVisit, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onExportPdf, onExportTicketsExcel, onOpenAttachment, onOpenVisit, onRemoveActivity, onRemoveVisit, onUploaded, people, profileId, project, visits }) {
+function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, companyId, currentVisit, featureFlags = defaultFeatureFlags, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onExportPdf, onExportTicketsExcel, onOpenAttachment, onOpenVisit, onRemoveActivity, onRemoveVisit, onUploaded, people, profileId, project, visits }) {
   return (
     <DetailOverlayShell title={project.name} onClose={onClose}>
       <div className="detailHero projectDetailHeroTextOnly">
@@ -4290,6 +4486,7 @@ function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, co
       </div>
 
       <AttachmentSections
+        featureFlags={featureFlags}
         files={files}
         onOpen={onOpenAttachment}
         profiles={people}
@@ -4364,7 +4561,7 @@ function ActivityFeed({ activities = [], canDeleteItems = false, getProfileName,
   );
 }
 
-function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, files, getProfileName, onArrive, onClose, onComplete, onEdit, onExportPdf, onOpenAttachment, onRemove, onUploaded, people, profileId, profiles, project, visit }) {
+function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, onArrive, onClose, onComplete, onEdit, onExportPdf, onOpenAttachment, onRemove, onUploaded, people, profileId, profiles, project, visit }) {
   return (
     <DetailOverlayShell title={`${project.name} Ticket`} onClose={onClose}>
       <div className="ticketHeaderCard">
@@ -4433,6 +4630,7 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, files, get
       )}
 
       <AttachmentSections
+        featureFlags={featureFlags}
         files={files}
         onOpen={onOpenAttachment}
         profiles={profiles}
@@ -4469,7 +4667,7 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, files, get
   );
 }
 
-function PersonDetailOverlay({ avatarUrl, canManage, onClose, onEdit, person }) {
+function PersonDetailOverlay({ avatarUrl, canEdit, onClose, onEdit, person }) {
   const fullName = profileDisplayName(person, "Unnamed user");
   const phone = person.phone || "";
   const email = person.email || "";
@@ -4495,7 +4693,7 @@ function PersonDetailOverlay({ avatarUrl, canManage, onClose, onEdit, person }) 
       </dl>
 
       <div className="detailActionRow contactActions">
-        {canManage && (
+        {canEdit && (
           <button className="outlineButton" type="button" onClick={onEdit}>
             <Edit3 size={17} />
             Edit
@@ -4600,15 +4798,16 @@ function DocumentListRow({ file, onOpen, profiles = [], project }) {
   );
 }
 
-function AttachmentSections({ files, onOpen, profiles = [], uploader = null }) {
+function AttachmentSections({ featureFlags = defaultFeatureFlags, files, onOpen, profiles = [], uploader = null }) {
+  const flags = normalizeFeatureFlags(featureFlags);
   const groups = [
-    { id: "safety", label: "Safety Forms", icon: FileText, items: files.filter((file) => file.file_type === "safety_form") },
+    flags.safetyForm ? { id: "safety", label: "Safety Forms", icon: FileText, items: files.filter((file) => file.file_type === "safety_form") } : null,
     { id: "projectPhotos", label: "Project Photos", icon: Camera, items: files.filter((file) => file.file_kind === "photo" && !file.visit_id) },
-    { id: "before", label: "Before Photos", icon: Camera, items: files.filter((file) => file.file_type === "before_photo" && file.visit_id) },
-    { id: "after", label: "After Photos", icon: Camera, items: files.filter((file) => file.file_type === "completion_photo" && file.visit_id) },
+    flags.beforeAfterPhotos ? { id: "before", label: "Before Photos", icon: Camera, items: files.filter((file) => file.file_type === "before_photo" && file.visit_id) } : null,
+    flags.beforeAfterPhotos ? { id: "after", label: "After Photos", icon: Camera, items: files.filter((file) => file.file_type === "completion_photo" && file.visit_id) } : null,
     { id: "pdf", label: "PDFs", icon: FileText, items: files.filter((file) => file.file_kind === "pdf" && file.file_type !== "safety_form") },
     { id: "excel", label: "Excel", icon: FileSpreadsheet, items: files.filter((file) => file.file_kind === "excel") },
-  ];
+  ].filter(Boolean);
 
   return (
     <div className="attachmentSections">
@@ -4857,7 +5056,7 @@ function PhotoStepModal({ captions = {}, files = [], label, loading, onCaption, 
   );
 }
 
-function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
+function CompleteVisitModal({ form, loading, onChange, onSubmit, requirePhotos = true }) {
   const selectedFiles = Array.isArray(form.files) ? form.files : [];
 
   return (
@@ -4865,29 +5064,33 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
       <FormField label="Completion comments">
         <textarea placeholder="Describe completed work, issues, materials, office notes..." value={form.notes} onChange={(event) => onChange({ ...form, notes: event.target.value })} />
       </FormField>
-      <div className="workflowCallout">
-        <ImagePlus size={22} />
-        <span>Upload at least one after photo before completing the ticket.</span>
-      </div>
-      <label className="fileDropControl">
-        <Upload size={22} />
-        <strong>Select after photos</strong>
-        <span>{selectedFiles.length ? `${selectedFiles.length} photo${selectedFiles.length === 1 ? "" : "s"} selected` : "JPG, PNG, or WebP"}</span>
-        <input accept="image/jpeg,image/png,image/webp" multiple required type="file" onChange={(event) => onChange({ ...form, files: [...event.target.files] })} />
-      </label>
-      <div className="selectedFiles">
-        {selectedFiles.map((file) => {
-          const key = fileInputKey(file);
-          return (
-            <label className="selectedFileWithCaption" key={key}>
-              <span>{file.name}</span>
-              <input placeholder="Photo note..." value={form.captions?.[key] || ""} onChange={(event) => onChange({ ...form, captions: { ...form.captions, [key]: event.target.value } })} />
-            </label>
-          );
-        })}
-      </div>
+      {requirePhotos && (
+        <>
+          <div className="workflowCallout">
+            <ImagePlus size={22} />
+            <span>Upload at least one after photo before completing the ticket.</span>
+          </div>
+          <label className="fileDropControl">
+            <Upload size={22} />
+            <strong>Select after photos</strong>
+            <span>{selectedFiles.length ? `${selectedFiles.length} photo${selectedFiles.length === 1 ? "" : "s"} selected` : "JPG, PNG, or WebP"}</span>
+            <input accept="image/jpeg,image/png,image/webp" multiple required type="file" onChange={(event) => onChange({ ...form, files: [...event.target.files] })} />
+          </label>
+          <div className="selectedFiles">
+            {selectedFiles.map((file) => {
+              const key = fileInputKey(file);
+              return (
+                <label className="selectedFileWithCaption" key={key}>
+                  <span>{file.name}</span>
+                  <input placeholder="Photo note..." value={form.captions?.[key] || ""} onChange={(event) => onChange({ ...form, captions: { ...form.captions, [key]: event.target.value } })} />
+                </label>
+              );
+            })}
+          </div>
+        </>
+      )}
       <div className="formActions wide">
-        <button className="addButton" type="submit" disabled={loading || form.files.length === 0}>
+        <button className="addButton" type="submit" disabled={loading || (requirePhotos && form.files.length === 0)}>
           <CheckCircle2 size={18} />
           Finish Work
         </button>
@@ -5234,13 +5437,14 @@ function EquipmentView({ equipment, onEdit }) {
   );
 }
 
-function DocumentsView({ files, isRefreshing = false, onOpen, profiles, projects }) {
+function DocumentsView({ featureFlags = defaultFeatureFlags, files, isRefreshing = false, onOpen, profiles, projects }) {
+  const flags = normalizeFeatureFlags(featureFlags);
   const sortedFiles = [...files].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   const photoGroups = [
     { id: "projectPhotos", label: "Project Photos", items: sortedFiles.filter((file) => file.file_kind === "photo" && !file.visit_id) },
-    { id: "before", label: "Before Photos", items: sortedFiles.filter((file) => file.file_type === "before_photo" && file.visit_id) },
-    { id: "after", label: "After Photos", items: sortedFiles.filter((file) => file.file_type === "completion_photo" && file.visit_id) },
-  ].filter((group) => group.items.length > 0);
+    flags.beforeAfterPhotos ? { id: "before", label: "Before Photos", items: sortedFiles.filter((file) => file.file_type === "before_photo" && file.visit_id) } : null,
+    flags.beforeAfterPhotos ? { id: "after", label: "After Photos", items: sortedFiles.filter((file) => file.file_type === "completion_photo" && file.visit_id) } : null,
+  ].filter(Boolean).filter((group) => group.items.length > 0);
   const fileGroups = [
     { id: "pdf", label: "PDFs", icon: FileText, items: sortedFiles.filter((file) => file.file_kind === "pdf" && file.file_type !== "safety_form") },
     { id: "excel", label: "Excel", icon: FileSpreadsheet, items: sortedFiles.filter((file) => file.file_kind === "excel") },
@@ -5569,7 +5773,8 @@ function InfoView({ icon: Icon, title, text }) {
   );
 }
 
-function SettingsView({ avatarUrl, form, isConfigured, loading, onChange, onSubmit, profile, session }) {
+function SettingsView({ featureFlags = defaultFeatureFlags, isConfigured, profile }) {
+  const flags = normalizeFeatureFlags(featureFlags);
   return (
     <div className="listView">
       <div className="listRow">
@@ -5579,46 +5784,115 @@ function SettingsView({ avatarUrl, form, isConfigured, loading, onChange, onSubm
           <small>{isConfigured ? "Connected with environment variables" : "Not configured"}</small>
         </span>
       </div>
-      <form className="settingsProfileForm" onSubmit={onSubmit}>
-        <div className="settingsAvatarBlock">
-          <Avatar profile={profile} url={avatarUrl} />
-          <span>
-            <strong>{profile?.full_name || session?.user?.email || "Not signed in"}</strong>
-            <small>{profile ? roleLabel(profile.role) : "No profile yet"}</small>
-          </span>
+      <div className="settingsSummaryPanel">
+        <div>
+          <strong>Workspace</strong>
+          <small>{profile?.company_id ? "Company data sync is active" : "No company connected"}</small>
         </div>
-        <div className="twoColumns">
-          <FormField label="First name">
-            <input required value={form.first_name} onChange={(event) => onChange({ ...form, first_name: event.target.value })} />
-          </FormField>
-          <FormField label="Last name">
-            <input required value={form.last_name} onChange={(event) => onChange({ ...form, last_name: event.target.value })} />
-          </FormField>
+        <div className="settingsFeatureGrid">
+          <span className={flags.safetyForm ? "featurePill on" : "featurePill off"}>Safety Form {flags.safetyForm ? "On" : "Off"}</span>
+          <span className={flags.beforeAfterPhotos ? "featurePill on" : "featurePill off"}>Before / After Photos {flags.beforeAfterPhotos ? "On" : "Off"}</span>
+          <span className={flags.testBots ? "featurePill on" : "featurePill off"}>Test Bots {flags.testBots ? "On" : "Off"}</span>
         </div>
-        <FormField label="Phone">
-          <input autoComplete="tel" required type="tel" value={form.phone} onChange={(event) => onChange({ ...form, phone: event.target.value })} />
-        </FormField>
-        <label className="fileDropControl settingsAvatarUpload">
-          <Upload size={22} />
-          <strong>Choose avatar photo</strong>
-          <span>{form.avatarFile?.name || "JPG, PNG, or WebP"}</span>
-          <input accept="image/jpeg,image/png,image/webp" type="file" onChange={(event) => onChange({ ...form, avatarFile: event.target.files?.[0] ?? null, removeAvatar: false })} />
-        </label>
-        <label className="checkLine switchLine">
-          <input type="checkbox" checked={form.removeAvatar} onChange={(event) => onChange({ ...form, removeAvatar: event.target.checked, avatarFile: null })} />
-          <span className="switchTrack" aria-hidden="true">
-            <span />
-          </span>
-          Remove avatar and use no-name icon
-        </label>
-        <div className="formActions">
-          <button className="addButton" type="submit" disabled={loading}>
-            <Save size={18} />
-            Save profile
-          </button>
-        </div>
-      </form>
+      </div>
     </div>
+  );
+}
+
+function ProfileEditForm({ avatarUrl, form, loading, onChange, onSubmit, profile }) {
+  return (
+    <form className="settingsProfileForm" onSubmit={onSubmit}>
+      <div className="settingsAvatarBlock">
+        <Avatar profile={profile} url={avatarUrl} />
+        <span>
+          <strong>{profileDisplayName(profile, "Not signed in")}</strong>
+          <small>{profile ? roleLabel(profile.role) : "No profile yet"}</small>
+        </span>
+      </div>
+      <div className="twoColumns">
+        <FormField label="First name">
+          <input required value={form.first_name} onChange={(event) => onChange({ ...form, first_name: event.target.value })} />
+        </FormField>
+        <FormField label="Last name">
+          <input required value={form.last_name} onChange={(event) => onChange({ ...form, last_name: event.target.value })} />
+        </FormField>
+      </div>
+      <FormField label="Phone">
+        <input autoComplete="tel" required type="tel" value={form.phone} onChange={(event) => onChange({ ...form, phone: event.target.value })} />
+      </FormField>
+      <label className="fileDropControl settingsAvatarUpload">
+        <Upload size={22} />
+        <strong>Choose avatar photo</strong>
+        <span>{form.avatarFile?.name || "JPG, PNG, or WebP"}</span>
+        <input accept="image/jpeg,image/png,image/webp" type="file" onChange={(event) => onChange({ ...form, avatarFile: event.target.files?.[0] ?? null, removeAvatar: false })} />
+      </label>
+      <label className="checkLine switchLine">
+        <input type="checkbox" checked={form.removeAvatar} onChange={(event) => onChange({ ...form, removeAvatar: event.target.checked, avatarFile: null })} />
+        <span className="switchTrack" aria-hidden="true">
+          <span />
+        </span>
+        Remove avatar and use no-name icon
+      </label>
+      <div className="formActions">
+        <button className="addButton" type="submit" disabled={loading}>
+          <Save size={18} />
+          Save profile
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function DeveloperModeForm({ form, loading, onChange, onSubmit }) {
+  return (
+    <form className="developerModeForm" onSubmit={onSubmit}>
+      <DeveloperSwitch
+        checked={form.safetyForm}
+        description="When off, Arrived skips the digital safety form and Safety Reports are hidden without deleting saved reports."
+        label="Safety Form"
+        onChange={(checked) => onChange({ ...form, safetyForm: checked })}
+      />
+      <DeveloperSwitch
+        checked={form.beforeAfterPhotos}
+        description="When off, Arrived and Complete no longer require before or after photos. Existing photos stay saved."
+        label="Before / After Photos"
+        onChange={(checked) => onChange({ ...form, beforeAfterPhotos: checked })}
+      />
+      <DeveloperSwitch
+        checked={form.testBots}
+        description="Create temporary builder profiles for People and Schedule testing. Turning this off removes only test bots."
+        label="Test Bots"
+        onChange={(checked) => onChange({ ...form, testBots: checked })}
+      />
+      {form.testBots && (
+        <FormField label="How many test bots?">
+          <input inputMode="numeric" min="1" max="100" value={form.botCount} onChange={(event) => onChange({ ...form, botCount: event.target.value.replace(/\D/g, "") })} />
+        </FormField>
+      )}
+      <div className="formActions">
+        <button className="addButton" type="submit" disabled={loading}>
+          <Save size={18} />
+          Save developer mode
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function DeveloperSwitch({ checked, description, label, onChange }) {
+  return (
+    <label className="developerSwitch">
+      <span>
+        <strong>{label}</strong>
+        <small>{description}</small>
+      </span>
+      <span className="switchLine">
+        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+        <span className="switchTrack" aria-hidden="true">
+          <span />
+        </span>
+      </span>
+    </label>
   );
 }
 
