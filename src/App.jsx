@@ -357,6 +357,33 @@ function getEquipmentWorkStatus({ date, equipment, equipmentId, projects = [], v
   return { label: "Available", tone: "available", detail: "No assignment" };
 }
 
+function getOverlappingPersonIds({ personIds = [], targetVisit, visits = [] }) {
+  if (!targetVisit || personIds.length === 0) return new Set();
+  const targetStart = String(targetVisit.start_time).slice(0, 5);
+  const targetEnd = String(targetVisit.end_time).slice(0, 5);
+
+  return new Set(
+    personIds.filter((personId) =>
+      visits.some((visit) => {
+        if (visit.id === targetVisit.id || visit.status === "cancelled") return false;
+        if (visit.visit_date !== targetVisit.visit_date || !visit.people_ids?.includes(personId)) return false;
+        return overlaps(targetStart, targetEnd, String(visit.start_time).slice(0, 5), String(visit.end_time).slice(0, 5));
+      }),
+    ),
+  );
+}
+
+function getCrewGroupDropSummary({ assignment, group, visits = [] }) {
+  const personIds = group?.personIds ?? [];
+  const targetVisit = visits.find((visit) => visit.id === assignment?.visitId);
+  const conflictIds = getOverlappingPersonIds({ personIds, targetVisit, visits });
+  return {
+    availableCount: Math.max(0, personIds.length - conflictIds.size),
+    conflictCount: conflictIds.size,
+    totalCount: group?.count ?? personIds.length,
+  };
+}
+
 function toHour(time) {
   const [hours, minutes] = String(time ?? "08:00").split(":").map(Number);
   return hours + (minutes || 0) / 60;
@@ -698,6 +725,17 @@ function EquipmentAvatar({ item, small = false }) {
       <Icon size={small ? 17 : 21} />
     </div>
   );
+}
+
+function setCompactDragImage(event, { count = 1, label = "", tone = "crew" }) {
+  if (!event.dataTransfer || typeof event.dataTransfer.setDragImage !== "function") return;
+  const ghost = document.createElement("div");
+  ghost.className = `dragGhostPill ${tone}`;
+  ghost.innerHTML = `<span>${count}</span><strong>${label}</strong>`;
+  document.body.appendChild(ghost);
+  const rect = ghost.getBoundingClientRect();
+  event.dataTransfer.setDragImage(ghost, Math.min(46, rect.width / 2), Math.min(18, rect.height / 2));
+  window.requestAnimationFrame(() => ghost.remove());
 }
 
 export default function App() {
@@ -2576,9 +2614,11 @@ export default function App() {
     const visit = (rowsSource.visits ?? []).find((item) => item.id === visitId);
     if (!visit || personIds.length === 0) return;
 
-    const eligiblePeople = rowsSource.people.filter((person) => personIds.includes(person.id) && person.availability_status !== "not_available" && !visit.people_ids?.includes(person.id));
+    const conflictIds = getOverlappingPersonIds({ personIds, targetVisit: visit, visits: rowsSource.visits ?? [] });
+    const eligiblePeople = rowsSource.people.filter((person) => personIds.includes(person.id) && person.availability_status !== "not_available" && !visit.people_ids?.includes(person.id) && !conflictIds.has(person.id));
+    const skippedCount = Math.max(0, personIds.length - eligiblePeople.length);
     if (eligiblePeople.length === 0) {
-      setNotice("No available people in this group.");
+      setNotice(skippedCount > 0 ? "Everyone in this group is unavailable or already scheduled for this time." : "No available people in this group.");
       return;
     }
 
@@ -2599,7 +2639,7 @@ export default function App() {
       if (error) throw error;
       await logVisitActivity(visit, "people_group_assigned", `${currentUserName} assigned ${eligiblePeople.length} people to this ticket.`, { personIds: eligibleIds });
       triggerSoftPulse();
-      setNotice(`${eligiblePeople.length} people assigned to ticket.`);
+      setNotice(skippedCount > 0 ? `${eligiblePeople.length} people assigned. ${skippedCount} skipped.` : `${eligiblePeople.length} people assigned to ticket.`);
       loadVisits();
       loadActivities();
     } catch (error) {
@@ -4861,6 +4901,7 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
 
 function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeople = [], avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projectRows = [], projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onDropAssignment, onOpenPerson, onOpenProject, onRemoveEquipmentFromVisit, onRemovePersonFromVisit, onRemoveVisit, onSelect }) {
   const [dragPreview, setDragPreview] = useState(null);
+  const [peopleGroupDrag, setPeopleGroupDrag] = useState(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(selectedDate);
   const calendarWrapRef = useRef(null);
@@ -4963,7 +5004,7 @@ function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeop
           )}
           {projectRows.length === 0 && <div className="emptyTimeline">No project visits scheduled for this day.</div>}
 
-          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignEquipment={onAssignEquipment} onAssignPerson={onAssignPerson} onAssignPeopleGroup={onAssignPeopleGroup} onDropAssignment={onDropAssignment} onOpenPerson={onOpenPerson} onOpenProject={onOpenProject} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
+          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} peopleGroupDrag={peopleGroupDrag} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignEquipment={onAssignEquipment} onAssignPerson={onAssignPerson} onAssignPeopleGroup={onAssignPeopleGroup} onDropAssignment={onDropAssignment} onOpenPerson={onOpenPerson} onOpenProject={onOpenProject} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
         </div>
       ) : (
         <CalendarTileGrid equipment={equipmentRows} mode={scheduleMode} people={peopleRows} projects={projects} selectedDate={selectedDate} today={today} visits={visits} onSelectDay={openDay} />
@@ -4971,7 +5012,7 @@ function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeop
 
       {scheduleMode === "day" && (
         <div className="availablePools">
-          <AvailablePeoplePool avatarUrls={avatarUrls} people={availablePeople} onOpenPerson={onOpenPerson} onRemovePersonFromVisit={onRemovePersonFromVisit} />
+          <AvailablePeoplePool avatarUrls={avatarUrls} people={availablePeople} onGroupDragEnd={() => setPeopleGroupDrag(null)} onGroupDragStart={setPeopleGroupDrag} onOpenPerson={onOpenPerson} onRemovePersonFromVisit={onRemovePersonFromVisit} />
           <AvailableEquipmentPool equipment={availableEquipment} onRemoveEquipmentFromVisit={onRemoveEquipmentFromVisit} />
         </div>
       )}
@@ -5834,7 +5875,7 @@ function AuthGate({
   );
 }
 
-function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onDropAssignment, onOpenPerson, onOpenProject, onRemoveVisit, onSelect }) {
+function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleGroupDrag, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onDropAssignment, onOpenPerson, onOpenProject, onRemoveVisit, onSelect }) {
   return (
     <div className="resourceGroup">
       <div className="groupLabel">
@@ -5914,7 +5955,7 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
                 project_id: assignment.projectId,
                 visit_date: selectedDate,
               };
-              return <ScheduleBlock assignment={assignment} avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} key={assignment.id || assignment.visitId} onAssignEquipment={onAssignEquipment} onAssignPerson={onAssignPerson} onAssignPeopleGroup={onAssignPeopleGroup} onOpenPerson={onOpenPerson} onRemove={() => onRemoveVisit?.(visit)} onSelect={onSelect} />;
+              return <ScheduleBlock assignment={assignment} avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} key={assignment.id || assignment.visitId} peopleGroupDrag={peopleGroupDrag} visits={visits} onAssignEquipment={onAssignEquipment} onAssignPerson={onAssignPerson} onAssignPeopleGroup={onAssignPeopleGroup} onOpenPerson={onOpenPerson} onRemove={() => onRemoveVisit?.(visit)} onSelect={onSelect} />;
             })}
           </div>
         </div>
@@ -5923,7 +5964,7 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
   );
 }
 
-function AvailablePeoplePool({ avatarUrls = {}, people = [], onOpenPerson, onRemovePersonFromVisit }) {
+function AvailablePeoplePool({ avatarUrls = {}, people = [], onGroupDragEnd, onGroupDragStart, onOpenPerson, onRemovePersonFromVisit }) {
   const [isDropActive, setIsDropActive] = useState(false);
   const acceptsAssignedPerson = (event) => event.dataTransfer.types.includes("application/x-buildcore-assigned-person");
   const sortedPeople = [...people].sort((a, b) => profileDisplayName(a).localeCompare(profileDisplayName(b)));
@@ -5962,9 +6003,13 @@ function AvailablePeoplePool({ avatarUrls = {}, people = [], onOpenPerson, onRem
             className="availableTradeGroup"
             draggable={group.people.length > 0}
             key={group.trade}
+            onDragEnd={() => onGroupDragEnd?.()}
             onDragStart={(event) => {
+              const payload = { count: group.people.length, trade: group.trade, personIds: group.people.map((person) => person.id) };
               event.dataTransfer.effectAllowed = "copy";
-              event.dataTransfer.setData("application/x-buildcore-person-group", JSON.stringify({ trade: group.trade, personIds: group.people.map((person) => person.id) }));
+              event.dataTransfer.setData("application/x-buildcore-person-group", JSON.stringify(payload));
+              onGroupDragStart?.(payload);
+              setCompactDragImage(event, { count: group.people.length, label: group.trade, tone: "crew" });
             }}
           >
             <div className="availableTradeHeader">
@@ -6048,7 +6093,8 @@ function AvailableEquipmentPool({ equipment = [], onRemoveEquipmentFromVisit }) 
   );
 }
 
-function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onOpenPerson, onRemove, onSelect }) {
+function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGroupDrag, visits = [], onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onOpenPerson, onRemove, onSelect }) {
+  const [dropHint, setDropHint] = useState(null);
   const span = scheduleEndHour - scheduleStartHour;
   const left = Math.max(0, ((assignment.start - scheduleStartHour) / span) * 100);
   const width = Math.min(100 - left, ((assignment.end - assignment.start) / span) * 100);
@@ -6068,7 +6114,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssign
 
   return (
     <div
-      className={`scheduleBlock ${assignment.color} ${assignment.status ?? ""} ${isShortBlock ? "shortBlock" : ""} ${isTightBlock ? "tightBlock" : ""}`}
+      className={`scheduleBlock ${assignment.color} ${assignment.status ?? ""} ${dropHint ? "showDropHint" : ""} ${isShortBlock ? "shortBlock" : ""} ${isTightBlock ? "tightBlock" : ""}`}
       draggable={Boolean(assignment.visitId)}
       role="button"
       style={{ left: `${left}%`, width: `${width}%`, ...verticalStyle }}
@@ -6092,7 +6138,34 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssign
           event.dataTransfer.types.includes("application/x-buildcore-assigned-equipment")
         ) {
           event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+          const isGroupDrag = event.dataTransfer.types.includes("application/x-buildcore-person-group");
+          const groupRaw = event.dataTransfer.getData("application/x-buildcore-person-group");
+          if (isGroupDrag) {
+            let group = peopleGroupDrag;
+            try {
+              if (groupRaw) group = JSON.parse(groupRaw);
+            } catch {
+              group = peopleGroupDrag;
+            }
+            const summary = getCrewGroupDropSummary({ assignment, group, visits });
+            const totalCount = summary.totalCount || group?.personIds?.length || 0;
+            const visibleCount = summary.availableCount || (summary.conflictCount ? 0 : totalCount);
+            setDropHint({
+              label: `+${visibleCount} crew`,
+              detail: summary.conflictCount > 0 ? `${summary.conflictCount} conflict${summary.conflictCount === 1 ? "" : "s"} skipped` : `${group?.trade || "Crew group"} ready`,
+              tone: summary.conflictCount > 0 ? "warning" : "ready",
+            });
+          } else if (event.dataTransfer.types.includes("application/x-buildcore-equipment") || event.dataTransfer.types.includes("application/x-buildcore-assigned-equipment")) {
+            event.dataTransfer.dropEffect = "copy";
+            setDropHint({ label: "+ equipment", detail: "Assign to ticket", tone: "ready" });
+          } else {
+            setDropHint({ label: "+ person", detail: "Assign to ticket", tone: "ready" });
+          }
         }
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setDropHint(null);
       }}
       onDrop={(event) => {
         const personId = event.dataTransfer.getData("application/x-buildcore-person");
@@ -6100,9 +6173,11 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssign
         const assignedPersonRaw = event.dataTransfer.getData("application/x-buildcore-assigned-person");
         const equipmentId = event.dataTransfer.getData("application/x-buildcore-equipment");
         const assignedEquipmentRaw = event.dataTransfer.getData("application/x-buildcore-assigned-equipment");
-        if (!personId && !personGroupRaw && !assignedPersonRaw && !equipmentId && !assignedEquipmentRaw) return;
+        const hasPeopleGroupDrag = Boolean(peopleGroupDrag && event.dataTransfer.types.includes("application/x-buildcore-person-group"));
+        if (!personId && !personGroupRaw && !hasPeopleGroupDrag && !assignedPersonRaw && !equipmentId && !assignedEquipmentRaw) return;
         event.preventDefault();
         event.stopPropagation();
+        setDropHint(null);
         if (personId) {
           onAssignPerson?.({ personId, visitId: assignment.visitId });
           return;
@@ -6110,6 +6185,10 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssign
         if (personGroupRaw) {
           const group = JSON.parse(personGroupRaw);
           onAssignPeopleGroup?.({ personIds: group.personIds ?? [], visitId: assignment.visitId });
+          return;
+        }
+        if (peopleGroupDrag && event.dataTransfer.types.includes("application/x-buildcore-person-group")) {
+          onAssignPeopleGroup?.({ personIds: peopleGroupDrag.personIds ?? [], visitId: assignment.visitId });
           return;
         }
         if (equipmentId) {
@@ -6136,6 +6215,12 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssign
         openAssignment();
       }}
     >
+      {dropHint && (
+        <span className={`scheduleDropHint ${dropHint.tone ?? ""}`}>
+          <strong>{dropHint.label}</strong>
+          <small>{dropHint.detail}</small>
+        </span>
+      )}
       <span className="scheduleBlockTop">
         <strong>{assignment.title}</strong>
         {assignment.status && <em className="scheduleBlockStatus">{normalizeVisitStatus(assignment.status)}</em>}

@@ -2065,6 +2065,85 @@ h1 {
     0 16px 32px rgba(15, 23, 42, 0.1);
 }
 
+.scheduleBlock.showDropHint {
+  outline: 2px solid rgba(37, 99, 235, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 0 0 6px rgba(37, 99, 235, 0.08),
+    0 22px 46px rgba(15, 23, 42, 0.14);
+  transform: translateY(-2px) scale(1.006);
+}
+
+.scheduleDropHint {
+  pointer-events: none;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  display: grid;
+  gap: 2px;
+  min-width: 92px;
+  max-width: min(170px, calc(100% - 16px));
+  padding: 8px 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.88)),
+    rgba(255, 255, 255, 0.9);
+  color: #0f172a;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 14px 28px rgba(15, 23, 42, 0.14);
+  animation: dropHintIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.scheduleDropHint strong,
+.scheduleDropHint small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scheduleDropHint strong {
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.scheduleDropHint small {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.scheduleDropHint.warning {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 247, 237, 0.9)),
+    rgba(255, 255, 255, 0.9);
+}
+
+.scheduleDropHint.warning strong {
+  color: #b45309;
+}
+
+.scheduleDropHint.warning small {
+  color: #9a3412;
+}
+
+@keyframes dropHintIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .scheduleBlock:active {
   cursor: grabbing;
   opacity: 0.88;
@@ -2315,10 +2394,67 @@ h1 {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
   cursor: grab;
   scroll-snap-align: start;
+  transition:
+    border-color 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .availableTradeGroup:active {
   cursor: grabbing;
+}
+
+.availableTradeGroup:hover,
+.availableTradeGroup:focus-within {
+  border-color: rgba(37, 99, 235, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 16px 32px rgba(15, 23, 42, 0.09);
+  transform: translateY(-2px);
+}
+
+.dragGhostPill {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  z-index: 10000;
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  max-width: 250px;
+  padding: 10px 13px 10px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.84);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(239, 246, 255, 0.86)),
+    rgba(255, 255, 255, 0.88);
+  color: #0f172a;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    0 24px 54px rgba(15, 23, 42, 0.24);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.dragGhostPill span {
+  display: inline-grid;
+  min-width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.dragGhostPill strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .availableTradeHeader {
