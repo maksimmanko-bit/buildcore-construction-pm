@@ -41,6 +41,7 @@ create table if not exists public.profiles (
   full_name text not null default '',
   email text,
   avatar_path text,
+  avatar_emoji text,
   role public.app_role not null default 'builder',
   trade text,
   phone text,
@@ -48,6 +49,7 @@ create table if not exists public.profiles (
   is_active boolean not null default true,
   is_bot boolean not null default false,
   created_at timestamptz not null default now(),
+  constraint profiles_avatar_emoji_length_check check (avatar_emoji is null or char_length(avatar_emoji) <= 16),
   constraint profiles_availability_status_check check (availability_status in ('available', 'not_available'))
 );
 

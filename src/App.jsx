@@ -67,6 +67,7 @@ const equipmentAvatarOptions = [
   { key: "concrete", label: "Concrete", Icon: Shovel },
   { key: "tools", label: "Tools", Icon: Wrench },
 ];
+const profileEmojiOptions = ["👷", "🛠️", "🏗️", "🚧", "📋", "🧰", "🚚", "⚡", "🔩", "🦺", "🏠", "⭐"];
 
 const demo = {
   companyId: "00000000-0000-0000-0000-000000000001",
@@ -719,9 +720,10 @@ function DateField({ label, onChange, value }) {
 }
 
 function Avatar({ profile, small = false, url }) {
+  const emoji = !url ? String(profile?.avatar_emoji || "").trim() : "";
   return (
-    <div className={small ? "avatar face small" : "avatar face"}>
-      {url ? <img src={url} alt="" /> : makeInitials(profile?.full_name || profile?.email || "No Name", "NN")}
+    <div className={`${small ? "avatar face small" : "avatar face"}${emoji ? " emoji" : ""}`}>
+      {url ? <img src={url} alt="" /> : emoji ? <span className="avatarEmoji">{emoji}</span> : makeInitials(profile?.full_name || profile?.email || "No Name", "NN")}
     </div>
   );
 }
@@ -785,6 +787,7 @@ export default function App() {
   const [authLastName, setAuthLastName] = useState("");
   const [authPhone, setAuthPhone] = useState("");
   const [authAvatarFile, setAuthAvatarFile] = useState(null);
+  const [authAvatarEmoji, setAuthAvatarEmoji] = useState("");
   const [authReady, setAuthReady] = useState(false);
   const [selectedAttachment, setSelectedAttachment] = useState(null);
   const [viewerItems, setViewerItems] = useState([]);
@@ -807,7 +810,7 @@ export default function App() {
   const [photoStep, setPhotoStep] = useState({ kind: "", visitId: "", files: [], captions: {} });
   const [completionForm, setCompletionForm] = useState({ notes: "", files: [], captions: {} });
   const [uploadProgress, setUploadProgress] = useState(null);
-  const [profileForm, setProfileForm] = useState({ first_name: "", last_name: "", phone: "", avatarFile: null, removeAvatar: false });
+  const [profileForm, setProfileForm] = useState({ first_name: "", last_name: "", phone: "", avatarFile: null, avatarEmoji: "", removeAvatar: false });
   const [personForm, setPersonForm] = useState({ first_name: "", last_name: "", phone: "", role: "builder", trade: "", availability_status: "available" });
   const [featureFlags, setFeatureFlags] = useState(defaultFeatureFlags);
   const [developerForm, setDeveloperForm] = useState({ ...defaultFeatureFlags, botCount: "10" });
@@ -979,6 +982,7 @@ export default function App() {
       last_name: profile.last_name || rest.join(" "),
       phone: profile.phone || "",
       avatarFile: null,
+      avatarEmoji: profile.avatar_emoji || "",
       removeAvatar: false,
     });
   }, [profile]);
@@ -1485,13 +1489,14 @@ export default function App() {
     const lastName = pending.lastName || "";
     const phone = pending.phone || nextProfile.phone || "";
     let avatarPath = nextProfile.avatar_path || null;
+    const avatarEmoji = pending.avatarEmoji || "";
 
     if (pending.avatarDataUrl) {
       const avatarFile = await dataUrlToFile(pending.avatarDataUrl, pending.avatarName || "avatar.jpg", pending.avatarType || "image/jpeg");
       avatarPath = await uploadProfileAvatar({ companyId: nextProfile.company_id, profileId: nextProfile.id, file: avatarFile });
     }
 
-    if (firstName || lastName || phone || avatarPath) {
+    if (firstName || lastName || phone || avatarPath || avatarEmoji) {
       await supabase
         .from("profiles")
         .update({
@@ -1501,6 +1506,7 @@ export default function App() {
           email: session.user.email,
           phone,
           avatar_path: avatarPath,
+          avatar_emoji: avatarPath ? null : avatarEmoji || null,
         })
         .eq("id", nextProfile.id);
     }
@@ -1530,6 +1536,7 @@ export default function App() {
         avatarDataUrl: authAvatarFile ? await fileToDataUrl(authAvatarFile) : "",
         avatarName: authAvatarFile?.name || "",
         avatarType: authAvatarFile?.type || "",
+        avatarEmoji: authAvatarFile ? "" : authAvatarEmoji,
       };
       window.localStorage.setItem(`buildcore_pending_profile_${normalizedEmail}`, JSON.stringify(pendingProfile));
     }
@@ -1541,7 +1548,7 @@ export default function App() {
             password: authPassword,
             options: {
               emailRedirectTo: getAuthRedirectUrl(),
-              data: { first_name: firstName, last_name: lastName, full_name: `${firstName} ${lastName}`.trim(), phone },
+              data: { first_name: firstName, last_name: lastName, full_name: `${firstName} ${lastName}`.trim(), phone, avatar_emoji: authAvatarFile ? "" : authAvatarEmoji },
             },
           })
         : supabase.auth.signInWithPassword({ email: normalizedEmail, password: authPassword });
@@ -2035,11 +2042,14 @@ export default function App() {
     setLoading(true);
     setNotice("Saving profile...");
     try {
-      let avatarPath = profile.avatar_path || null;
+      let avatarPath = profileForm.avatarEmoji ? null : profile.avatar_path || null;
+      let avatarEmoji = profileForm.avatarEmoji || "";
       if (profileForm.removeAvatar) avatarPath = null;
       if (profileForm.avatarFile) {
         avatarPath = await uploadProfileAvatar({ companyId: profile.company_id, profileId: profile.id, file: profileForm.avatarFile });
+        avatarEmoji = "";
       }
+      if (profileForm.removeAvatar) avatarEmoji = "";
 
       const { error } = await supabase
         .from("profiles")
@@ -2049,6 +2059,7 @@ export default function App() {
           full_name: `${firstName} ${lastName}`.trim(),
           phone,
           avatar_path: avatarPath,
+          avatar_emoji: avatarPath ? null : avatarEmoji || null,
         })
         .eq("id", profile.id);
 
@@ -2211,6 +2222,7 @@ export default function App() {
       last_name: profile.last_name || rest.join(" "),
       phone: profile.phone || "",
       avatarFile: null,
+      avatarEmoji: profile.avatar_emoji || "",
       removeAvatar: false,
     });
     setIsAccountMenuOpen(false);
@@ -3506,9 +3518,17 @@ export default function App() {
         authMode={authMode}
         authPassword={authPassword}
         authPhone={authPhone}
+        authAvatarEmoji={authAvatarEmoji}
         loading={loading}
         notice={notice}
-        onAvatarChange={setAuthAvatarFile}
+        onAvatarChange={(file) => {
+          setAuthAvatarFile(file);
+          if (file) setAuthAvatarEmoji("");
+        }}
+        onAvatarEmojiChange={(emoji) => {
+          setAuthAvatarEmoji(emoji);
+          if (emoji) setAuthAvatarFile(null);
+        }}
         onEmailChange={setAuthEmail}
         onFirstNameChange={setAuthFirstName}
         onLastNameChange={setAuthLastName}
@@ -5808,13 +5828,15 @@ function SettingsView({ featureFlags = defaultFeatureFlags, isConfigured, profil
 }
 
 function ProfileEditForm({ avatarUrl, form, loading, onChange, onSubmit, profile }) {
+  const previewProfile = { ...profile, avatar_emoji: form.removeAvatar ? "" : form.avatarEmoji };
+  const previewUrl = form.removeAvatar || form.avatarEmoji ? "" : avatarUrl;
   return (
     <form className="settingsProfileForm" onSubmit={onSubmit}>
       <div className="settingsAvatarBlock">
-        <Avatar profile={profile} url={avatarUrl} />
+        <Avatar profile={previewProfile} url={previewUrl} />
         <span>
           <strong>{profileDisplayName(profile, "Not signed in")}</strong>
-          <small>{profile ? roleLabel(profile.role) : "No profile yet"}</small>
+          <small>{form.avatarFile?.name || (form.avatarEmoji ? "Emoji avatar selected" : profile ? roleLabel(profile.role) : "No profile yet")}</small>
         </span>
       </div>
       <div className="twoColumns">
@@ -5832,10 +5854,15 @@ function ProfileEditForm({ avatarUrl, form, loading, onChange, onSubmit, profile
         <Upload size={22} />
         <strong>Choose avatar photo</strong>
         <span>{form.avatarFile?.name || "JPG, PNG, or WebP"}</span>
-        <input accept="image/jpeg,image/png,image/webp" type="file" onChange={(event) => onChange({ ...form, avatarFile: event.target.files?.[0] ?? null, removeAvatar: false })} />
+        <input accept="image/jpeg,image/png,image/webp" type="file" onChange={(event) => onChange({ ...form, avatarFile: event.target.files?.[0] ?? null, avatarEmoji: "", removeAvatar: false })} />
       </label>
+      <EmojiAvatarPicker
+        label="Or choose emoji avatar"
+        selected={form.removeAvatar ? "" : form.avatarEmoji}
+        onSelect={(emoji) => onChange({ ...form, avatarEmoji: emoji, avatarFile: null, removeAvatar: false })}
+      />
       <label className="checkLine switchLine">
-        <input type="checkbox" checked={form.removeAvatar} onChange={(event) => onChange({ ...form, removeAvatar: event.target.checked, avatarFile: null })} />
+        <input type="checkbox" checked={form.removeAvatar} onChange={(event) => onChange({ ...form, removeAvatar: event.target.checked, avatarFile: null, avatarEmoji: event.target.checked ? "" : form.avatarEmoji })} />
         <span className="switchTrack" aria-hidden="true">
           <span />
         </span>
@@ -5848,6 +5875,31 @@ function ProfileEditForm({ avatarUrl, form, loading, onChange, onSubmit, profile
         </button>
       </div>
     </form>
+  );
+}
+
+function EmojiAvatarPicker({ label = "Emoji avatar", onSelect, selected }) {
+  return (
+    <div className="emojiAvatarPicker">
+      <div>
+        <strong>{label}</strong>
+        <small>Use this when you do not want to upload a photo.</small>
+      </div>
+      <div className="emojiAvatarGrid" role="listbox" aria-label={label}>
+        {profileEmojiOptions.map((emoji) => (
+          <button
+            aria-label={`Use ${emoji} avatar`}
+            aria-selected={selected === emoji}
+            className={selected === emoji ? "emojiAvatarOption active" : "emojiAvatarOption"}
+            key={emoji}
+            type="button"
+            onClick={() => onSelect?.(selected === emoji ? "" : emoji)}
+          >
+            {emoji}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -6035,6 +6087,7 @@ function PendingAccessScreen({ notice, onSignOut, profile }) {
 
 function AuthGate({
   authEmail = "",
+  authAvatarEmoji = "",
   authFirstName = "",
   authLastName = "",
   authMode = "signin",
@@ -6043,6 +6096,7 @@ function AuthGate({
   loading = false,
   notice = "",
   onAvatarChange,
+  onAvatarEmojiChange,
   onEmailChange,
   onFirstNameChange,
   onLastNameChange,
@@ -6122,6 +6176,9 @@ function AuthGate({
                   <FormField label="Avatar photo (optional)">
                     <input accept="image/jpeg,image/png,image/webp" type="file" onChange={(event) => onAvatarChange?.(event.target.files?.[0] ?? null)} />
                   </FormField>
+                  <div className="authEmojiField">
+                    <EmojiAvatarPicker label="Emoji avatar (optional)" selected={authAvatarEmoji} onSelect={onAvatarEmojiChange} />
+                  </div>
                 </div>
               )}
               <FormField label="Email">
