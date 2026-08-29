@@ -226,6 +226,35 @@ const emptyVisitForm = {
   equipment_ids: [],
 };
 
+function serializeProjectEditorForm(form) {
+  return JSON.stringify({
+    address: form.address ?? "",
+    contact_email: form.contact_email ?? "",
+    contact_name: form.contact_name ?? "",
+    contact_phone: form.contact_phone ?? "",
+    description: form.description ?? "",
+    job_number: form.job_number ?? "",
+    manager_id: form.manager_id ?? "",
+    name: form.name ?? "",
+    status: form.status ?? "planning",
+  });
+}
+
+function serializeVisitEditorForm(form) {
+  return JSON.stringify({
+    duration_days: String(form.duration_days ?? "1"),
+    end_time: String(form.end_time ?? "17:00").slice(0, 5),
+    equipment_ids: [...(form.equipment_ids ?? [])].sort(),
+    is_first_visit: Boolean(form.is_first_visit),
+    people_ids: [...(form.people_ids ?? [])].sort(),
+    project_id: form.project_id ?? "",
+    start_time: String(form.start_time ?? "07:00").slice(0, 5),
+    visit_date: form.visit_date ?? "",
+    work_scope: form.work_scope ?? "",
+    work_scopes: [...(form.work_scopes ?? [])],
+  });
+}
+
 function escapeSvgText(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -652,6 +681,7 @@ export default function App() {
   const searchInputRef = useRef(null);
   const activeEditLockRef = useRef(null);
   const confirmationResolverRef = useRef(null);
+  const editorInitialSnapshotRef = useRef({ project: "", visit: "" });
   const [activeNav, setActiveNav] = useState("overview");
   const [scheduleMode, setScheduleMode] = useState("day");
   const [session, setSession] = useState(null);
@@ -1207,12 +1237,31 @@ export default function App() {
   }
 
   async function closeEditorModal() {
+    const editorKind = modalType === "project" || modalType === "visit" ? modalType : "";
+    const hasUnsavedEditorChanges =
+      editorKind === "project"
+        ? editorInitialSnapshotRef.current.project && editorInitialSnapshotRef.current.project !== serializeProjectEditorForm(projectForm)
+        : editorKind === "visit" && editorInitialSnapshotRef.current.visit && editorInitialSnapshotRef.current.visit !== serializeVisitEditorForm(visitForm);
+
+    if (
+      hasUnsavedEditorChanges &&
+      !(await confirmAction({
+        title: "Close without saving?",
+        message: editorKind === "project" ? "Project changes were not saved." : "Ticket changes were not saved.",
+        confirmLabel: "Close",
+        danger: true,
+      }))
+    ) {
+      return;
+    }
+
     const lock = activeEditLockRef.current;
     setModalType(null);
     setEditingProjectId(null);
     setEditingVisitId(null);
     setActiveEditLock(null);
     activeEditLockRef.current = null;
+    editorInitialSnapshotRef.current = { project: "", visit: "" };
     await releaseEditLock(lock);
   }
 
@@ -1460,6 +1509,7 @@ export default function App() {
     setModalType(null);
     setActiveEditLock(null);
     activeEditLockRef.current = null;
+    editorInitialSnapshotRef.current.project = "";
     await releaseEditLock(lockToRelease);
     commitWorkspaceData((current) => {
       const projects = current.projects ?? [];
@@ -1479,7 +1529,7 @@ export default function App() {
     if (!(await acquireEditLock({ mode: "edit", resourceId: project.id, resourceType: "project" }))) return;
 
     setEditingProjectId(project.id);
-    setProjectForm({
+    const nextProjectForm = {
       job_number: project.job_number ?? "",
       name: project.name ?? "",
       address: project.address ?? "",
@@ -1489,7 +1539,9 @@ export default function App() {
       contact_phone: project.contact_phone ?? "",
       description: project.description ?? "",
       status: project.status && projectStatusMap[project.status] ? project.status : "planning",
-    });
+    };
+    setProjectForm(nextProjectForm);
+    editorInitialSnapshotRef.current.project = serializeProjectEditorForm(nextProjectForm);
     setModalType("project");
   }
 
@@ -1663,6 +1715,7 @@ export default function App() {
       setModalType(null);
       setActiveEditLock(null);
       activeEditLockRef.current = null;
+      editorInitialSnapshotRef.current.visit = "";
       await releaseEditLock(lockToRelease);
       commitWorkspaceData((current) => {
         const savedIds = new Set(savedVisits.map((visit) => visit.id));
@@ -2549,18 +2602,22 @@ export default function App() {
     if (activeNav === "projects") {
       if (!(await acquireEditLock({ mode: "create", resourceType: "project" }))) return;
       setEditingProjectId(null);
-      setProjectForm({ ...emptyProjectForm, manager_id: profile.id });
+      const nextProjectForm = { ...emptyProjectForm, manager_id: profile.id };
+      setProjectForm(nextProjectForm);
+      editorInitialSnapshotRef.current.project = serializeProjectEditorForm(nextProjectForm);
       setModalType("project");
     } else if (activeNav === "equipment") setModalType("equipment");
     else if (activeNav === "people") setModalType("people");
     else {
       if (!(await acquireEditLock({ mode: "create", resourceType: "visit" }))) return;
       setEditingVisitId(null);
-      setVisitForm({
+      const nextVisitForm = {
         ...emptyVisitForm,
         visit_date: selectedDate,
         project_id: selectedProject?.id ?? rowsSource.projects[0]?.id ?? "",
-      });
+      };
+      setVisitForm(nextVisitForm);
+      editorInitialSnapshotRef.current.visit = serializeVisitEditorForm(nextVisitForm);
       setModalType("visit");
     }
   }
@@ -2573,11 +2630,13 @@ export default function App() {
     if (!(await acquireEditLock({ mode: "create", resourceType: "visit" }))) return;
 
     setEditingVisitId(null);
-    setVisitForm({
+    const nextVisitForm = {
       ...emptyVisitForm,
       visit_date: selectedDate,
       project_id: projectId ?? "",
-    });
+    };
+    setVisitForm(nextVisitForm);
+    editorInitialSnapshotRef.current.visit = serializeVisitEditorForm(nextVisitForm);
     setModalType("visit");
   }
 
@@ -2605,7 +2664,7 @@ export default function App() {
     if (!(await acquireEditLock({ mode: "edit", resourceId: visit.id, resourceType: "visit" }))) return;
 
     setEditingVisitId(visit.id);
-    setVisitForm({
+    const nextVisitForm = {
       project_id: visit.project_id ?? selectedProject?.id ?? "",
       visit_date: visit.visit_date ?? selectedDate,
       duration_days: "1",
@@ -2616,7 +2675,9 @@ export default function App() {
       is_first_visit: Boolean(visit.is_first_visit),
       people_ids: visit.people_ids ?? [],
       equipment_ids: visit.equipment_ids ?? [],
-    });
+    };
+    setVisitForm(nextVisitForm);
+    editorInitialSnapshotRef.current.visit = serializeVisitEditorForm(nextVisitForm);
     setSelectedVisitId(visit.id);
     setModalType("visit");
   }
@@ -3813,9 +3874,20 @@ function ConfirmationSheet({ confirmation, onResolve }) {
 }
 
 function DetailOverlayShell({ children, onClose, title }) {
+  const backdropPointerDownRef = useRef(false);
+
+  function handleBackdropPointerDown(event) {
+    backdropPointerDownRef.current = event.target === event.currentTarget;
+  }
+
+  function handleBackdropPointerUp(event) {
+    if (backdropPointerDownRef.current && event.target === event.currentTarget) onClose();
+    backdropPointerDownRef.current = false;
+  }
+
   return (
     <div className="detailOverlay">
-      <div className="searchBackdrop" onClick={onClose} />
+      <div className="searchBackdrop" onPointerDown={handleBackdropPointerDown} onPointerUp={handleBackdropPointerUp} />
       <section className="detailPanel">
         <div className="detailHeader">
           <h2>{title}</h2>
@@ -5203,9 +5275,20 @@ function PickerList({ title, items, selected, labelKey, onToggle }) {
 }
 
 function AppModal({ children, onClose, title, wide = false }) {
+  const backdropPointerDownRef = useRef(false);
+
+  function handleBackdropPointerDown(event) {
+    backdropPointerDownRef.current = event.target === event.currentTarget;
+  }
+
+  function handleBackdropPointerUp(event) {
+    if (backdropPointerDownRef.current && event.target === event.currentTarget) onClose();
+    backdropPointerDownRef.current = false;
+  }
+
   return (
-    <div className="modalBackdrop" onClick={onClose}>
-      <div className={wide ? "modal wideModal" : "modal"} onClick={(event) => event.stopPropagation()}>
+    <div className="modalBackdrop" onPointerDown={handleBackdropPointerDown} onPointerUp={handleBackdropPointerUp}>
+      <div className={wide ? "modal wideModal" : "modal"}>
         <div className="modalHeader">
           <h2>{title}</h2>
           <button className="iconButton soft" type="button" onClick={onClose} title="Close">
