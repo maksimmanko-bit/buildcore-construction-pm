@@ -736,10 +736,6 @@ h1 {
   line-height: 1.55;
 }
 
-.mobileTicketActionBar {
-  display: none;
-}
-
 .overviewScopeGrid,
 .overviewAssignmentGrid {
   display: grid;
@@ -849,6 +845,10 @@ h1 {
 }
 
 .contactFactLink {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   color: var(--blue);
   font-weight: 900;
   text-decoration: none;
@@ -2952,6 +2952,7 @@ h1 {
   grid-template-columns: 24px minmax(100px, 1fr) minmax(140px, 1.2fr);
   align-items: center;
   gap: 13px;
+  min-width: 0;
 }
 
 .projectFact svg {
@@ -2959,11 +2960,16 @@ h1 {
 }
 
 .projectFact dt {
+  min-width: 0;
   color: #475569;
   font-size: 14px;
 }
 
 .projectFact dd {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   justify-self: start;
   color: #111827;
   font-size: 14px;
@@ -5393,6 +5399,12 @@ textarea:focus-visible {
   border-color: rgba(207, 46, 46, 0.26);
 }
 
+.viewerControls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
+}
+
 .viewerControls span {
   min-width: 54px;
   text-align: center;
@@ -5402,6 +5414,7 @@ textarea:focus-visible {
 }
 
 .photoStage {
+  position: relative;
   display: grid;
   place-items: center;
   height: min(60vh, 620px);
@@ -5412,6 +5425,50 @@ textarea:focus-visible {
     radial-gradient(circle at 50% 0, rgba(255, 255, 255, 0.08), transparent 32%),
     #090e18;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.photoStageNav {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #111827;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 18px 40px rgba(15, 23, 42, 0.22);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: blur(18px) saturate(1.12);
+  transform: translateY(-50%);
+  transition:
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    background 0.22s ease,
+    box-shadow 0.22s ease;
+}
+
+.photoStageNav.previous {
+  left: 18px;
+}
+
+.photoStageNav.next {
+  right: 18px;
+}
+
+.photoStageNav:hover {
+  background: rgba(255, 255, 255, 0.94);
+  transform: translateY(-50%) scale(1.04);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    0 22px 50px rgba(15, 23, 42, 0.28);
+}
+
+.photoStageNav:active {
+  transform: translateY(-50%) scale(0.97);
 }
 
 .photoStage img {
@@ -5864,31 +5921,6 @@ textarea:focus-visible {
     bottom: auto;
   }
 
-  .mobileTicketActionBar {
-    position: sticky;
-    bottom: 0;
-    z-index: 5;
-    display: grid;
-    grid-template-columns: 1fr 1.2fr;
-    gap: 10px;
-    margin: 8px -2px 0;
-    padding: 12px 0 max(14px, env(safe-area-inset-bottom));
-    background:
-      linear-gradient(180deg, rgba(248, 250, 252, 0), rgba(248, 250, 252, 0.96) 26%),
-      rgba(248, 250, 252, 0.86);
-    -webkit-backdrop-filter: blur(18px) saturate(1.12);
-    backdrop-filter: blur(18px) saturate(1.12);
-  }
-
-  .detailPanel:has(.mobileTicketActionBar) {
-    padding-bottom: max(118px, calc(env(safe-area-inset-bottom) + 98px));
-  }
-
-  .mobileTicketActionBar .outlineButton,
-  .mobileTicketActionBar .addButton {
-    justify-content: center;
-    min-height: 50px;
-  }
 }
 
 @media (max-width: 760px) {

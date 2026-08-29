@@ -503,6 +503,12 @@ function collectBusinessDates(startDate, count) {
   return dates;
 }
 
+function collectVisitDates(startDate, count) {
+  const target = Math.max(1, Number(count) || 1);
+  if (target === 1) return [startDate];
+  return collectBusinessDates(startDate, target);
+}
+
 function parseWorkDayCount(value) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -1268,7 +1274,7 @@ export default function App() {
     ...equipment,
     pickerStatus: getEquipmentWorkStatus({ date: visitForm.visit_date, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
   }));
-  const visitFormDates = editingVisitId ? [visitForm.visit_date] : collectBusinessDates(visitForm.visit_date, Math.max(1, parseWorkDayCount(visitForm.duration_days)));
+  const visitFormDates = editingVisitId ? [visitForm.visit_date] : collectVisitDates(visitForm.visit_date, Math.max(1, parseWorkDayCount(visitForm.duration_days)));
   const visitWorkScopes = normalizeWorkScopes(visitForm.work_scopes, visitFormDates.length, visitForm.work_scope);
   const safetyFormHasDraft =
     safetyForm.hazards.length > 0 ||
@@ -1737,7 +1743,7 @@ export default function App() {
     };
 
     const createdVisitIds = [];
-    const generatedDates = editingVisitId ? [visitForm.visit_date] : collectBusinessDates(visitForm.visit_date, requestedWorkDays);
+    const generatedDates = editingVisitId ? [visitForm.visit_date] : collectVisitDates(visitForm.visit_date, requestedWorkDays);
     const workScopes = normalizeWorkScopes(visitForm.work_scopes, generatedDates.length, visitForm.work_scope).map((scope) => scope.trim());
 
     if (workScopes.some((scope) => !scope)) {
@@ -1842,7 +1848,11 @@ export default function App() {
       setSelectedProjectId(firstVisit.project_id);
       setSelectedVisitId(firstVisit.id);
       triggerSoftPulse();
-      setNotice(editingVisitId ? "Ticket changes saved." : `${generatedDates.length} ticket${generatedDates.length === 1 ? "" : "s"} saved. Weekends skipped.`);
+      setNotice(
+        editingVisitId
+          ? "Ticket changes saved."
+          : `${generatedDates.length} ticket${generatedDates.length === 1 ? "" : "s"} saved.${requestedWorkDays > 1 ? " Weekends skipped." : ""}`,
+      );
       loadVisits();
     } catch (error) {
       if (!editingVisitId && createdVisitIds.length > 0) await supabase.from("visits").delete().in("id", createdVisitIds);
@@ -3405,7 +3415,7 @@ export default function App() {
   function updateVisitStartDate(value) {
     setVisitForm((current) => {
       const nextDuration = Math.max(1, parseWorkDayCount(current.duration_days));
-      const nextDates = editingVisitId ? [value] : collectBusinessDates(value, nextDuration);
+      const nextDates = editingVisitId ? [value] : collectVisitDates(value, nextDuration);
       return {
         ...current,
         visit_date: value,
@@ -3418,7 +3428,7 @@ export default function App() {
     const rawValue = String(value ?? "").replace(/\D/g, "");
     const durationDays = Math.min(60, parseWorkDayCount(rawValue));
     setVisitForm((current) => {
-      const nextDates = collectBusinessDates(current.visit_date, Math.max(1, durationDays));
+      const nextDates = collectVisitDates(current.visit_date, Math.max(1, durationDays));
       return {
         ...current,
         duration_days: rawValue,
@@ -3430,7 +3440,7 @@ export default function App() {
   function updateVisitWorkScope(index, value) {
     setVisitForm((current) => {
       const durationDays = Math.max(1, parseWorkDayCount(current.duration_days));
-      const dates = editingVisitId ? [current.visit_date] : collectBusinessDates(current.visit_date, durationDays);
+      const dates = editingVisitId ? [current.visit_date] : collectVisitDates(current.visit_date, durationDays);
       const nextScopes = normalizeWorkScopes(current.work_scopes, dates.length, current.work_scope);
       nextScopes[index] = value;
       return {
@@ -4645,24 +4655,6 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, featureFla
         }}
       />
 
-      <div className="mobileTicketActionBar">
-        <button className="outlineButton" type="button" onClick={onEdit}>
-          <Edit3 size={17} />
-          Edit
-        </button>
-        {visit.status === "planned" && (
-          <button className="addButton" type="button" onClick={onArrive}>
-            <ClipboardCheck size={17} />
-            Arrived
-          </button>
-        )}
-        {visit.status === "on_site" && (
-          <button className="addButton" type="button" onClick={onComplete}>
-            <CheckCircle2 size={17} />
-            Complete
-          </button>
-        )}
-      </div>
     </DetailOverlayShell>
   );
 }
@@ -6571,6 +6563,10 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
 function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading, onAnnotate, onCancelAnnotate, onDelete, onDownload, onSaveAnnotation, onSelect, onZoom, profiles = [], zoom }) {
   const uploader = profiles.find((person) => person.id === attachment.uploaded_by);
   const history = Array.isArray(attachment.annotation_history) ? attachment.annotation_history : [];
+  const currentIndex = Math.max(0, items.findIndex((item) => item.id === attachment.id));
+  const hasMultiplePhotos = items.length > 1;
+  const previousPhoto = hasMultiplePhotos ? items[(currentIndex - 1 + items.length) % items.length] : null;
+  const nextPhoto = hasMultiplePhotos ? items[(currentIndex + 1) % items.length] : null;
 
   if (isAnnotating) {
     return (
@@ -6601,6 +6597,12 @@ function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading,
           {attachment.photo_caption && <p className="photoCaption">{attachment.photo_caption}</p>}
         </div>
         <div className="viewerControls">
+          <button type="button" title="Previous photo" disabled={!previousPhoto} onClick={() => previousPhoto && onSelect(previousPhoto)}>
+            <ChevronLeft size={17} />
+          </button>
+          <button type="button" title="Next photo" disabled={!nextPhoto} onClick={() => nextPhoto && onSelect(nextPhoto)}>
+            <ChevronRight size={17} />
+          </button>
           <button type="button" title="Zoom out" onClick={() => onZoom(Math.max(0.65, zoom - 0.15))}>
             <ZoomOut size={17} />
           </button>
@@ -6623,7 +6625,17 @@ function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading,
       </div>
 
       <div className="photoStage">
+        {previousPhoto && (
+          <button className="photoStageNav previous" type="button" title="Previous photo" onClick={() => onSelect(previousPhoto)}>
+            <ChevronLeft size={28} />
+          </button>
+        )}
         <img src={attachment.viewUrl} alt={attachment.file_name || "Visit photo"} style={{ transform: `scale(${zoom})` }} />
+        {nextPhoto && (
+          <button className="photoStageNav next" type="button" title="Next photo" onClick={() => onSelect(nextPhoto)}>
+            <ChevronRight size={28} />
+          </button>
+        )}
       </div>
 
       <div className="filmstrip">
