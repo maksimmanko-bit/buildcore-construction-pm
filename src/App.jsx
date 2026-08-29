@@ -3494,7 +3494,6 @@ export default function App() {
             <Search size={18} />
             <span>Search</span>
           </button>
-          <Avatar profile={profile} small url={avatarUrls[profile?.id]} />
         </div>
         <header className="workspaceHeader">
           <div>
@@ -3515,8 +3514,6 @@ export default function App() {
               <LogOut size={17} />
               Sign out
             </button>
-
-            <Avatar profile={profile} small url={avatarUrls[profile?.id]} />
           </div>
         </header>
 
