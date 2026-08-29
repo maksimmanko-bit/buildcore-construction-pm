@@ -6258,12 +6258,19 @@ html {
 }
 
 .scheduleBlock.tightBlock .assignmentCrew {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
 }
 
 .scheduleBlock.tightBlock .assignmentCrew i {
-  display: none;
+  display: block;
+  font-size: 10px;
+  line-height: 1.15;
+  white-space: normal;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
 }
 
 .scheduleBlock.shortBlock {
@@ -6432,11 +6439,17 @@ html {
   }
 
   .assignmentCrew {
-    grid-template-columns: 1fr;
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .assignmentCrew i {
-    display: none;
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: 11px;
+    line-height: 1.15;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   .assignmentCrew .avatar,

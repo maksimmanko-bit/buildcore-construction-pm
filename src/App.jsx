@@ -649,6 +649,7 @@ function Avatar({ profile, small = false, url }) {
 export default function App() {
   const globalSearchRef = useRef(null);
   const searchInputRef = useRef(null);
+  const activeEditLockRef = useRef(null);
   const [activeNav, setActiveNav] = useState("overview");
   const [scheduleMode, setScheduleMode] = useState("day");
   const [session, setSession] = useState(null);
@@ -681,6 +682,7 @@ export default function App() {
   const [projectWeather, setProjectWeather] = useState({ status: "idle", address: "", data: null });
   const [modalType, setModalType] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [activeEditLock, setActiveEditLock] = useState(null);
   const [editingProjectId, setEditingProjectId] = useState(null);
   const [editingVisitId, setEditingVisitId] = useState(null);
   const [companyForm, setCompanyForm] = useState({ company_name: "BuildCore Construction", full_name: "", phone: "" });
@@ -826,6 +828,44 @@ export default function App() {
       removeAvatar: false,
     });
   }, [profile]);
+
+  useEffect(() => {
+    activeEditLockRef.current = activeEditLock;
+  }, [activeEditLock]);
+
+  useEffect(() => {
+    if (!supabase || !activeEditLock?.lockKey) return undefined;
+
+    const heartbeat = window.setInterval(async () => {
+      const { data: lockResult, error } = await supabase
+        .rpc("acquire_edit_lock", {
+          p_lock_key: activeEditLock.lockKey,
+          p_resource_type: activeEditLock.resourceType,
+          p_resource_id: activeEditLock.resourceId,
+          p_mode: activeEditLock.mode,
+          p_hold_seconds: 20,
+        })
+        .single();
+
+      if (error || !lockResult?.acquired) {
+        setNotice(error?.message || `${activeEditLock.label === "ticket" ? "This ticket" : "This project"} is now locked by ${lockResult?.holder_name || "another user"}.`);
+        setActiveEditLock(null);
+        activeEditLockRef.current = null;
+        setModalType(null);
+      }
+    }, 6000);
+
+    return () => window.clearInterval(heartbeat);
+  }, [activeEditLock]);
+
+  useEffect(() => {
+    if (!supabase) return undefined;
+    const handlePageHide = () => {
+      void releaseEditLock(activeEditLockRef.current);
+    };
+    window.addEventListener("pagehide", handlePageHide);
+    return () => window.removeEventListener("pagehide", handlePageHide);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -1069,6 +1109,67 @@ export default function App() {
     setModalType(null);
   }
 
+  function makeEditLock({ resourceId = "", resourceType }) {
+    const lockKey = `${resourceType}:${resourceId || "new"}`;
+    const label = resourceType === "visit" ? "ticket" : "project";
+    return { lockKey, resourceId: resourceId || null, resourceType, label };
+  }
+
+  async function releaseEditLock(lock = activeEditLockRef.current) {
+    if (!supabase || !lock?.lockKey) return;
+    try {
+      await supabase.rpc("release_edit_lock", {
+        p_lock_key: lock.lockKey,
+        p_release_hold_seconds: 10,
+      });
+    } catch {
+      // The lock also has a short TTL, so a failed release will clear itself.
+    }
+  }
+
+  async function closeEditorModal() {
+    const lock = activeEditLockRef.current;
+    setModalType(null);
+    setEditingProjectId(null);
+    setEditingVisitId(null);
+    setActiveEditLock(null);
+    activeEditLockRef.current = null;
+    await releaseEditLock(lock);
+  }
+
+  async function acquireEditLock({ mode = "edit", resourceId = "", resourceType }) {
+    if (!supabase || !profile || !canManage) return true;
+
+    const lock = makeEditLock({ resourceId, resourceType });
+    if (activeEditLockRef.current?.lockKey === lock.lockKey) return true;
+    if (activeEditLockRef.current?.lockKey) await releaseEditLock(activeEditLockRef.current);
+
+    const { data: lockResult, error } = await supabase
+      .rpc("acquire_edit_lock", {
+        p_lock_key: lock.lockKey,
+        p_resource_type: resourceType,
+        p_resource_id: resourceId || null,
+        p_mode: mode,
+        p_hold_seconds: 20,
+      })
+      .single();
+
+    if (error) {
+      setNotice(error.message);
+      return false;
+    }
+
+    if (!lockResult?.acquired) {
+      setNotice(`${lock.label === "ticket" ? "This ticket" : "This project"} is locked by ${lockResult?.holder_name || "another user"}. Try again in a few seconds.`);
+      return false;
+    }
+
+    const nextLock = { ...lock, mode };
+    activeEditLockRef.current = nextLock;
+    setActiveEditLock(nextLock);
+    return true;
+  }
+
   async function applyPendingSignupProfile(nextProfile) {
     if (!supabase || !nextProfile?.id || !nextProfile.company_id || !session?.user?.email) return;
 
@@ -1224,19 +1325,24 @@ export default function App() {
       return;
     }
 
+    const lockToRelease = activeEditLockRef.current;
     setProjectForm(emptyProjectForm);
     setEditingProjectId(null);
     setModalType(null);
+    setActiveEditLock(null);
+    activeEditLockRef.current = null;
+    await releaseEditLock(lockToRelease);
     setSelectedProjectId(saved.id);
     setNotice(editingProjectId ? "Project changes saved." : "Project saved.");
     refreshData();
   }
 
-  function editProject(project) {
+  async function editProject(project) {
     if (!canManage) {
       setNotice("Only Owner, PM, or Office Manager can edit projects.");
       return;
     }
+    if (!(await acquireEditLock({ mode: "edit", resourceId: project.id, resourceType: "project" }))) return;
 
     setEditingProjectId(project.id);
     setProjectForm({
@@ -1400,9 +1506,13 @@ export default function App() {
       }
 
       setLoading(false);
+      const lockToRelease = activeEditLockRef.current;
       setVisitForm({ ...emptyVisitForm, visit_date: selectedDate, project_id: rowsSource.projects[0]?.id ?? "" });
       setEditingVisitId(null);
       setModalType(null);
+      setActiveEditLock(null);
+      activeEditLockRef.current = null;
+      await releaseEditLock(lockToRelease);
       setSelectedDate(firstVisit.visit_date);
       setSelectedProjectId(firstVisit.project_id);
       setSelectedVisitId(firstVisit.id);
@@ -2137,14 +2247,16 @@ export default function App() {
     setNotice(conflicts.length > 0 ? `Moving ${profileDisplayName(person)}...` : `Assigning ${profileDisplayName(person)}...`);
     setLoading(true);
     try {
-      const { error } = await supabase.from("visit_people").insert({ visit_id: visitId, profile_id: personId });
-      if (error) throw error;
       if (conflictVisitIds.length > 0) {
         const removeResult = await supabase.from("visit_people").delete().eq("profile_id", personId).in("visit_id", conflictVisitIds);
-        if (removeResult.error) {
-          await supabase.from("visit_people").delete().eq("visit_id", visitId).eq("profile_id", personId);
-          throw removeResult.error;
+        if (removeResult.error) throw removeResult.error;
+      }
+      const { error } = await supabase.from("visit_people").insert({ visit_id: visitId, profile_id: personId });
+      if (error) {
+        if (conflictVisitIds.length > 0) {
+          await supabase.from("visit_people").insert(conflictVisitIds.map((conflictVisitId) => ({ visit_id: conflictVisitId, profile_id: personId })));
         }
+        throw error;
       }
       await Promise.all([
         ...conflicts.map((conflictVisit) =>
@@ -2174,6 +2286,12 @@ export default function App() {
     const person = rowsSource.people.find((item) => item.id === personId);
     if (!visit || !person) return;
     if (!visit.people_ids?.includes(personId)) return;
+    const project = rowsSource.projects.find((item) => item.id === visit.project_id);
+    const confirmed = window.confirm(`Remove ${profileDisplayName(person)} from ${project?.name || "this ticket"}?`);
+    if (!confirmed) {
+      setNotice("Crew assignment unchanged.");
+      return;
+    }
 
     const previousData = data;
     setData((current) => ({
@@ -2200,7 +2318,7 @@ export default function App() {
     }
   }
 
-  function openAddModal() {
+  async function openAddModal() {
     if (!session) {
       setNotice("Sign in first.");
       return;
@@ -2215,12 +2333,14 @@ export default function App() {
     }
 
     if (activeNav === "projects") {
+      if (!(await acquireEditLock({ mode: "create", resourceType: "project" }))) return;
       setEditingProjectId(null);
       setProjectForm({ ...emptyProjectForm, manager_id: profile.id });
       setModalType("project");
     } else if (activeNav === "equipment") setModalType("equipment");
     else if (activeNav === "people") setModalType("people");
     else {
+      if (!(await acquireEditLock({ mode: "create", resourceType: "visit" }))) return;
       setEditingVisitId(null);
       setVisitForm({
         ...emptyVisitForm,
@@ -2231,11 +2351,12 @@ export default function App() {
     }
   }
 
-  function openVisitModal(projectId = selectedProject?.id) {
+  async function openVisitModal(projectId = selectedProject?.id) {
     if (!canManage) {
       setNotice("Only Owner, PM, or Office Manager can schedule visits.");
       return;
     }
+    if (!(await acquireEditLock({ mode: "create", resourceType: "visit" }))) return;
 
     setEditingVisitId(null);
     setVisitForm({
@@ -2262,11 +2383,12 @@ export default function App() {
     }
   }
 
-  function editVisit(visit) {
+  async function editVisit(visit) {
     if (!canManage) {
       setNotice("Only Owner, PM, or Office Manager can edit visits.");
       return;
     }
+    if (!(await acquireEditLock({ mode: "edit", resourceId: visit.id, resourceType: "visit" }))) return;
 
     setEditingVisitId(visit.id);
     setVisitForm({
@@ -2479,14 +2601,22 @@ export default function App() {
     }
     const confirmed = window.confirm("Delete this Activity Feed row?");
     if (!confirmed) return;
+    const previousData = data;
+    setData((current) => ({
+      ...current,
+      activities: (current.activities ?? []).filter((activity) => activity.id !== item.id),
+    }));
     setLoading(true);
     try {
-      const { error } = await supabase.from("visit_activity").delete().eq("id", item.id);
+      const { data: deletedRows, error } = await supabase.from("visit_activity").delete().eq("id", item.id).select("id");
       if (error) throw error;
+      if (!deletedRows?.length) throw new Error("Activity Feed row was not deleted. Check Supabase delete policy.");
       setNotice("Activity Feed row deleted.");
       refreshData();
     } catch (error) {
+      setData(previousData);
       setNotice(error.message);
+      refreshData();
     } finally {
       setLoading(false);
     }
@@ -3117,7 +3247,7 @@ export default function App() {
         )}
 
         {modalType === "project" && (
-          <AppModal title={editingProjectId ? "Edit project" : "Add project"} onClose={() => setModalType(null)}>
+          <AppModal title={editingProjectId ? "Edit project" : "Add project"} onClose={closeEditorModal}>
             <form className="stackForm twoColumns" onSubmit={saveProject}>
               <FormField label="Job number">
                 <input required value={projectForm.job_number} onChange={(event) => setProjectForm({ ...projectForm, job_number: event.target.value })} />
@@ -3188,7 +3318,7 @@ export default function App() {
         )}
 
         {modalType === "visit" && (
-          <AppModal title={editingVisitId ? "Edit visit" : "Schedule visit"} onClose={() => setModalType(null)}>
+          <AppModal title={editingVisitId ? "Edit visit" : "Schedule visit"} onClose={closeEditorModal}>
             <form className="stackForm twoColumns" onSubmit={saveVisit}>
               <FormField label="Project">
                 <select required value={visitForm.project_id} onChange={(event) => setVisitForm({ ...visitForm, project_id: event.target.value })}>

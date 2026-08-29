@@ -166,6 +166,23 @@ create table if not exists public.visit_activity (
 create index if not exists visit_activity_visit_idx on public.visit_activity(visit_id, created_at desc);
 create index if not exists visit_activity_project_idx on public.visit_activity(project_id, created_at desc);
 
+create table if not exists public.edit_locks (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  lock_key text not null,
+  resource_type text not null,
+  resource_id uuid,
+  mode text not null default 'edit',
+  locked_by uuid not null references public.profiles(id) on delete cascade,
+  expires_at timestamptz not null,
+  released_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (company_id, lock_key)
+);
+
+create index if not exists edit_locks_company_expires_idx on public.edit_locks(company_id, expires_at);
+
 create or replace function public.current_profile()
 returns public.profiles
 language sql
@@ -822,6 +839,142 @@ drop policy if exists "members add visit activity" on public.visit_activity;
 create policy "members add visit activity" on public.visit_activity
 for insert to authenticated
 with check (company_id = public.current_company_id());
+
+drop policy if exists "managers delete visit activity" on public.visit_activity;
+create policy "managers delete visit activity" on public.visit_activity
+for delete to authenticated
+using (company_id = public.current_company_id() and public.can_manage());
+
+alter table public.edit_locks enable row level security;
+
+drop policy if exists "managers read edit locks" on public.edit_locks;
+create policy "managers read edit locks" on public.edit_locks
+for select to authenticated
+using (company_id = public.current_company_id() and public.can_manage());
+
+create or replace function public.acquire_edit_lock(
+  p_lock_key text,
+  p_resource_type text,
+  p_resource_id uuid default null,
+  p_mode text default 'edit',
+  p_hold_seconds integer default 20
+)
+returns table (
+  acquired boolean,
+  holder_id uuid,
+  holder_name text,
+  expires_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid := auth.uid();
+  current_company uuid := public.current_company_id();
+  safe_hold_seconds integer := greatest(1, least(coalesce(p_hold_seconds, 20), 120));
+  lock_row public.edit_locks;
+begin
+  if current_user_id is null or current_company is null then
+    raise exception 'You must be signed in to lock records.';
+  end if;
+
+  if not public.can_manage() then
+    raise exception 'Only Owner, PM, or Office Manager can edit records.';
+  end if;
+
+  if nullif(trim(p_lock_key), '') is null then
+    raise exception 'Lock key is required.';
+  end if;
+
+  insert into public.edit_locks (
+    company_id,
+    lock_key,
+    resource_type,
+    resource_id,
+    mode,
+    locked_by,
+    expires_at,
+    released_at,
+    updated_at
+  )
+  values (
+    current_company,
+    trim(p_lock_key),
+    coalesce(nullif(trim(p_resource_type), ''), 'record'),
+    p_resource_id,
+    coalesce(nullif(trim(p_mode), ''), 'edit'),
+    current_user_id,
+    now() + make_interval(secs => safe_hold_seconds),
+    null,
+    now()
+  )
+  on conflict (company_id, lock_key)
+  do update
+    set resource_type = excluded.resource_type,
+        resource_id = excluded.resource_id,
+        mode = excluded.mode,
+        locked_by = excluded.locked_by,
+        expires_at = excluded.expires_at,
+        released_at = null,
+        updated_at = now()
+  where public.edit_locks.expires_at <= now()
+     or public.edit_locks.locked_by = current_user_id
+  returning * into lock_row;
+
+  if found then
+    return query
+      select true, lock_row.locked_by, coalesce(p.full_name, p.email, 'Another user'), lock_row.expires_at
+      from public.profiles p
+      where p.id = lock_row.locked_by;
+    return;
+  end if;
+
+  return query
+    select false, l.locked_by, coalesce(p.full_name, p.email, 'Another user'), l.expires_at
+    from public.edit_locks l
+    left join public.profiles p on p.id = l.locked_by
+    where l.company_id = current_company
+      and l.lock_key = trim(p_lock_key)
+    limit 1;
+end;
+$$;
+
+create or replace function public.release_edit_lock(
+  p_lock_key text,
+  p_release_hold_seconds integer default 10
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid := auth.uid();
+  current_company uuid := public.current_company_id();
+  safe_hold_seconds integer := greatest(1, least(coalesce(p_release_hold_seconds, 10), 30));
+begin
+  if current_user_id is null or current_company is null then
+    return;
+  end if;
+
+  update public.edit_locks
+    set expires_at = now() + make_interval(secs => safe_hold_seconds),
+        released_at = now(),
+        updated_at = now()
+  where company_id = current_company
+    and lock_key = trim(p_lock_key)
+    and locked_by = current_user_id;
+end;
+$$;
+
+revoke all on function public.acquire_edit_lock(text, text, uuid, text, integer) from public;
+revoke all on function public.acquire_edit_lock(text, text, uuid, text, integer) from anon;
+grant execute on function public.acquire_edit_lock(text, text, uuid, text, integer) to authenticated;
+
+revoke all on function public.release_edit_lock(text, integer) from public;
+revoke all on function public.release_edit_lock(text, integer) from anon;
+grant execute on function public.release_edit_lock(text, integer) to authenticated;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
