@@ -882,6 +882,7 @@ export default function App() {
   const [profile, setProfile] = useState(null);
   const [data, setData] = useState({ ...demo, visits: [] });
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [overviewDate, setOverviewDate] = useState(new Date().toISOString().slice(0, 10));
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedAssignmentId, setSelectedAssignmentId] = useState("");
   const [selectedVisitId, setSelectedVisitId] = useState("");
@@ -1304,8 +1305,8 @@ export default function App() {
   const workflowPeople = workflowVisit ? rowsSource.people.filter((person) => workflowVisit.people_ids?.includes(person.id)) : currentVisitPeople;
   const selectedPerson = selectedPersonId ? [...(rowsSource.people ?? []), ...(rowsSource.pendingPeople ?? [])].find((person) => person.id === selectedPersonId) : null;
   const todayValue = new Date().toISOString().slice(0, 10);
-  const todayVisits = (rowsSource.visits ?? [])
-    .filter((visit) => visit.visit_date === todayValue && (!isLive || visit.people_ids?.includes(profile?.id)))
+  const overviewVisits = (rowsSource.visits ?? [])
+    .filter((visit) => visit.visit_date === overviewDate && (!isLive || visit.people_ids?.includes(profile?.id)))
     .sort((a, b) => {
       const statusOrder = { on_site: 0, planned: 1, completed: 2, cancelled: 3 };
       return (statusOrder[a.status] ?? 4) - (statusOrder[b.status] ?? 4) || String(a.start_time).localeCompare(String(b.start_time));
@@ -3702,7 +3703,7 @@ export default function App() {
       return <SafetyReportsView files={rowsSource.files ?? []} onOpen={openAttachment} profiles={rowsSource.people} projects={rowsSource.projects} />;
     }
     if (activeNav === "overview") {
-      return <OverviewView data={rowsSource} getProfileName={getProfileName} getVisitFiles={getVisitFiles} onArrive={startArrivalWorkflow} onComplete={startCompletionWorkflow} onOpenVisit={openVisitOverlay} profile={profile} projects={rowsSource.projects} todayVisits={todayVisits} />;
+      return <OverviewView data={rowsSource} getProfileName={getProfileName} getVisitFiles={getVisitFiles} onArrive={startArrivalWorkflow} onComplete={startCompletionWorkflow} onDateChange={setOverviewDate} onOpenVisit={openVisitOverlay} profile={profile} projects={rowsSource.projects} selectedDate={overviewDate} today={todayValue} visits={overviewVisits} />;
     }
     return (
       <ScheduleView
@@ -5735,10 +5736,19 @@ function PendingPersonRow({ avatarUrl, onApprove, onSelect, person }) {
   );
 }
 
-function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplete, onOpenVisit, projects, todayVisits }) {
+function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplete, onDateChange, onOpenVisit, profile, projects, selectedDate, today, visits }) {
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [pickerMonth, setPickerMonth] = useState(selectedDate);
   const [weather, setWeather] = useState({ status: "idle", data: null });
-  const firstVisit = todayVisits[0];
+  const calendarWrapRef = useRef(null);
+  const assignedVisits = visits ?? [];
+  const firstVisit = assignedVisits[0];
   const firstProject = firstVisit ? projects.find((project) => project.id === firstVisit.project_id) : null;
+  const isToday = selectedDate === today;
+  const weekDates = getWeekDates(selectedDate);
+  const setOverviewDate = (date) => onDateChange?.(date);
+  const assignedVisitCount = (date) =>
+    (data.visits ?? []).filter((visit) => visit.visit_date === date && (!profile?.id || visit.people_ids?.includes(profile.id))).length;
 
   useEffect(() => {
     let alive = true;
@@ -5761,10 +5771,74 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
     };
   }, [firstProject?.address]);
 
+  useEffect(() => {
+    setPickerMonth(selectedDate);
+  }, [selectedDate]);
+
+  useEffect(() => {
+    if (!isCalendarOpen) return undefined;
+    function handlePointerDown(event) {
+      if (calendarWrapRef.current?.contains(event.target)) return;
+      setIsCalendarOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isCalendarOpen]);
+
   return (
     <div className="todayTickets">
-      {todayVisits.length === 0 && <div className="emptyState">No visits assigned to you today.</div>}
-      {todayVisits.map((visit) => {
+      <section className="overviewDatePanel">
+        <div>
+          <span>Overview date</span>
+          <strong>{isToday ? "Today" : formatDateLabel(selectedDate)}</strong>
+        </div>
+        <div className="overviewDateActions">
+          <button type="button" title="Previous day" onClick={() => setOverviewDate(shiftDate(selectedDate, -1))}>
+            <ChevronLeft size={18} />
+          </button>
+          <div className="calendarPickerWrap overviewDatePicker" ref={calendarWrapRef}>
+            <button className="dateDisplay" type="button" aria-label="Open overview calendar" onClick={() => setIsCalendarOpen((value) => !value)}>
+              <Calendar size={17} />
+              <span>{formatShortDate(selectedDate)}</span>
+            </button>
+            {isCalendarOpen && (
+              <MiniCalendarPicker
+                monthDate={pickerMonth}
+                selectedDate={selectedDate}
+                today={today}
+                onClose={() => setIsCalendarOpen(false)}
+                onMonthChange={setPickerMonth}
+                onSelect={(date) => {
+                  setOverviewDate(date);
+                  setIsCalendarOpen(false);
+                }}
+              />
+            )}
+          </div>
+          <button type="button" title="Next day" onClick={() => setOverviewDate(shiftDate(selectedDate, 1))}>
+            <ChevronRight size={18} />
+          </button>
+          <button className="overviewTodayButton" type="button" onClick={() => setOverviewDate(today)}>
+            Today
+          </button>
+        </div>
+      </section>
+
+      <div className="overviewWeekStrip" aria-label="Assigned visits this week">
+        {weekDates.map((date) => {
+          const count = assignedVisitCount(date);
+          return (
+            <button className={`${date === selectedDate ? "active" : ""} ${date === today ? "today" : ""}`} key={date} type="button" onClick={() => setOverviewDate(date)}>
+              <span>{new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(new Date(`${date}T12:00:00`))}</span>
+              <strong>{new Date(`${date}T12:00:00`).getDate()}</strong>
+              <em>{count ? `${count} ticket${count === 1 ? "" : "s"}` : "Free"}</em>
+            </button>
+          );
+        })}
+      </div>
+
+      {assignedVisits.length === 0 && <div className="emptyState">{isToday ? "No visits assigned to you today." : `No visits assigned to you on ${formatDateLabel(selectedDate)}.`}</div>}
+      {assignedVisits.map((visit) => {
         const project = projects.find((item) => item.id === visit.project_id);
         const files = getVisitFiles(visit);
         const hasSafety = files.some((file) => file.file_type === "safety_form");
@@ -6677,10 +6751,9 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
         {assignment.status && <em className="scheduleBlockStatus">{normalizeVisitStatus(assignment.status)}</em>}
       </span>
       {assignment.timeText && <small className="scheduleBlockTime">{assignment.timeText}</small>}
-      {assignment.people?.length > 0 && (
-        <div className="assignmentCrew">
-          <div className="assignmentAvatarStack">
-            {assignment.people.map((person) => (
+      {(assignment.people?.length > 0 || assignment.equipment?.length > 0) && (
+        <div className="assignmentResources">
+          {assignment.people?.map((person) => (
               <button
                 className="crewAvatarButton"
                 draggable
@@ -6703,14 +6776,8 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
                   <small>{person.trade || roleLabel(person.role)}</small>
                 </span>
               </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {assignment.equipment?.length > 0 && (
-        <div className="assignmentCrew assignmentEquipment">
-          <div className="assignmentAvatarStack">
-            {assignment.equipment.map((item) => (
+          ))}
+          {assignment.equipment?.map((item) => (
               <button
                 className="crewAvatarButton equipmentCrewButton"
                 draggable
@@ -6732,8 +6799,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
                   <small>{item.unit_number || item.type || "Equipment"}</small>
                 </span>
               </button>
-            ))}
-          </div>
+          ))}
         </div>
       )}
       {canDeleteTickets && assignment.visitId && (
