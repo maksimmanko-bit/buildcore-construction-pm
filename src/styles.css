@@ -4722,6 +4722,246 @@ textarea:focus-visible {
   font-weight: 900;
 }
 
+.photoCoverFlowGroup {
+  overflow: visible;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(241, 245, 249, 0.62)),
+    rgba(255, 255, 255, 0.72);
+}
+
+.coverFlowShelf {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+}
+
+.coverFlowLane {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.coverFlowLaneTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.coverFlowLaneTitle strong {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.coverFlowLaneTitle em {
+  display: inline-grid;
+  min-width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.coverFlowRail {
+  display: grid;
+  grid-auto-columns: minmax(172px, 214px);
+  grid-auto-flow: column;
+  gap: 12px;
+  min-height: 238px;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 10px 8px 18px;
+  perspective: 900px;
+  scroll-snap-type: x proximity;
+}
+
+.coverFlowPhotoCard {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.7)),
+    rgba(255, 255, 255, 0.78);
+  color: #0f172a;
+  text-align: left;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 22px 42px rgba(15, 23, 42, 0.12);
+  scroll-snap-align: center;
+  transform: rotateY(calc((min(var(--cover-index), 3) - 1.5) * -3deg));
+  transform-origin: center bottom;
+  transition:
+    transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.coverFlowPhotoCard:hover,
+.coverFlowPhotoCard:focus-visible {
+  z-index: 2;
+  outline: none;
+  border-color: rgba(37, 99, 235, 0.24);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 28px 64px rgba(15, 23, 42, 0.18);
+  transform: translateY(-6px) rotateY(0deg) scale(1.025);
+}
+
+.coverFlowPhotoCard .filePreviewThumb {
+  width: 100%;
+  height: 150px;
+  border-radius: 18px;
+}
+
+.coverFlowPhotoCard span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.coverFlowPhotoCard strong,
+.coverFlowPhotoCard small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coverFlowPhotoCard strong {
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.coverFlowPhotoCard small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.macFileGroup {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.72)),
+    rgba(255, 255, 255, 0.78);
+}
+
+.macFileGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  padding: 14px;
+}
+
+.macFileCard {
+  position: relative;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 104px;
+  overflow: hidden;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.74)),
+    rgba(255, 255, 255, 0.86);
+  color: #0f172a;
+  text-align: left;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 16px 34px rgba(15, 23, 42, 0.075);
+  transition:
+    transform 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.macFileCard:hover,
+.macFileCard:focus-visible {
+  outline: none;
+  border-color: rgba(37, 99, 235, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 22px 48px rgba(15, 23, 42, 0.12);
+  transform: translateY(-3px);
+}
+
+.macFileMeta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.macFileMeta strong,
+.macFileMeta small,
+.macFileMeta em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.macFileMeta strong {
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.macFileMeta small {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.macFileMeta em {
+  color: #64748b;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 780;
+}
+
+.refreshingData .documentRow,
+.refreshingData .macFileCard,
+.refreshingData .coverFlowPhotoCard,
+.refreshingData .projectPanel,
+.refreshingData .listRow,
+.refreshingData .detailVisitCard,
+.refreshingData .scheduleBlock {
+  position: relative;
+}
+
+.refreshingData .documentRow::after,
+.refreshingData .macFileCard::after,
+.refreshingData .coverFlowPhotoCard::after,
+.refreshingData .projectPanel::after,
+.refreshingData .listRow::after,
+.refreshingData .detailVisitCard::after,
+.refreshingData .scheduleBlock::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, 0.46) 42%, transparent 72%);
+  transform: translateX(-110%);
+  animation: cardMicroShimmer 1.15s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes cardMicroShimmer {
+  to {
+    transform: translateX(110%);
+  }
+}
+
 .attachmentSection h3 {
   display: flex;
   align-items: center;

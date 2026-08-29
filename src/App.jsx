@@ -1073,6 +1073,7 @@ export default function App() {
 
   const rowsSource = isLive ? data : demo;
   const assignmentsSource = isLive ? liveAssignments : demoAssignments;
+  const isRefreshingWorkspace = Boolean(isLive && loading && profile?.is_active && (data.projects?.length || data.people?.length || data.equipment?.length || data.files?.length));
   const profileById = useMemo(() => new Map((rowsSource.people ?? []).map((person) => [person.id, person])), [rowsSource.people]);
   const getProfileName = useCallback((id, fallback = "Not set") => profileDisplayName(profileById.get(id), fallback), [profileById]);
   const selectedProject = selectedProjectId ? rowsSource.projects.find((project) => project.id === selectedProjectId) : null;
@@ -3334,7 +3335,7 @@ export default function App() {
       );
     }
     if (activeNav === "documents") {
-      return <DocumentsView files={rowsSource.files ?? []} onOpen={openAttachment} profiles={rowsSource.people} projects={rowsSource.projects} />;
+      return <DocumentsView files={rowsSource.files ?? []} isRefreshing={isRefreshingWorkspace} onOpen={openAttachment} profiles={rowsSource.people} projects={rowsSource.projects} />;
     }
     if (activeNav === "safetyReports") {
       return <SafetyReportsView files={rowsSource.files ?? []} onOpen={openAttachment} profiles={rowsSource.people} projects={rowsSource.projects} />;
@@ -3381,7 +3382,7 @@ export default function App() {
   }
 
   return (
-    <div className={isMobileMenuOpen ? "dashboardShell mobileMenuOpen" : "dashboardShell"}>
+    <div className={`dashboardShell${isMobileMenuOpen ? " mobileMenuOpen" : ""}${isRefreshingWorkspace ? " refreshingData" : ""}`}>
       <div className="mobileDrawerBackdrop" onClick={() => setIsMobileMenuOpen(false)} />
       <aside className="sidebar">
         <div className="brand">
@@ -5195,36 +5196,94 @@ function EquipmentView({ equipment, onEdit }) {
   );
 }
 
-function DocumentsView({ files, onOpen, profiles, projects }) {
-  const groups = [
-    { id: "projectPhotos", label: "Project Photos", icon: Camera, items: files.filter((file) => file.file_kind === "photo" && !file.visit_id) },
-    { id: "before", label: "Before Photos", icon: Camera, items: files.filter((file) => file.file_type === "before_photo" && file.visit_id) },
-    { id: "after", label: "After Photos", icon: Camera, items: files.filter((file) => file.file_type === "completion_photo" && file.visit_id) },
-    { id: "pdf", label: "PDFs", icon: FileText, items: files.filter((file) => file.file_kind === "pdf" && file.file_type !== "safety_form") },
-    { id: "excel", label: "Excel", icon: FileSpreadsheet, items: files.filter((file) => file.file_kind === "excel") },
-    { id: "other", label: "Other", icon: FileText, items: files.filter((file) => !["safety_form", "before_photo", "completion_photo"].includes(file.file_type) && !["pdf", "excel", "photo"].includes(file.file_kind)) },
+function DocumentsView({ files, isRefreshing = false, onOpen, profiles, projects }) {
+  const sortedFiles = [...files].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  const photoGroups = [
+    { id: "projectPhotos", label: "Project Photos", items: sortedFiles.filter((file) => file.file_kind === "photo" && !file.visit_id) },
+    { id: "before", label: "Before Photos", items: sortedFiles.filter((file) => file.file_type === "before_photo" && file.visit_id) },
+    { id: "after", label: "After Photos", items: sortedFiles.filter((file) => file.file_type === "completion_photo" && file.visit_id) },
+  ].filter((group) => group.items.length > 0);
+  const fileGroups = [
+    { id: "pdf", label: "PDFs", icon: FileText, items: sortedFiles.filter((file) => file.file_kind === "pdf" && file.file_type !== "safety_form") },
+    { id: "excel", label: "Excel", icon: FileSpreadsheet, items: sortedFiles.filter((file) => file.file_kind === "excel") },
+    { id: "other", label: "Other", icon: FileText, items: sortedFiles.filter((file) => !["safety_form", "before_photo", "completion_photo"].includes(file.file_type) && !["pdf", "excel", "photo"].includes(file.file_kind)) },
   ].filter((group) => group.items.length > 0);
 
   return (
-    <div className="documentsView groupedDocuments">
+    <div className={isRefreshing ? "documentsView groupedDocuments documentsRefreshing" : "documentsView groupedDocuments"}>
       {files.length === 0 && <div className="emptyState">No documents or photos saved yet.</div>}
-      {groups.map((group) => {
+      {photoGroups.length > 0 && (
+        <section className="documentGroup photoCoverFlowGroup">
+          <div className="documentGroupHeader">
+            <Camera size={18} />
+            <h3>Photo Cover Flow</h3>
+            <span>{photoGroups.reduce((total, group) => total + group.items.length, 0)}</span>
+          </div>
+          <div className="coverFlowShelf">
+            {photoGroups.map((group) => (
+              <div className="coverFlowLane" key={group.id}>
+                <div className="coverFlowLaneTitle">
+                  <strong>{group.label}</strong>
+                  <em>{group.items.length}</em>
+                </div>
+                <div className="coverFlowRail">
+                  {group.items.map((file, index) => {
+                    const project = projects.find((item) => item.id === file.project_id);
+                    return <CoverFlowPhotoCard file={file} index={index} key={file.id} onOpen={onOpen} profiles={profiles} project={project} />;
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {fileGroups.map((group) => {
         const Icon = group.icon;
         return (
-          <section className={`documentGroup ${group.id}`} key={group.id}>
+          <section className={`documentGroup macFileGroup ${group.id}`} key={group.id}>
             <div className="documentGroupHeader">
               <Icon size={18} />
               <h3>{group.label}</h3>
               <span>{group.items.length}</span>
             </div>
-            {group.items.map((file) => {
-              const project = projects.find((item) => item.id === file.project_id);
-              return <DocumentListRow file={file} key={file.id} onOpen={onOpen} profiles={profiles} project={project} />;
-            })}
+            <div className="macFileGrid">
+              {group.items.map((file) => {
+                const project = projects.find((item) => item.id === file.project_id);
+                return <MacFileCard file={file} key={file.id} onOpen={onOpen} profiles={profiles} project={project} />;
+              })}
+            </div>
           </section>
         );
       })}
     </div>
+  );
+}
+
+function CoverFlowPhotoCard({ file, index = 0, onOpen, profiles = [], project }) {
+  const uploader = profiles.find((item) => item.id === file.uploaded_by);
+  return (
+    <button className="coverFlowPhotoCard" style={{ "--cover-index": index }} type="button" onClick={() => onOpen(file)}>
+      <FilePreviewThumb file={file} />
+      <span>
+        <strong title={file.file_name}>{file.photo_caption || file.file_name}</strong>
+        <small>{project?.name || "Project"} / {uploader?.full_name || uploader?.email || "Unknown"}</small>
+      </span>
+    </button>
+  );
+}
+
+function MacFileCard({ file, onOpen, profiles = [], project }) {
+  const uploader = profiles.find((item) => item.id === file.uploaded_by);
+  const kind = attachmentKindLabel(file);
+  return (
+    <button className={`macFileCard ${file.file_kind || "file"}`} type="button" onClick={() => onOpen(file)}>
+      <FilePreviewThumb file={file} />
+      <span className="macFileMeta">
+        <strong title={file.file_name}>{file.file_name}</strong>
+        <small>{project?.name || "Project"}</small>
+        <em>{kind} / {file.visit_id ? "Ticket file" : "Project file"} / {uploader?.full_name || uploader?.email || "Unknown"}</em>
+      </span>
+    </button>
   );
 }
 
