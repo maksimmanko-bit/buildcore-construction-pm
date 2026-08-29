@@ -5563,6 +5563,21 @@ body.overlayLocked {
   margin-bottom: 0 !important;
 }
 
+.annotatorLoading {
+  min-height: min(62vh, 620px);
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 28px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.62)),
+    rgba(248, 250, 252, 0.84);
+  background-size: 240% 100%;
+  color: var(--muted);
+  font-weight: 850;
+  animation: skeletonShimmer 1.35s ease-in-out infinite;
+}
+
 .annotator {
   display: grid;
   gap: 12px;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Bell,
@@ -40,15 +40,14 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { jsPDF } from "jspdf";
 import DocumentUploader from "./components/DocumentUploader.jsx";
-import PhotoAnnotator from "./components/PhotoAnnotator.jsx";
-import { exportProjectPdf, exportProjectsXlsx, exportProjectTicketsXlsx, exportVisitPdf } from "./lib/exporters.js";
 import { overlaps } from "./lib/schedule.js";
 import { isSupabaseConfigured, supabase } from "./lib/supabase.js";
 import { createAttachmentUrls, createProfileAvatarUrl, deleteVisitFile, replaceVisitPhotoWithAnnotation, uploadProfileAvatar, uploadVisitGeneratedFile, uploadVisitPhoto } from "./lib/storage.js";
 import { localGlobalSearch } from "./lib/search.js";
 import { getGoogleMapsUrl, getWeatherForAddress } from "./lib/weather.js";
+
+const PhotoAnnotator = lazy(() => import("./components/PhotoAnnotator.jsx"));
 
 const demo = {
   companyId: "00000000-0000-0000-0000-000000000001",
@@ -1726,6 +1725,7 @@ export default function App() {
 
     setLoading(true);
     try {
+      const { jsPDF } = await import("jspdf");
       const names = team.map((person) => person.full_name || person.email || "Team member");
       const signedAt = new Date();
       const safetyLetterhead = await imageUrlToDataUrl(`${import.meta.env.BASE_URL}samsom-industries-letterhead.png`);
@@ -2399,6 +2399,7 @@ export default function App() {
     setLoading(true);
     setNotice("Preparing project PDF...");
     try {
+      const { exportProjectPdf } = await import("./lib/exporters.js");
       const visits = (rowsSource.visits ?? [])
         .filter((visit) => visit.project_id === project.id)
         .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`));
@@ -2419,6 +2420,7 @@ export default function App() {
     setLoading(true);
     setNotice("Preparing ticket PDF...");
     try {
+      const { exportVisitPdf } = await import("./lib/exporters.js");
       const files = await hydrateExportFiles((rowsSource.files ?? []).filter((file) => file.visit_id === visit.id));
       const activities = (rowsSource.activities ?? []).filter((item) => item.visit_id === visit.id);
       await exportVisitPdf({
@@ -2438,18 +2440,36 @@ export default function App() {
     }
   }
 
-  function exportAllProjectsToExcel() {
-    exportProjectsXlsx(rowsSource.projects, getProfileName);
-    setNotice("Projects Excel exported.");
+  async function exportAllProjectsToExcel() {
+    setLoading(true);
+    setNotice("Preparing projects Excel...");
+    try {
+      const { exportProjectsXlsx } = await import("./lib/exporters.js");
+      exportProjectsXlsx(rowsSource.projects, getProfileName);
+      setNotice("Projects Excel exported.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  function exportProjectTicketsToExcel(project = selectedProject) {
+  async function exportProjectTicketsToExcel(project = selectedProject) {
     if (!project) return;
-    const visits = (rowsSource.visits ?? [])
-      .filter((visit) => visit.project_id === project.id)
-      .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`));
-    exportProjectTicketsXlsx({ project, visits, people: rowsSource.people, equipment: rowsSource.equipment, getProfileName });
-    setNotice("Project tickets Excel exported.");
+    setLoading(true);
+    setNotice("Preparing tickets Excel...");
+    try {
+      const { exportProjectTicketsXlsx } = await import("./lib/exporters.js");
+      const visits = (rowsSource.visits ?? [])
+        .filter((visit) => visit.project_id === project.id)
+        .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`));
+      exportProjectTicketsXlsx({ project, visits, people: rowsSource.people, equipment: rowsSource.equipment, getProfileName });
+      setNotice("Project tickets Excel exported.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function deleteActivityItem(item) {
@@ -5229,7 +5249,9 @@ function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading,
             Cancel
           </button>
         </div>
-        <PhotoAnnotator imageUrl={attachment.viewUrl} onSave={onSaveAnnotation} />
+        <Suspense fallback={<div className="annotatorLoading">Preparing annotation tools...</div>}>
+          <PhotoAnnotator imageUrl={attachment.viewUrl} onSave={onSaveAnnotation} />
+        </Suspense>
       </div>
     );
   }
