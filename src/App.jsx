@@ -6508,7 +6508,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
       {assignment.people?.length > 0 && (
         <div className="assignmentCrew">
           <div className="assignmentAvatarStack">
-            {assignment.people.slice(0, 5).map((person) => (
+            {assignment.people.map((person) => (
               <button
                 className="crewAvatarButton"
                 draggable
@@ -6526,16 +6526,19 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
                 }}
               >
                 <Avatar profile={person} url={avatarUrls[person.id]} />
+                <span className="crewAvatarTooltip">
+                  <strong>{profileDisplayName(person)}</strong>
+                  <small>{person.trade || roleLabel(person.role)}</small>
+                </span>
               </button>
             ))}
           </div>
-          <i>{assignment.people.map((person) => profileDisplayName(person)).join(", ")}</i>
         </div>
       )}
       {assignment.equipment?.length > 0 && (
         <div className="assignmentCrew assignmentEquipment">
           <div className="assignmentAvatarStack">
-            {assignment.equipment.slice(0, 4).map((item) => (
+            {assignment.equipment.map((item) => (
               <button
                 className="crewAvatarButton equipmentCrewButton"
                 draggable
@@ -6552,10 +6555,13 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
                 }}
               >
                 <EquipmentAvatar item={item} small />
+                <span className="crewAvatarTooltip">
+                  <strong>{item.name}</strong>
+                  <small>{item.unit_number || item.type || "Equipment"}</small>
+                </span>
               </button>
             ))}
           </div>
-          <i>{assignment.equipment.map((item) => item.name).join(", ")}</i>
         </div>
       )}
       {canDeleteTickets && assignment.visitId && (

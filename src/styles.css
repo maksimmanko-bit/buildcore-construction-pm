@@ -2445,18 +2445,17 @@ h1 {
 }
 
 .assignmentCrew {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  display: block;
   min-width: 0;
-  align-items: center;
-  gap: 7px;
 }
 
 .assignmentAvatarStack {
   display: flex;
+  flex-wrap: wrap;
   min-width: 0;
   align-items: center;
-  padding-left: 1px;
+  gap: 4px;
+  padding: 1px 0 0 1px;
 }
 
 .assignmentCrew .avatar {
@@ -2485,7 +2484,7 @@ h1 {
 }
 
 .crewAvatarButton + .crewAvatarButton {
-  margin-left: -10px;
+  margin-left: 0;
 }
 
 .crewAvatarButton:active {
@@ -2510,20 +2509,77 @@ h1 {
     0 18px 34px rgba(15, 23, 42, 0.2);
 }
 
+.crewAvatarTooltip {
+  pointer-events: none;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 9px);
+  z-index: 12;
+  display: grid;
+  gap: 2px;
+  min-width: 132px;
+  max-width: 190px;
+  padding: 9px 11px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 18px 34px rgba(15, 23, 42, 0.18);
+  color: #0f172a;
+  opacity: 0;
+  text-align: left;
+  transform: translate(-50%, 6px) scale(0.96);
+  transition:
+    opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.crewAvatarTooltip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.72);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.94);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.crewAvatarTooltip strong,
+.crewAvatarTooltip small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crewAvatarTooltip strong {
+  color: #111827;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.crewAvatarTooltip small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.crewAvatarButton:hover .crewAvatarTooltip,
+.crewAvatarButton:focus-visible .crewAvatarTooltip {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
 .crewAvatarButton .avatar,
 .crewAvatarButton img {
   pointer-events: none;
-}
-
-.assignmentCrew i {
-  min-width: 0;
-  overflow: hidden;
-  color: #334155;
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .scheduleBlockTop {
@@ -2628,19 +2684,16 @@ h1 {
 
 .availableAvatarStrip {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  overflow-x: auto;
-  padding-bottom: 2px;
+  overflow: visible;
 }
 
 .availableTradeScroller {
   display: grid;
-  grid-auto-columns: minmax(260px, 320px);
-  grid-auto-flow: column;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 12px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  scroll-snap-type: x proximity;
+  overflow: visible;
 }
 
 .availableTradeGroup {
@@ -2653,7 +2706,6 @@ h1 {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.74));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
   cursor: grab;
-  scroll-snap-align: start;
   transition:
     border-color 0.22s cubic-bezier(0.16, 1, 0.3, 1),
     box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1),
@@ -6703,11 +6755,7 @@ body.overlayLocked {
 }
 
 .crewAvatarButton + .crewAvatarButton {
-  margin-left: -13px;
-}
-
-.assignmentCrew i {
-  font-size: 12px;
+  margin-left: 0;
 }
 
 .scheduleBlockTime {
@@ -6813,7 +6861,7 @@ body.overlayLocked {
   }
 
   .crewAvatarButton + .crewAvatarButton {
-    margin-left: -14px;
+    margin-left: 0;
   }
 }
 
@@ -7517,19 +7565,7 @@ html {
 }
 
 .scheduleBlock.tightBlock .assignmentCrew {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-}
-
-.scheduleBlock.tightBlock .assignmentCrew i {
   display: block;
-  font-size: 10px;
-  line-height: 1.15;
-  white-space: normal;
-  -webkit-line-clamp: 2;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
 }
 
 .scheduleBlock.shortBlock {
@@ -7551,7 +7587,7 @@ html {
 }
 
 .crewAvatarButton + .crewAvatarButton {
-  margin-left: -15px;
+  margin-left: 0;
 }
 
 .activityItem {
@@ -7698,17 +7734,7 @@ html {
   }
 
   .assignmentCrew {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .assignmentCrew i {
-    display: -webkit-box;
-    overflow: hidden;
-    font-size: 11px;
-    line-height: 1.15;
-    white-space: normal;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    display: block;
   }
 
   .assignmentCrew .avatar,
