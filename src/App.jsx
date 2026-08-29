@@ -176,7 +176,6 @@ const navItems = [
   { id: "equipment", label: "Equipment", icon: Truck },
   { id: "documents", label: "Documents", icon: FileText },
   { id: "safetyReports", label: "Safety Reports", icon: FileBarChart2 },
-  { id: "settings", label: "Settings", icon: Settings },
 ];
 
 const roleOptions = ["owner", "project_manager", "office_manager", "builder"];
@@ -794,6 +793,7 @@ export default function App() {
   const [projectWeather, setProjectWeather] = useState({ status: "idle", address: "", data: null });
   const [modalType, setModalType] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [serverConnected, setServerConnected] = useState(Boolean(isSupabaseConfigured));
   const [activeEditLock, setActiveEditLock] = useState(null);
   const [editingProjectId, setEditingProjectId] = useState(null);
   const [editingEquipmentId, setEditingEquipmentId] = useState(null);
@@ -846,6 +846,7 @@ export default function App() {
           } else {
             setProfile(null);
             setData({ ...demo, visits: [], pendingPeople: [] });
+            setServerConnected(true);
             setNotice(
               requestResult.error?.message?.includes("verify") || claimResult.error?.message?.includes("verify")
                 ? "Check your email and confirm the account before continuing."
@@ -868,6 +869,7 @@ export default function App() {
 
       if (!nextProfile.is_active) {
         setData({ ...demo, visits: [], pendingPeople: [nextProfile] });
+        setServerConnected(true);
         return;
       }
 
@@ -916,10 +918,12 @@ export default function App() {
         activities: activityResult.data ?? [],
       };
       setData(nextData);
+      setServerConnected(true);
       writeCachedWorkspace(session.user.id, { profile: nextProfile, data: nextData });
 
       if (selectedProjectId && !nextProjects.some((project) => project.id === selectedProjectId)) setSelectedProjectId("");
     } catch (error) {
+      setServerConnected(false);
       setNotice(error.message);
     } finally {
       setLoading(false);
@@ -1427,7 +1431,9 @@ export default function App() {
       const { data: visits, error } = await supabase.from("visit_schedule_view").select("*").order("visit_date", { ascending: false }).order("start_time");
       if (error) throw error;
       commitWorkspaceData((current) => ({ ...current, visits: visits ?? [] }));
+      setServerConnected(true);
     } catch (error) {
+      setServerConnected(false);
       setNotice(error.message);
     } finally {
       if (!quiet) setLoading(false);
@@ -1441,7 +1447,9 @@ export default function App() {
       const { data: files, error } = await supabase.from("visit_files").select("*").order("created_at", { ascending: false });
       if (error) throw error;
       commitWorkspaceData((current) => ({ ...current, files: files ?? [] }));
+      setServerConnected(true);
     } catch (error) {
+      setServerConnected(false);
       setNotice(error.message);
     } finally {
       if (!quiet) setLoading(false);
@@ -1455,7 +1463,9 @@ export default function App() {
       const { data: activities, error } = await supabase.from("visit_activity").select("*").order("created_at", { ascending: false }).limit(500);
       if (error) throw error;
       commitWorkspaceData((current) => ({ ...current, activities: activities ?? [] }));
+      setServerConnected(true);
     } catch (error) {
+      setServerConnected(false);
       setNotice(error.message);
     } finally {
       if (!quiet) setLoading(false);
@@ -3556,9 +3566,6 @@ export default function App() {
       }
       return <SafetyReportsView files={rowsSource.files ?? []} onOpen={openAttachment} profiles={rowsSource.people} projects={rowsSource.projects} />;
     }
-    if (activeNav === "settings") {
-      return <SettingsView featureFlags={activeFeatureFlags} isConfigured={isSupabaseConfigured} profile={profile} />;
-    }
     if (activeNav === "overview") {
       return <OverviewView data={rowsSource} getProfileName={getProfileName} getVisitFiles={getVisitFiles} onArrive={startArrivalWorkflow} onComplete={startCompletionWorkflow} onOpenVisit={openVisitOverlay} profile={profile} projects={rowsSource.projects} todayVisits={todayVisits} />;
     }
@@ -3702,10 +3709,7 @@ export default function App() {
               <Bell size={20} />
             </button>
 
-            <button className="sessionButton" type="button" onClick={signOut}>
-              <LogOut size={17} />
-              Sign out
-            </button>
+            <ServerStatusIndicator online={serverConnected && isSupabaseConfigured} />
           </div>
         </header>
 
@@ -5765,6 +5769,18 @@ function InfoView({ icon: Icon, title, text }) {
   );
 }
 
+function ServerStatusIndicator({ online }) {
+  return (
+    <div className={online ? "serverStatus online" : "serverStatus offline"} title={online ? "Supabase server connected" : "Supabase server is not responding"}>
+      <span className="serverStatusLight" />
+      <span>
+        <strong>{online ? "Server Connected" : "Server Offline"}</strong>
+        <small>{online ? "Supabase live" : "Check connection"}</small>
+      </span>
+    </div>
+  );
+}
+
 function SettingsView({ featureFlags = defaultFeatureFlags, isConfigured, profile }) {
   const flags = normalizeFeatureFlags(featureFlags);
   return (
@@ -5878,7 +5894,7 @@ function DeveloperSwitch({ checked, description, label, onChange }) {
         <strong>{label}</strong>
         <small>{description}</small>
       </span>
-      <span className="switchLine">
+      <span className="developerSwitchControl">
         <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
         <span className="switchTrack" aria-hidden="true">
           <span />
