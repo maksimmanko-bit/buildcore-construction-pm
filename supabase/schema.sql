@@ -699,6 +699,30 @@ alter table public.visit_equipment enable row level security;
 alter table public.visit_files enable row level security;
 alter table public.visit_activity enable row level security;
 
+alter table public.visits replica identity full;
+alter table public.visit_people replica identity full;
+alter table public.visit_equipment replica identity full;
+alter table public.visit_activity replica identity full;
+alter table public.visit_files replica identity full;
+
+do $$
+declare
+  table_name text;
+begin
+  foreach table_name in array array['visits', 'visit_people', 'visit_equipment', 'visit_activity', 'visit_files']
+  loop
+    if not exists (
+      select 1
+      from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = table_name
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', table_name);
+    end if;
+  end loop;
+end $$;
+
 drop policy if exists "company members read company" on public.companies;
 create policy "company members read company" on public.companies
 for select to authenticated

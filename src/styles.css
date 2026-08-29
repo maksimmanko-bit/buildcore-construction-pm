@@ -569,7 +569,13 @@ h1 {
   box-shadow: 0 28px 80px rgba(17, 24, 39, 0.24);
   -webkit-backdrop-filter: blur(28px) saturate(1.14);
   backdrop-filter: blur(28px) saturate(1.14);
-  animation: searchPanelIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: overlaySpringIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal,
+.searchPanel,
+.attachmentViewer {
+  animation: overlaySpringIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .detailHeader,
@@ -649,6 +655,10 @@ h1 {
 .todayTicket p {
   color: var(--muted);
   line-height: 1.55;
+}
+
+.mobileTicketActionBar {
+  display: none;
 }
 
 .overviewScopeGrid,
@@ -5114,6 +5124,32 @@ textarea:focus-visible {
     position: static;
     bottom: auto;
   }
+
+  .mobileTicketActionBar {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 10px;
+    margin: 8px -2px 0;
+    padding: 12px 0 max(14px, env(safe-area-inset-bottom));
+    background:
+      linear-gradient(180deg, rgba(248, 250, 252, 0), rgba(248, 250, 252, 0.96) 26%),
+      rgba(248, 250, 252, 0.86);
+    -webkit-backdrop-filter: blur(18px) saturate(1.12);
+    backdrop-filter: blur(18px) saturate(1.12);
+  }
+
+  .detailPanel:has(.mobileTicketActionBar) {
+    padding-bottom: max(118px, calc(env(safe-area-inset-bottom) + 98px));
+  }
+
+  .mobileTicketActionBar .outlineButton,
+  .mobileTicketActionBar .addButton {
+    justify-content: center;
+    min-height: 50px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -5263,6 +5299,336 @@ body.overlayLocked {
   -webkit-backdrop-filter: blur(26px) saturate(1.18);
   backdrop-filter: blur(26px) saturate(1.18);
   animation: toastLifecycle 3.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.confirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: end center;
+  padding: 22px;
+}
+
+.confirmBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.34);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+  backdrop-filter: blur(18px) saturate(1.08);
+  animation: overlayFadeIn 0.2s ease both;
+}
+
+.confirmSheet {
+  position: relative;
+  z-index: 1;
+  width: min(430px, 100%);
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.9)),
+    rgba(255, 255, 255, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    0 34px 90px rgba(15, 23, 42, 0.28);
+  -webkit-backdrop-filter: blur(28px) saturate(1.15);
+  backdrop-filter: blur(28px) saturate(1.15);
+  animation: sheetSpringIn 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.confirmClose {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #0f172a;
+}
+
+.confirmGlyph {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border-radius: 18px;
+  background: rgba(219, 234, 254, 0.78);
+  color: #2563eb;
+}
+
+.confirmGlyph.danger {
+  background: rgba(254, 226, 226, 0.9);
+  color: #dc2626;
+}
+
+.confirmSheet h2 {
+  margin: 18px 42px 8px 0;
+  color: #0f172a;
+  font-size: clamp(22px, 5vw, 30px);
+  line-height: 1.05;
+}
+
+.confirmSheet p {
+  margin: 0;
+  color: #475569;
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.confirmActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.dangerButton {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 15px;
+  background: linear-gradient(180deg, #ef4444, #cf2e2e);
+  color: #fff;
+  font-weight: 950;
+  box-shadow: 0 18px 36px rgba(207, 46, 46, 0.24);
+}
+
+.uploaderLoading {
+  display: grid;
+  min-height: 150px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background:
+    linear-gradient(90deg, rgba(226, 232, 240, 0.58), rgba(255, 255, 255, 0.88), rgba(226, 232, 240, 0.58)),
+    rgba(255, 255, 255, 0.8);
+  background-size: 220% 100%;
+  color: #64748b;
+  font-weight: 850;
+  animation: skeletonShimmer 1.3s ease-in-out infinite;
+}
+
+.uploadProgressToast {
+  position: fixed;
+  right: max(22px, env(safe-area-inset-right));
+  bottom: max(90px, calc(env(safe-area-inset-bottom) + 74px));
+  z-index: 91;
+  display: grid;
+  width: min(320px, calc(100vw - 24px));
+  gap: 5px;
+  padding: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.84)),
+    rgba(255, 255, 255, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 22px 54px rgba(15, 23, 42, 0.18);
+  -webkit-backdrop-filter: blur(24px) saturate(1.16);
+  backdrop-filter: blur(24px) saturate(1.16);
+  animation: toastIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.uploadProgressToast strong,
+.uploadProgressToast span {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.uploadProgressToast span {
+  color: #64748b;
+}
+
+.uploadProgressToast i {
+  display: block;
+  height: 4px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #cf2e2e, #2563eb);
+  transition: width 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.uploadProgressPill {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  margin-top: 10px;
+  padding: 8px 11px;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  border-radius: 999px;
+  background: rgba(239, 246, 255, 0.86);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.captionSheetOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 160;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.captionSheetBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 28, 40, 0.22);
+  backdrop-filter: blur(18px);
+}
+
+.captionSheet {
+  position: relative;
+  z-index: 1;
+  width: min(430px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 248, 253, 0.92));
+  box-shadow: 0 28px 72px rgba(15, 23, 42, 0.24);
+  animation: overlaySpringIn 420ms cubic-bezier(0.18, 1.18, 0.22, 1) both;
+}
+
+.captionClose {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.18);
+}
+
+.captionSheet h3 {
+  margin: 0;
+  padding-right: 34px;
+  font-size: 1.18rem;
+}
+
+.captionSheet p {
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.captionSheet textarea {
+  width: 100%;
+  min-height: 118px;
+  resize: vertical;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 800;
+  outline: none;
+  box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.captionSheet textarea:focus {
+  border-color: rgba(37, 99, 235, 0.34);
+  box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.1);
+}
+
+.captionActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.softHapticPulse {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 88;
+  background:
+    radial-gradient(circle at 50% 14%, rgba(37, 99, 235, 0.13), transparent 34%),
+    radial-gradient(circle at 50% 88%, rgba(207, 46, 46, 0.1), transparent 32%);
+  animation: softPulseFlash 0.68s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes softPulseFlash {
+  0% {
+    opacity: 0;
+    transform: scale(0.995);
+  }
+
+  24% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.01);
+  }
+}
+
+@keyframes overlayFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sheetSpringIn {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes overlaySpringIn {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal,
+  .searchPanel,
+  .detailPanel,
+  .attachmentViewer,
+  .confirmSheet,
+  .confirmBackdrop {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 .noticeToast::before {

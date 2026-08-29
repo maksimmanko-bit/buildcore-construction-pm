@@ -40,14 +40,15 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import DocumentUploader from "./components/DocumentUploader.jsx";
 import { overlaps } from "./lib/schedule.js";
 import { isSupabaseConfigured, supabase } from "./lib/supabase.js";
 import { createAttachmentUrls, createProfileAvatarUrl, deleteVisitFile, replaceVisitPhotoWithAnnotation, uploadProfileAvatar, uploadVisitGeneratedFile, uploadVisitPhoto } from "./lib/storage.js";
 import { localGlobalSearch } from "./lib/search.js";
 import { getGoogleMapsUrl, getWeatherForAddress } from "./lib/weather.js";
+import { readCachedWorkspace, writeCachedWorkspace } from "./lib/localCache.js";
 
 const PhotoAnnotator = lazy(() => import("./components/PhotoAnnotator.jsx"));
+const DocumentUploader = lazy(() => import("./components/DocumentUploader.jsx"));
 
 const demo = {
   companyId: "00000000-0000-0000-0000-000000000001",
@@ -650,6 +651,7 @@ export default function App() {
   const globalSearchRef = useRef(null);
   const searchInputRef = useRef(null);
   const activeEditLockRef = useRef(null);
+  const confirmationResolverRef = useRef(null);
   const [activeNav, setActiveNav] = useState("overview");
   const [scheduleMode, setScheduleMode] = useState("day");
   const [session, setSession] = useState(null);
@@ -667,6 +669,8 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [notice, setNotice] = useState("");
+  const [confirmation, setConfirmation] = useState(null);
+  const [softPulse, setSoftPulse] = useState(false);
   const [authMode, setAuthMode] = useState("signin");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -693,6 +697,7 @@ export default function App() {
   const [workflowVisitId, setWorkflowVisitId] = useState("");
   const [photoStep, setPhotoStep] = useState({ kind: "", visitId: "", files: [], captions: {} });
   const [completionForm, setCompletionForm] = useState({ notes: "", files: [], captions: {} });
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [profileForm, setProfileForm] = useState({ first_name: "", last_name: "", phone: "", avatarFile: null, removeAvatar: false });
   const [personForm, setPersonForm] = useState({ first_name: "", last_name: "", phone: "", role: "builder", trade: "", availability_status: "available" });
   const [avatarUrls, setAvatarUrls] = useState({});
@@ -705,7 +710,9 @@ export default function App() {
 
   const refreshData = useCallback(async () => {
     if (!supabase || !session) return;
-    setLoading(true);
+    const cachedWorkspace = await readCachedWorkspace(session.user.id);
+    const canUseCachedWorkspace = cachedWorkspace?.profile?.id === session.user.id && cachedWorkspace?.data?.companyId;
+    setLoading(!canUseCachedWorkspace);
 
     try {
       let profileResult = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
@@ -749,6 +756,10 @@ export default function App() {
         return;
       }
 
+      if (canUseCachedWorkspace && cachedWorkspace.data.companyId === nextProfile.company_id) {
+        setData(cachedWorkspace.data);
+      }
+
       const nextCanManage = ["owner", "project_manager", "office_manager"].includes(nextProfile.role);
       const peopleQuery = nextCanManage
         ? supabase.from("profiles").select("*").order("is_active", { ascending: true }).order("full_name")
@@ -768,7 +779,7 @@ export default function App() {
 
       const nextProjects = projectsResult.data ?? [];
       const allPeople = peopleResult.data ?? [];
-      setData({
+      const nextData = {
         companyId: nextProfile.company_id,
         projects: nextProjects,
         people: allPeople.filter((person) => person.is_active),
@@ -777,7 +788,9 @@ export default function App() {
         visits: visitsResult.data ?? [],
         files: filesResult.data ?? [],
         activities: activityResult.data ?? [],
-      });
+      };
+      setData(nextData);
+      writeCachedWorkspace(session.user.id, { profile: nextProfile, data: nextData });
 
       if (selectedProjectId && !nextProjects.some((project) => project.id === selectedProjectId)) setSelectedProjectId("");
     } catch (error) {
@@ -868,6 +881,33 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!supabase || !profile?.is_active || !profile.company_id) return undefined;
+
+    const channel = supabase
+      .channel(`buildcore-workspace-${profile.company_id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "visits", filter: `company_id=eq.${profile.company_id}` }, () => {
+        void loadVisits();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "visit_people" }, () => {
+        void loadVisits();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "visit_equipment" }, () => {
+        void loadVisits();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "visit_activity", filter: `company_id=eq.${profile.company_id}` }, () => {
+        void loadActivities();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "visit_files", filter: `company_id=eq.${profile.company_id}` }, () => {
+        void loadFiles();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.company_id, profile?.is_active]);
+
+  useEffect(() => {
     let alive = true;
     const profiles = [profile, ...(data.people ?? []), ...(data.pendingPeople ?? [])].filter(Boolean).filter((item) => item.avatar_path);
     if (profiles.length === 0) return undefined;
@@ -949,10 +989,10 @@ export default function App() {
   }, [isSearchOpen]);
 
   useEffect(() => {
-    const locked = isSearchOpen || Boolean(detailOverlay) || Boolean(modalType) || Boolean(selectedAttachment) || isMobileMenuOpen;
+    const locked = isSearchOpen || Boolean(detailOverlay) || Boolean(modalType) || Boolean(selectedAttachment) || isMobileMenuOpen || Boolean(confirmation);
     document.body.classList.toggle("overlayLocked", locked);
     return () => document.body.classList.remove("overlayLocked");
-  }, [detailOverlay, isMobileMenuOpen, isSearchOpen, modalType, selectedAttachment]);
+  }, [confirmation, detailOverlay, isMobileMenuOpen, isSearchOpen, modalType, selectedAttachment]);
 
   useEffect(() => {
     if (!isLive || loading || !notice) return undefined;
@@ -1104,8 +1144,47 @@ export default function App() {
     (completionForm.files?.length ?? 0) > 0 ||
     Object.values(completionForm.captions ?? {}).some((caption) => String(caption ?? "").trim().length > 0);
 
-  function closeModalWithConfirmation(hasUnsavedDraft = false) {
-    if (hasUnsavedDraft && !window.confirm("You have unsaved changes. Close this window without saving?")) return;
+  function confirmAction(options) {
+    return new Promise((resolve) => {
+      confirmationResolverRef.current = resolve;
+      setConfirmation({
+        confirmLabel: "Confirm",
+        cancelLabel: "Cancel",
+        danger: false,
+        message: "",
+        title: "Are you sure?",
+        ...options,
+      });
+    });
+  }
+
+  function triggerSoftPulse() {
+    setSoftPulse(false);
+    window.requestAnimationFrame(() => {
+      setSoftPulse(true);
+      window.setTimeout(() => setSoftPulse(false), 680);
+    });
+  }
+
+  function resolveConfirmation(value) {
+    const resolver = confirmationResolverRef.current;
+    confirmationResolverRef.current = null;
+    setConfirmation(null);
+    resolver?.(value);
+  }
+
+  async function closeModalWithConfirmation(hasUnsavedDraft = false) {
+    if (
+      hasUnsavedDraft &&
+      !(await confirmAction({
+        title: "Close without saving?",
+        message: "You have unsaved changes in this form.",
+        confirmLabel: "Close",
+        danger: true,
+      }))
+    ) {
+      return;
+    }
     setModalType(null);
   }
 
@@ -1168,6 +1247,56 @@ export default function App() {
     activeEditLockRef.current = nextLock;
     setActiveEditLock(nextLock);
     return true;
+  }
+
+  function commitWorkspaceData(updater) {
+    setData((current) => {
+      const nextData = typeof updater === "function" ? updater(current) : updater;
+      if (session?.user?.id && profile?.id && nextData?.companyId) writeCachedWorkspace(session.user.id, { profile, data: nextData });
+      return nextData;
+    });
+  }
+
+  async function loadVisits({ quiet = true } = {}) {
+    if (!supabase || !session) return;
+    if (!quiet) setLoading(true);
+    try {
+      const { data: visits, error } = await supabase.from("visit_schedule_view").select("*").order("visit_date", { ascending: false }).order("start_time");
+      if (error) throw error;
+      commitWorkspaceData((current) => ({ ...current, visits: visits ?? [] }));
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      if (!quiet) setLoading(false);
+    }
+  }
+
+  async function loadFiles({ quiet = true } = {}) {
+    if (!supabase || !session) return;
+    if (!quiet) setLoading(true);
+    try {
+      const { data: files, error } = await supabase.from("visit_files").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      commitWorkspaceData((current) => ({ ...current, files: files ?? [] }));
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      if (!quiet) setLoading(false);
+    }
+  }
+
+  async function loadActivities({ quiet = true } = {}) {
+    if (!supabase || !session) return;
+    if (!quiet) setLoading(true);
+    try {
+      const { data: activities, error } = await supabase.from("visit_activity").select("*").order("created_at", { ascending: false }).limit(500);
+      if (error) throw error;
+      commitWorkspaceData((current) => ({ ...current, activities: activities ?? [] }));
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      if (!quiet) setLoading(false);
+    }
   }
 
   async function applyPendingSignupProfile(nextProfile) {
@@ -1332,9 +1461,14 @@ export default function App() {
     setActiveEditLock(null);
     activeEditLockRef.current = null;
     await releaseEditLock(lockToRelease);
+    commitWorkspaceData((current) => {
+      const projects = current.projects ?? [];
+      const nextProjects = editingProjectId ? projects.map((project) => (project.id === saved.id ? saved : project)) : [saved, ...projects];
+      return { ...current, projects: nextProjects };
+    });
     setSelectedProjectId(saved.id);
+    triggerSoftPulse();
     setNotice(editingProjectId ? "Project changes saved." : "Project saved.");
-    refreshData();
   }
 
   async function editProject(project) {
@@ -1365,22 +1499,36 @@ export default function App() {
       return;
     }
 
-    const confirmed = window.confirm(`Delete project "${project.name}" and its scheduled visits?`);
+    const confirmed = await confirmAction({
+      title: "Delete project?",
+      message: `Delete "${project.name}" and its scheduled visits?`,
+      confirmLabel: "Delete project",
+      danger: true,
+    });
     if (!confirmed) return;
 
+    const previousData = data;
+    commitWorkspaceData((current) => ({
+      ...current,
+      projects: (current.projects ?? []).filter((item) => item.id !== project.id),
+      visits: (current.visits ?? []).filter((visit) => visit.project_id !== project.id),
+      files: (current.files ?? []).filter((file) => file.project_id !== project.id),
+      activities: (current.activities ?? []).filter((activity) => activity.project_id !== project.id),
+    }));
     setLoading(true);
     const { error } = await supabase.from("projects").delete().eq("id", project.id);
     setLoading(false);
 
     if (error) {
+      commitWorkspaceData(previousData);
       setNotice(error.message);
       return;
     }
 
+    triggerSoftPulse();
     setNotice("Project deleted.");
     setSelectedProjectId("");
     setSelectedVisitId("");
-    refreshData();
   }
 
   async function saveEquipment(event) {
@@ -1401,6 +1549,7 @@ export default function App() {
 
     setEquipmentForm(emptyEquipmentForm);
     setModalType(null);
+    triggerSoftPulse();
     setNotice("Equipment saved.");
     refreshData();
   }
@@ -1464,6 +1613,7 @@ export default function App() {
 
     try {
       let firstVisit = null;
+      const savedVisits = [];
 
       for (const [index, visitDate] of generatedDates.entries()) {
         const visitPayload = {
@@ -1489,6 +1639,7 @@ export default function App() {
         const { data: visit, error: visitError } = await visitQuery;
         if (visitError) throw visitError;
         if (!firstVisit) firstVisit = visit;
+        savedVisits.push({ ...visit, people_ids: visitForm.people_ids, equipment_ids: visitForm.equipment_ids });
         if (!editingVisitId) createdVisitIds.push(visit.id);
 
         if (editingVisitId) {
@@ -1513,16 +1664,25 @@ export default function App() {
       setActiveEditLock(null);
       activeEditLockRef.current = null;
       await releaseEditLock(lockToRelease);
+      commitWorkspaceData((current) => {
+        const savedIds = new Set(savedVisits.map((visit) => visit.id));
+        const keptVisits = (current.visits ?? []).filter((visit) => !savedIds.has(visit.id));
+        return {
+          ...current,
+          visits: [...savedVisits, ...keptVisits].sort((a, b) => `${b.visit_date} ${b.start_time}`.localeCompare(`${a.visit_date} ${a.start_time}`)),
+        };
+      });
       setSelectedDate(firstVisit.visit_date);
       setSelectedProjectId(firstVisit.project_id);
       setSelectedVisitId(firstVisit.id);
+      triggerSoftPulse();
       setNotice(editingVisitId ? "Ticket changes saved." : `${generatedDates.length} ticket${generatedDates.length === 1 ? "" : "s"} saved. Weekends skipped.`);
-      refreshData();
+      loadVisits();
     } catch (error) {
       if (!editingVisitId && createdVisitIds.length > 0) await supabase.from("visits").delete().in("id", createdVisitIds);
       setLoading(false);
       setNotice(error.message);
-      refreshData();
+      loadVisits();
     }
   }
 
@@ -1535,6 +1695,7 @@ export default function App() {
       return;
     }
 
+    triggerSoftPulse();
     setNotice(`${person.full_name || "Employee"} role updated.`);
     refreshData();
   }
@@ -1551,6 +1712,7 @@ export default function App() {
       return;
     }
 
+    triggerSoftPulse();
     setNotice(`${profileDisplayName(person, "Employee")} approved as ${roleLabel(role)}.`);
     refreshData();
   }
@@ -1606,6 +1768,7 @@ export default function App() {
       return;
     }
 
+    triggerSoftPulse();
     setNotice("Employee profile saved.");
     setModalType(null);
     refreshData();
@@ -1644,6 +1807,7 @@ export default function App() {
         .eq("id", profile.id);
 
       if (error) throw error;
+      triggerSoftPulse();
       setNotice("Profile saved.");
       refreshData();
     } catch (error) {
@@ -1671,7 +1835,7 @@ export default function App() {
     }
 
     setNotice(status === "on_site" ? "Visit is in progress. Upload Safety Form and first-visit photos." : "Visit completed. Add photos and office notes.");
-    refreshData();
+    loadVisits();
   }
 
   async function updateVisitStatusById(visitId, status, extra = {}) {
@@ -1691,7 +1855,7 @@ export default function App() {
       return false;
     }
 
-    refreshData();
+    loadVisits();
     return true;
   }
 
@@ -1715,6 +1879,31 @@ export default function App() {
     });
 
     if (error) setNotice(error.message);
+  }
+
+  async function uploadPhotosWithProgress({ files, captions, fileType, label, project, searchTextForFile, visit }) {
+    let completed = 0;
+    const rows = await Promise.all(
+      files.map(async (file) => {
+        const caption = captions?.[fileInputKey(file)]?.trim() || "";
+        const row = await uploadVisitPhoto({
+          companyId: rowsSource.companyId,
+          projectId: project.id,
+          visitId: visit.id,
+          profileId: profile.id,
+          file,
+          fileType,
+          photoCaption: caption,
+          searchText: searchTextForFile(file, caption),
+        });
+        completed += 1;
+        setUploadProgress({ current: completed, total: files.length, label });
+        commitWorkspaceData((current) => ({ ...current, files: [row, ...(current.files ?? [])] }));
+        return row;
+      }),
+    );
+
+    return rows;
   }
 
   function showDetailOverlay(nextOverlay) {
@@ -1930,7 +2119,8 @@ export default function App() {
       setPhotoStep({ kind: "before", visitId: activeVisit.id, files: [], captions: {} });
       setModalType("beforePhotos");
       setNotice("Safety form saved. Add before photos to start work.");
-      refreshData();
+      loadFiles();
+      loadActivities();
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -1954,21 +2144,16 @@ export default function App() {
     setLoading(true);
     try {
       setNotice(`Uploading ${photoStep.files.length} before photo${photoStep.files.length === 1 ? "" : "s"}...`);
-      await Promise.all(
-        photoStep.files.map((file) => {
-          const caption = photoStep.captions?.[fileInputKey(file)]?.trim() || "";
-          return uploadVisitPhoto({
-          companyId: rowsSource.companyId,
-          projectId: activeProject.id,
-          visitId: activeVisit.id,
-          profileId: profile.id,
-          file,
-          fileType: "before_photo",
-          photoCaption: caption,
-          searchText: `Before photo uploaded by ${currentUserName} at ${new Date().toISOString()}. ${caption}`,
-          });
-        }),
-      );
+      setUploadProgress({ current: 0, total: photoStep.files.length, label: "Before photos" });
+      await uploadPhotosWithProgress({
+        captions: photoStep.captions,
+        fileType: "before_photo",
+        files: photoStep.files,
+        label: "Before photos",
+        project: activeProject,
+        visit: activeVisit,
+        searchTextForFile: (_file, caption) => `Before photo uploaded by ${currentUserName} at ${new Date().toISOString()}. ${caption}`,
+      });
       await logVisitActivity(activeVisit, "before_photos_uploaded", `${currentUserName} uploaded ${photoStep.files.length} before photo${photoStep.files.length === 1 ? "" : "s"}.`, {
         count: photoStep.files.length,
       });
@@ -1979,11 +2164,15 @@ export default function App() {
       setModalType(null);
       setWorkflowVisitId("");
       setPhotoStep({ kind: "", visitId: "", files: [], captions: {} });
+      triggerSoftPulse();
       setNotice("Work started. Ticket is Active.");
-      refreshData();
+      loadVisits();
+      loadActivities();
+      loadFiles();
     } catch (error) {
       setNotice(error.message);
     } finally {
+      setUploadProgress(null);
       setLoading(false);
     }
   }
@@ -2004,21 +2193,16 @@ export default function App() {
     setLoading(true);
     try {
       setNotice(`Uploading ${completionForm.files.length} after photo${completionForm.files.length === 1 ? "" : "s"}...`);
-      await Promise.all(
-        completionForm.files.map((file) => {
-          const caption = completionForm.captions?.[fileInputKey(file)]?.trim() || "";
-          return uploadVisitPhoto({
-          companyId: rowsSource.companyId,
-          projectId: activeProject.id,
-          visitId: activeVisit.id,
-          profileId: profile.id,
-          file,
-          fileType: "completion_photo",
-          photoCaption: caption,
-          searchText: `After photo uploaded by ${currentUserName} at ${new Date().toISOString()}. ${completionForm.notes} ${caption}`,
-          });
-        }),
-      );
+      setUploadProgress({ current: 0, total: completionForm.files.length, label: "After photos" });
+      await uploadPhotosWithProgress({
+        captions: completionForm.captions,
+        fileType: "completion_photo",
+        files: completionForm.files,
+        label: "After photos",
+        project: activeProject,
+        visit: activeVisit,
+        searchTextForFile: (_file, caption) => `After photo uploaded by ${currentUserName} at ${new Date().toISOString()}. ${completionForm.notes} ${caption}`,
+      });
       await logVisitActivity(activeVisit, "after_photos_uploaded", `${currentUserName} uploaded ${completionForm.files.length} after photo${completionForm.files.length === 1 ? "" : "s"}.`, {
         count: completionForm.files.length,
       });
@@ -2030,11 +2214,15 @@ export default function App() {
       setModalType(null);
       setWorkflowVisitId("");
       setCompletionForm({ notes: "", files: [], captions: {} });
+      triggerSoftPulse();
       setNotice("Thank you. Work is Done.");
-      refreshData();
+      loadVisits();
+      loadActivities();
+      loadFiles();
     } catch (error) {
       setNotice(error.message);
     } finally {
+      setUploadProgress(null);
       setLoading(false);
     }
   }
@@ -2046,11 +2234,24 @@ export default function App() {
     }
 
     const project = rowsSource.projects.find((item) => item.id === visitToDelete.project_id) ?? selectedProject;
-    const confirmed = window.confirm(`Remove ticket for "${project?.name ?? "Project"}" on ${formatDateLabel(visitToDelete.visit_date)}?\n\nThis will also remove its Activity Feed history.`);
+    const confirmed = await confirmAction({
+      title: "Remove ticket?",
+      message: `Remove ticket for "${project?.name ?? "Project"}" on ${formatDateLabel(visitToDelete.visit_date)}? This will also remove its Activity Feed history.`,
+      confirmLabel: "Remove ticket",
+      danger: true,
+    });
     if (!confirmed) return;
 
+    const previousData = data;
+    commitWorkspaceData((current) => ({
+      ...current,
+      visits: (current.visits ?? []).filter((visit) => visit.id !== visitToDelete.id),
+      activities: (current.activities ?? []).filter((activity) => activity.visit_id !== visitToDelete.id),
+      files: (current.files ?? []).filter((file) => file.visit_id !== visitToDelete.id),
+    }));
     const { error } = await supabase.from("visits").delete().eq("id", visitToDelete.id);
     if (error) {
+      commitWorkspaceData(previousData);
       setNotice(error.message);
       return;
     }
@@ -2060,8 +2261,8 @@ export default function App() {
     if (workflowVisitId === visitToDelete.id) setWorkflowVisitId("");
     if (photoStep.visitId === visitToDelete.id) setPhotoStep({ kind: "", visitId: "", files: [], captions: {} });
     if (detailOverlay === "visit") closeDetailOverlay();
+    triggerSoftPulse();
     setNotice("Ticket and Activity Feed removed.");
-    refreshData();
   }
 
   async function moveVisitAssignment({ assignment, row, clientX, trackElement }) {
@@ -2086,7 +2287,7 @@ export default function App() {
     const previousData = data;
 
     setNotice("Updating schedule...");
-    setData((current) => ({
+    commitWorkspaceData((current) => ({
       ...current,
       visits: (current.visits ?? []).map((visit) => {
         if (visit.id !== assignment.visitId) return visit;
@@ -2121,20 +2322,20 @@ export default function App() {
       if (row.kind === "person") {
         const addResult = await supabase.from("visit_people").insert({ visit_id: assignment.visitId, profile_id: row.id });
         if (addResult.error) {
-          setData(previousData);
+          commitWorkspaceData(previousData);
           setLoading(false);
           setNotice(addResult.error.message);
-          refreshData();
+          loadVisits();
           return;
         }
         addedNewResource = true;
       } else {
         const addResult = await supabase.from("visit_equipment").insert({ visit_id: assignment.visitId, equipment_id: row.id });
         if (addResult.error) {
-          setData(previousData);
+          commitWorkspaceData(previousData);
           setLoading(false);
           setNotice(addResult.error.message);
-          refreshData();
+          loadVisits();
           return;
         }
         addedNewResource = true;
@@ -2150,14 +2351,14 @@ export default function App() {
       .eq("id", assignment.visitId);
 
     if (visitResult.error) {
-      setData(previousData);
+      commitWorkspaceData(previousData);
       if (addedNewResource) {
         if (row.kind === "person") await supabase.from("visit_people").delete().eq("visit_id", assignment.visitId).eq("profile_id", row.id);
         else await supabase.from("visit_equipment").delete().eq("visit_id", assignment.visitId).eq("equipment_id", row.id);
       }
       setLoading(false);
       setNotice(visitResult.error.message);
-      refreshData();
+      loadVisits();
       return;
     }
 
@@ -2168,17 +2369,18 @@ export default function App() {
           : await supabase.from("visit_equipment").delete().eq("visit_id", assignment.visitId).eq("equipment_id", assignment.resourceId);
 
       if (removeResult.error) {
-        setData(previousData);
+        commitWorkspaceData(previousData);
         setLoading(false);
         setNotice(removeResult.error.message);
-        refreshData();
+        loadVisits();
         return;
       }
     }
 
     setLoading(false);
+    triggerSoftPulse();
     setNotice(`Visit moved to ${formatTimeRange(nextStartTime, nextEndTime)}.`);
-    refreshData();
+    loadVisits();
   }
 
   async function assignPersonToVisit({ personId, sourceVisitId = "", visitId }) {
@@ -2221,9 +2423,12 @@ export default function App() {
       return;
     }
     if (conflicts.length > 0) {
-      const confirmed = window.confirm(
-        `${profileDisplayName(person)} is already assigned during this time: ${conflictsText}.\n\nMove them to this ticket instead?`,
-      );
+      const confirmed = await confirmAction({
+        title: "Move crew member?",
+        message: `${profileDisplayName(person)} is already assigned during this time: ${conflictsText}. Move them to this ticket instead?`,
+        confirmLabel: "Move",
+        danger: false,
+      });
       if (!confirmed) {
         setNotice("Assignment unchanged.");
         return;
@@ -2232,7 +2437,7 @@ export default function App() {
 
     const conflictVisitIds = conflicts.map((item) => item.id);
     const previousData = data;
-    setData((current) => ({
+    commitWorkspaceData((current) => ({
       ...current,
       visits: (current.visits ?? []).map((item) => {
         if (conflictVisitIds.includes(item.id)) {
@@ -2264,12 +2469,14 @@ export default function App() {
         ),
         logVisitActivity(visit, "person_assigned", `${currentUserName} assigned ${profileDisplayName(person)} to this ticket.`, { personId, sourceVisitId, replacedVisitIds: conflictVisitIds }),
       ]);
+      triggerSoftPulse();
       setNotice(conflicts.length > 0 ? `${profileDisplayName(person)} moved to ticket.` : `${profileDisplayName(person)} assigned to ticket.`);
-      refreshData();
+      loadVisits();
+      loadActivities();
     } catch (error) {
-      setData(previousData);
+      commitWorkspaceData(previousData);
       setNotice(error.message);
-      refreshData();
+      loadVisits();
     } finally {
       setLoading(false);
     }
@@ -2287,14 +2494,19 @@ export default function App() {
     if (!visit || !person) return;
     if (!visit.people_ids?.includes(personId)) return;
     const project = rowsSource.projects.find((item) => item.id === visit.project_id);
-    const confirmed = window.confirm(`Remove ${profileDisplayName(person)} from ${project?.name || "this ticket"}?`);
+    const confirmed = await confirmAction({
+      title: "Remove from ticket?",
+      message: `Remove ${profileDisplayName(person)} from ${project?.name || "this ticket"}?`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
     if (!confirmed) {
       setNotice("Crew assignment unchanged.");
       return;
     }
 
     const previousData = data;
-    setData((current) => ({
+    commitWorkspaceData((current) => ({
       ...current,
       visits: (current.visits ?? []).map((item) => {
         if (item.id !== visitId) return item;
@@ -2307,12 +2519,14 @@ export default function App() {
       const { error } = await supabase.from("visit_people").delete().eq("visit_id", visitId).eq("profile_id", personId);
       if (error) throw error;
       await logVisitActivity(visit, "person_removed", `${currentUserName} removed ${profileDisplayName(person)} from this ticket.`, { personId });
+      triggerSoftPulse();
       setNotice(`${profileDisplayName(person)} removed from ticket.`);
-      refreshData();
+      loadVisits();
+      loadActivities();
     } catch (error) {
-      setData(previousData);
+      commitWorkspaceData(previousData);
       setNotice(error.message);
-      refreshData();
+      loadVisits();
     } finally {
       setLoading(false);
     }
@@ -2451,10 +2665,16 @@ export default function App() {
       const updated = { ...saved, ...urls };
       setSelectedAttachment(updated);
       setViewerItems((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      commitWorkspaceData((current) => ({
+        ...current,
+        files: (current.files ?? []).map((file) => (file.id === updated.id ? updated : file)),
+      }));
       const visit = (rowsSource.visits ?? []).find((item) => item.id === saved.visit_id);
       await logVisitActivity(visit, "photo_annotated", `${currentUserName} annotated ${saved.file_name}.`, { fileId: saved.id });
-      await refreshData();
+      await loadFiles();
+      await loadActivities();
       setIsAnnotatingPhoto(false);
+      triggerSoftPulse();
       setNotice("Annotation saved and original photo replaced.");
     } catch (error) {
       setNotice(error.message);
@@ -2465,7 +2685,12 @@ export default function App() {
 
   async function removeSelectedAttachment() {
     if (!selectedAttachment) return;
-    const confirmed = window.confirm(`Delete "${selectedAttachment.file_name || "photo"}"?`);
+    const confirmed = await confirmAction({
+      title: "Delete file?",
+      message: `Delete "${selectedAttachment.file_name || "photo"}"?`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
     if (!confirmed) return;
 
     setLoading(true);
@@ -2477,7 +2702,13 @@ export default function App() {
       const nextItems = viewerItems.filter((item) => item.id !== removed.id);
       setViewerItems(nextItems);
       setSelectedAttachment(nextItems[0] ?? null);
-      await refreshData();
+      commitWorkspaceData((current) => ({
+        ...current,
+        files: (current.files ?? []).filter((file) => file.id !== removed.id),
+      }));
+      await loadFiles();
+      await loadActivities();
+      triggerSoftPulse();
       setNotice("File deleted.");
     } catch (error) {
       setNotice(error.message);
@@ -2599,10 +2830,15 @@ export default function App() {
       setNotice("Only non-Builder users can delete Activity Feed rows.");
       return;
     }
-    const confirmed = window.confirm("Delete this Activity Feed row?");
+    const confirmed = await confirmAction({
+      title: "Delete Activity Feed row?",
+      message: "This removes the selected history row from the project and ticket.",
+      confirmLabel: "Delete row",
+      danger: true,
+    });
     if (!confirmed) return;
     const previousData = data;
-    setData((current) => ({
+    commitWorkspaceData((current) => ({
       ...current,
       activities: (current.activities ?? []).filter((activity) => activity.id !== item.id),
     }));
@@ -2611,12 +2847,13 @@ export default function App() {
       const { data: deletedRows, error } = await supabase.from("visit_activity").delete().eq("id", item.id).select("id");
       if (error) throw error;
       if (!deletedRows?.length) throw new Error("Activity Feed row was not deleted. Check Supabase delete policy.");
+      triggerSoftPulse();
       setNotice("Activity Feed row deleted.");
-      refreshData();
+      loadActivities();
     } catch (error) {
-      setData(previousData);
+      commitWorkspaceData(previousData);
       setNotice(error.message);
-      refreshData();
+      loadActivities();
     } finally {
       setLoading(false);
     }
@@ -2890,10 +3127,18 @@ export default function App() {
       </aside>
 
       <main className="mainWorkspace">
+        {softPulse && <div className="softHapticPulse" aria-hidden="true" />}
         {(loading || notice) && (
           <div className={loading ? "noticeToast isLoading" : "noticeToast"} key={loading ? `loading-${notice}` : notice}>
             {loading && <span />}
             <strong>{loading ? notice || "Saving changes..." : notice}</strong>
+          </div>
+        )}
+        {uploadProgress && (
+          <div className="uploadProgressToast">
+            <strong>{uploadProgress.label}</strong>
+            <span>{uploadProgress.current} of {uploadProgress.total} uploaded</span>
+            <i style={{ width: `${Math.round((uploadProgress.current / Math.max(1, uploadProgress.total)) * 100)}%` }} />
           </div>
         )}
         <div className="mobileTopBar">
@@ -3084,7 +3329,7 @@ export default function App() {
             </div>
 
             <div className="panelActions">
-              <DocumentUploader
+              <DocumentUploaderShell
                 attachments={projectAttachments}
                 companyId={rowsSource.companyId}
                 profileId={profile?.id}
@@ -3093,7 +3338,7 @@ export default function App() {
                 onOpen={openAttachment}
                 onUploaded={(message) => {
                   setNotice(message);
-                  refreshData();
+                  loadFiles();
                 }}
               />
 
@@ -3178,7 +3423,7 @@ export default function App() {
             onRemoveActivity={deleteActivityItem}
             onUploaded={(message) => {
               setNotice(message);
-              refreshData();
+              loadFiles();
             }}
             people={rowsSource.people}
             profileId={profile?.id}
@@ -3203,7 +3448,7 @@ export default function App() {
             onOpenAttachment={openAttachment}
             onUploaded={(message) => {
               setNotice(message);
-              refreshData();
+              loadFiles();
             }}
             onRemove={deleteVisit}
             people={currentVisitPeople}
@@ -3494,7 +3739,7 @@ export default function App() {
               {selectedAttachment.file_kind === "photo" || selectedAttachment.mime_type?.startsWith("image/") ? (
                 <PhotoViewer
                   attachment={selectedAttachment}
-                  canDelete={canManage || selectedAttachment.uploaded_by === profile?.id}
+                  canDelete={!selectedAttachment.localPreview && (canManage || selectedAttachment.uploaded_by === profile?.id)}
                   isAnnotating={isAnnotatingPhoto}
                   items={viewerItems}
                   loading={loading}
@@ -3509,11 +3754,11 @@ export default function App() {
                   zoom={photoZoom}
                 />
               ) : selectedAttachment.file_kind === "pdf" || selectedAttachment.mime_type === "application/pdf" ? (
-                <DocumentFileViewer attachment={selectedAttachment} canDelete={canManage || selectedAttachment.uploaded_by === profile?.id} loading={loading} onDelete={removeSelectedAttachment} onDownload={() => downloadAttachment(selectedAttachment)}>
+                <DocumentFileViewer attachment={selectedAttachment} canDelete={!selectedAttachment.localPreview && (canManage || selectedAttachment.uploaded_by === profile?.id)} loading={loading} onDelete={removeSelectedAttachment} onDownload={() => downloadAttachment(selectedAttachment)}>
                   <iframe title={selectedAttachment.file_name || "PDF"} src={selectedAttachment.viewUrl} />
                 </DocumentFileViewer>
               ) : (
-                <DocumentFileViewer attachment={selectedAttachment} canDelete={canManage || selectedAttachment.uploaded_by === profile?.id} loading={loading} onDelete={removeSelectedAttachment} onDownload={() => downloadAttachment(selectedAttachment)}>
+                <DocumentFileViewer attachment={selectedAttachment} canDelete={!selectedAttachment.localPreview && (canManage || selectedAttachment.uploaded_by === profile?.id)} loading={loading} onDelete={removeSelectedAttachment} onDownload={() => downloadAttachment(selectedAttachment)}>
                   <div className="documentOpenCard">
                     <FileSpreadsheet size={38} />
                     <strong>Excel workbook</strong>
@@ -3526,7 +3771,43 @@ export default function App() {
             </div>
           </AppModal>
         )}
+
+        {confirmation && <ConfirmationSheet confirmation={confirmation} onResolve={resolveConfirmation} />}
       </main>
+    </div>
+  );
+}
+
+function DocumentUploaderShell(props) {
+  return (
+    <Suspense fallback={<div className="uploaderLoading">Preparing upload tools...</div>}>
+      <DocumentUploader {...props} />
+    </Suspense>
+  );
+}
+
+function ConfirmationSheet({ confirmation, onResolve }) {
+  return (
+    <div className="confirmOverlay" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+      <div className="confirmBackdrop" onClick={() => onResolve(false)} />
+      <section className="confirmSheet">
+        <button className="confirmClose" type="button" title="Close" onClick={() => onResolve(false)}>
+          <X size={18} />
+        </button>
+        <div className={confirmation.danger ? "confirmGlyph danger" : "confirmGlyph"}>
+          {confirmation.danger ? <Trash2 size={22} /> : <CheckCircle2 size={22} />}
+        </div>
+        <h2 id="confirm-title">{confirmation.title}</h2>
+        {confirmation.message && <p id="confirm-message">{confirmation.message}</p>}
+        <div className="confirmActions">
+          <button className="outlineButton" type="button" onClick={() => onResolve(false)}>
+            {confirmation.cancelLabel || "Cancel"}
+          </button>
+          <button className={confirmation.danger ? "dangerButton" : "addButton"} type="button" onClick={() => onResolve(true)}>
+            {confirmation.confirmLabel || "Confirm"}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -3785,6 +4066,25 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, files, get
           onUploaded,
         }}
       />
+
+      <div className="mobileTicketActionBar">
+        <button className="outlineButton" type="button" onClick={onEdit}>
+          <Edit3 size={17} />
+          Edit
+        </button>
+        {visit.status === "planned" && (
+          <button className="addButton" type="button" onClick={onArrive}>
+            <ClipboardCheck size={17} />
+            Arrived
+          </button>
+        )}
+        {visit.status === "on_site" && (
+          <button className="addButton" type="button" onClick={onComplete}>
+            <CheckCircle2 size={17} />
+            Complete
+          </button>
+        )}
+      </div>
     </DetailOverlayShell>
   );
 }
@@ -3937,7 +4237,7 @@ function AttachmentSections({ files, onOpen, profiles = [], uploader = null }) {
           <div className="panelSectionHeader">
             <h3>Add files</h3>
           </div>
-          <DocumentUploader {...uploader} showPreview={false} />
+          <DocumentUploaderShell {...uploader} showPreview={false} />
         </section>
       )}
       {groups.map((group) => {

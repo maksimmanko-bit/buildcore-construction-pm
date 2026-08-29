@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FileSpreadsheet, FileText, Image, Upload } from "lucide-react";
+import { FileSpreadsheet, FileText, Image, Upload, X } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
 import { extractSearchText } from "../lib/fileText.js";
 import { createAttachmentUrls, uploadVisitAttachment } from "../lib/storage.js";
@@ -19,7 +19,10 @@ function getDocLabel(attachment) {
 }
 
 function AttachmentThumbnail({ attachment, onOpen }) {
-  const [urls, setUrls] = useState({});
+  const [urls, setUrls] = useState({
+    thumbnailUrl: attachment.thumbnailUrl || "",
+    viewUrl: attachment.viewUrl || "",
+  });
 
   useEffect(() => {
     let alive = true;
@@ -64,11 +67,51 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
   const documentInputRef = useRef(null);
   const photoInputRef = useRef(null);
   const [busy, setBusy] = useState(false);
+  const [progressLabel, setProgressLabel] = useState("");
+  const [pendingPreviews, setPendingPreviews] = useState([]);
+  const [captionRequest, setCaptionRequest] = useState(null);
+  const [captionText, setCaptionText] = useState("");
 
-  async function handleFile(file) {
+  async function indexDocumentInBackground(row, file) {
+    try {
+      setProgressLabel("Indexing document for search...");
+      const { text } = await extractSearchText(file);
+      const { error } = await supabase.from("visit_files").update({ search_text: text }).eq("id", row.id);
+      if (error) throw error;
+      onUploaded?.(`${row.file_name} indexed for search.`);
+    } catch (error) {
+      onUploaded?.(`File uploaded, but search indexing failed: ${error.message}`);
+    } finally {
+      setProgressLabel("");
+    }
+  }
+
+  function requestPhotoCaption(file) {
+    if (!file) return;
+    setCaptionRequest(file);
+    setCaptionText("");
+  }
+
+  function closeCaptionRequest() {
+    setCaptionRequest(null);
+    setCaptionText("");
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  }
+
+  function saveCaptionRequest() {
+    const file = captionRequest;
+    setCaptionRequest(null);
+    setCaptionText("");
+    if (photoInputRef.current) photoInputRef.current.value = "";
+    void handleFile(file, captionText.trim());
+  }
+
+  async function handleFile(file, providedCaption = "") {
     if (!file) return;
     const photo = isPhoto(file);
-    const photoCaption = photo ? window.prompt("Add a short note for this photo:", "")?.trim() ?? "" : "";
+    const photoCaption = photo ? providedCaption : "";
+    const pendingId = `pending-${Date.now()}-${file.name}`;
+    const previewUrl = photo ? URL.createObjectURL(file) : "";
 
     if (!supabase) {
       onUploaded?.("Demo mode: connect Supabase to upload files.");
@@ -81,9 +124,25 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
     }
 
     setBusy(true);
+    setProgressLabel(photo ? "Uploading photo..." : "Uploading document...");
+    if (photo && previewUrl) {
+      setPendingPreviews((items) => [
+        {
+          id: pendingId,
+          file_name: file.name,
+          file_kind: "photo",
+          mime_type: file.type,
+          photo_caption: photoCaption,
+          created_at: new Date().toISOString(),
+          thumbnailUrl: previewUrl,
+          viewUrl: previewUrl,
+          localPreview: true,
+        },
+        ...items,
+      ]);
+    }
 
     try {
-      const { text } = photo ? { text: photoCaption } : await extractSearchText(file);
       const row = await uploadVisitAttachment({
         companyId,
         projectId,
@@ -91,14 +150,22 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
         profileId,
         file,
         photoCaption,
-        searchText: text,
+        searchText: photo ? photoCaption : "Indexing in background...",
       });
 
       onUploaded?.(`${photo ? "Photo" : "Document"} uploaded to Supabase Storage: ${row.file_name}`);
+      if (!photo) void indexDocumentInBackground(row, file);
     } catch (error) {
       onUploaded?.(error.message);
+      setProgressLabel("");
     } finally {
       setBusy(false);
+      if (photo) setProgressLabel("");
+      if (previewUrl) {
+        window.setTimeout(() => {
+          setPendingPreviews((items) => items.filter((item) => item.id !== pendingId));
+        }, 2400);
+      }
       if (documentInputRef.current) documentInputRef.current.value = "";
       if (photoInputRef.current) photoInputRef.current.value = "";
     }
@@ -113,7 +180,7 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
           type="file"
           onChange={(event) => handleFile(event.target.files?.[0])}
         />
-        <input ref={photoInputRef} accept="image/jpeg,image/png,image/webp" type="file" onChange={(event) => handleFile(event.target.files?.[0])} />
+        <input ref={photoInputRef} accept="image/jpeg,image/png,image/webp" type="file" onChange={(event) => requestPhotoCaption(event.target.files?.[0])} />
 
         <button type="button" onClick={() => photoInputRef.current?.click()} disabled={busy}>
           <Image size={18} />
@@ -144,11 +211,41 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
 
       {showPreview && (
         <div className="attachmentStrip" aria-label="Saved attachments">
-          {attachments.length ? (
-            attachments.slice(0, 6).map((attachment) => <AttachmentThumbnail attachment={attachment} key={attachment.id} onOpen={onOpen} />)
+          {pendingPreviews.length || attachments.length ? (
+            [...pendingPreviews, ...attachments].slice(0, 6).map((attachment) => <AttachmentThumbnail attachment={attachment} key={attachment.id} onOpen={onOpen} />)
           ) : (
             <div className="emptyAttachments">No saved files yet</div>
           )}
+        </div>
+      )}
+
+      {progressLabel && <div className="uploadProgressPill">{progressLabel}</div>}
+
+      {captionRequest && (
+        <div className="captionSheetOverlay" role="dialog" aria-modal="true" aria-label="Photo note">
+          <div className="captionSheetBackdrop" onClick={closeCaptionRequest} />
+          <section className="captionSheet">
+            <button className="captionClose" type="button" onClick={closeCaptionRequest} aria-label="Close">
+              <X size={18} />
+            </button>
+            <h3>Photo note</h3>
+            <p>{captionRequest.name}</p>
+            <textarea
+              autoFocus
+              value={captionText}
+              onChange={(event) => setCaptionText(event.target.value)}
+              placeholder="Add a short explanation for this photo"
+              rows={4}
+            />
+            <div className="captionActions">
+              <button className="outlineButton" type="button" onClick={closeCaptionRequest}>
+                Cancel
+              </button>
+              <button className="addButton" type="button" onClick={saveCaptionRequest}>
+                Continue
+              </button>
+            </div>
+          </section>
         </div>
       )}
     </div>
