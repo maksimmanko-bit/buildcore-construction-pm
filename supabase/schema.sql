@@ -81,10 +81,12 @@ create table if not exists public.equipment (
   company_id uuid not null references public.companies(id) on delete cascade,
   name text not null,
   type text not null,
+  avatar_key text not null default 'excavator',
   unit_number text,
   notes text,
   status text not null default 'available',
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint equipment_avatar_key_check check (avatar_key in ('excavator', 'trailer', 'truck', 'skid_steer', 'lift', 'concrete', 'tools'))
 );
 
 create table if not exists public.project_members (

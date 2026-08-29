@@ -10,12 +10,14 @@ import {
   ChevronRight,
   CircleGauge,
   ClipboardCheck,
+  Construction,
   Download,
   Edit3,
   FileBarChart2,
   FileSpreadsheet,
   FileText,
   FolderKanban,
+  Forklift,
   Home,
   ImagePlus,
   Mail,
@@ -29,13 +31,16 @@ import {
   Save,
   Search,
   Settings,
+  Shovel,
   CloudSun,
   Trash2,
+  Tractor,
   Truck,
   Upload,
   UserPlus,
   UserRound,
   UsersRound,
+  Wrench,
   X,
   ZoomIn,
   ZoomOut,
@@ -49,6 +54,18 @@ import { readCachedWorkspace, writeCachedWorkspace } from "./lib/localCache.js";
 
 const PhotoAnnotator = lazy(() => import("./components/PhotoAnnotator.jsx"));
 const DocumentUploader = lazy(() => import("./components/DocumentUploader.jsx"));
+
+const tradeGroups = ["Demo/Asbestos", "Drywall/Mud/Taping/Flooring", "General Construction", "Management", "Shop/Trucking"];
+const unassignedTradeLabel = "Unassigned";
+const equipmentAvatarOptions = [
+  { key: "excavator", label: "Excavator", Icon: Tractor },
+  { key: "trailer", label: "Trailer", Icon: Truck },
+  { key: "truck", label: "Pickup / Truck", Icon: Truck },
+  { key: "skid_steer", label: "Skid Steer", Icon: Forklift },
+  { key: "lift", label: "Lift", Icon: Construction },
+  { key: "concrete", label: "Concrete", Icon: Shovel },
+  { key: "tools", label: "Tools", Icon: Wrench },
+];
 
 const demo = {
   companyId: "00000000-0000-0000-0000-000000000001",
@@ -120,17 +137,17 @@ const demo = {
     },
   ],
   people: [
-    { id: "person-1", full_name: "Alex Johnson", role: "builder", trade: "Site Supervisor", phone: "(204) 555-0101", avatar: "AJ" },
-    { id: "person-2", full_name: "Michael Smith", role: "builder", trade: "Carpenter", phone: "(204) 555-0102", avatar: "MS" },
-    { id: "person-3", full_name: "David Brown", role: "builder", trade: "Electrician", phone: "(204) 555-0103", avatar: "DB" },
-    { id: "person-4", full_name: "James Wilson", role: "builder", trade: "Plumber", phone: "(204) 555-0104", avatar: "JW" },
-    { id: "person-5", full_name: "Robert Taylor", role: "builder", trade: "Operator", phone: "(204) 555-0105", avatar: "RT" },
+    { id: "person-1", full_name: "Alex Johnson", role: "builder", trade: "Management", phone: "(204) 555-0101", avatar: "AJ" },
+    { id: "person-2", full_name: "Michael Smith", role: "builder", trade: "General Construction", phone: "(204) 555-0102", avatar: "MS" },
+    { id: "person-3", full_name: "David Brown", role: "builder", trade: "Drywall/Mud/Taping/Flooring", phone: "(204) 555-0103", avatar: "DB" },
+    { id: "person-4", full_name: "James Wilson", role: "builder", trade: "Demo/Asbestos", phone: "(204) 555-0104", avatar: "JW" },
+    { id: "person-5", full_name: "Robert Taylor", role: "builder", trade: "Shop/Trucking", phone: "(204) 555-0105", avatar: "RT" },
   ],
   equipment: [
-    { id: "eq-1", name: "Excavator 320", type: "Excavator", unit_number: "EX-320", icon: "excavator" },
-    { id: "eq-2", name: "Skid Steer S770", type: "Skid Steer", unit_number: "SS-770", icon: "loader" },
-    { id: "eq-3", name: "Pickup Truck #12", type: "Truck", unit_number: "TR-12", icon: "truck" },
-    { id: "eq-4", name: "Boom Lift 45ft", type: "Lift", unit_number: "BL-45", icon: "lift" },
+    { id: "eq-1", name: "Excavator 320", type: "Excavator", unit_number: "EX-320", icon: "excavator", avatar_key: "excavator" },
+    { id: "eq-2", name: "Skid Steer S770", type: "Skid Steer", unit_number: "SS-770", icon: "loader", avatar_key: "skid_steer" },
+    { id: "eq-3", name: "Pickup Truck #12", type: "Truck", unit_number: "TR-12", icon: "truck", avatar_key: "truck" },
+    { id: "eq-4", name: "Boom Lift 45ft", type: "Lift", unit_number: "BL-45", icon: "lift", avatar_key: "lift" },
   ],
   files: [
     {
@@ -212,7 +229,7 @@ const emptyProjectForm = {
   description: "",
   status: "planning",
 };
-const emptyEquipmentForm = { name: "", type: "", unit_number: "", notes: "" };
+const emptyEquipmentForm = { name: "", type: "", unit_number: "", notes: "", avatar_key: "excavator" };
 const emptyVisitForm = {
   project_id: "",
   visit_date: new Date().toISOString().slice(0, 10),
@@ -338,15 +355,6 @@ function getEquipmentWorkStatus({ date, equipment, equipmentId, projects = [], v
   if (activeVisit) return { label: "Active", tone: "active", detail: project?.name || "On site" };
   if (plannedVisit) return { label: "Scheduled", tone: "scheduled", detail: project?.name || "Scheduled today" };
   return { label: "Available", tone: "available", detail: "No assignment" };
-}
-
-function equipmentIcon(type) {
-  const label = String(type ?? "").toLowerCase();
-  if (label.includes("truck") || label.includes("pickup")) return "TR";
-  if (label.includes("lift")) return "LF";
-  if (label.includes("skid")) return "SS";
-  if (label.includes("trailer")) return "TL";
-  return "EX";
 }
 
 function toHour(time) {
@@ -676,6 +684,22 @@ function Avatar({ profile, small = false, url }) {
   );
 }
 
+function getEquipmentAvatarOption(item = {}) {
+  const legacyKey = item.icon === "loader" ? "skid_steer" : item.icon;
+  const key = item.avatar_key || legacyKey || "excavator";
+  return equipmentAvatarOptions.find((option) => option.key === key) ?? equipmentAvatarOptions[0];
+}
+
+function EquipmentAvatar({ item, small = false }) {
+  const option = getEquipmentAvatarOption(item);
+  const Icon = option.Icon;
+  return (
+    <div className={`equipmentAvatar ${option.key} ${small ? "small" : ""}`} title={option.label}>
+      <Icon size={small ? 17 : 21} />
+    </div>
+  );
+}
+
 export default function App() {
   const globalSearchRef = useRef(null);
   const searchInputRef = useRef(null);
@@ -718,6 +742,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [activeEditLock, setActiveEditLock] = useState(null);
   const [editingProjectId, setEditingProjectId] = useState(null);
+  const [editingEquipmentId, setEditingEquipmentId] = useState(null);
   const [editingVisitId, setEditingVisitId] = useState(null);
   const [companyForm, setCompanyForm] = useState({ company_name: "BuildCore Construction", full_name: "", phone: "" });
   const [projectForm, setProjectForm] = useState(emptyProjectForm);
@@ -1152,6 +1177,7 @@ export default function App() {
     })
     .filter((project) => project.assignments.length > 0);
   const availableTodayPeople = rowsSource.people.filter((person) => getPersonWorkStatus({ date: selectedDate, person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }).tone === "available");
+  const availableTodayEquipment = rowsSource.equipment.filter((equipment) => getEquipmentWorkStatus({ date: selectedDate, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }).tone === "available");
   const visitPickerPeople = rowsSource.people.map((person) => ({
     ...person,
     pickerStatus: getPersonWorkStatus({ date: visitForm.visit_date, person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
@@ -1588,10 +1614,14 @@ export default function App() {
     if (!supabase || !profile) return;
 
     setLoading(true);
-    const { error } = await supabase.from("equipment").insert({
+    const payload = {
       ...equipmentForm,
+      avatar_key: equipmentForm.avatar_key || "excavator",
       company_id: profile.company_id,
-    });
+    };
+    const { error } = editingEquipmentId
+      ? await supabase.from("equipment").update(payload).eq("id", editingEquipmentId)
+      : await supabase.from("equipment").insert(payload);
     setLoading(false);
 
     if (error) {
@@ -1600,9 +1630,10 @@ export default function App() {
     }
 
     setEquipmentForm(emptyEquipmentForm);
+    setEditingEquipmentId(null);
     setModalType(null);
     triggerSoftPulse();
-    setNotice("Equipment saved.");
+    setNotice(editingEquipmentId ? "Equipment changes saved." : "Equipment saved.");
     refreshData();
   }
 
@@ -2535,6 +2566,145 @@ export default function App() {
     }
   }
 
+  async function assignPeopleGroupToVisit({ personIds = [], visitId }) {
+    if (!supabase || !canManage) {
+      setNotice("Only Owner, PM, or Office Manager can assign people.");
+      return;
+    }
+
+    const visit = (rowsSource.visits ?? []).find((item) => item.id === visitId);
+    if (!visit || personIds.length === 0) return;
+
+    const eligiblePeople = rowsSource.people.filter((person) => personIds.includes(person.id) && person.availability_status !== "not_available" && !visit.people_ids?.includes(person.id));
+    if (eligiblePeople.length === 0) {
+      setNotice("No available people in this group.");
+      return;
+    }
+
+    const previousData = data;
+    const eligibleIds = eligiblePeople.map((person) => person.id);
+    commitWorkspaceData((current) => ({
+      ...current,
+      visits: (current.visits ?? []).map((item) => {
+        if (item.id !== visitId) return item;
+        return { ...item, people_ids: [...new Set([...(item.people_ids ?? []), ...eligibleIds])] };
+      }),
+    }));
+
+    setNotice(`Assigning ${eligiblePeople.length} people...`);
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("visit_people").insert(eligibleIds.map((profileId) => ({ visit_id: visitId, profile_id: profileId })));
+      if (error) throw error;
+      await logVisitActivity(visit, "people_group_assigned", `${currentUserName} assigned ${eligiblePeople.length} people to this ticket.`, { personIds: eligibleIds });
+      triggerSoftPulse();
+      setNotice(`${eligiblePeople.length} people assigned to ticket.`);
+      loadVisits();
+      loadActivities();
+    } catch (error) {
+      commitWorkspaceData(previousData);
+      setNotice(error.message);
+      loadVisits();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function assignEquipmentToVisit({ equipmentId, sourceVisitId = "", visitId }) {
+    if (!supabase || !canManage) {
+      setNotice("Only Owner, PM, or Office Manager can assign equipment.");
+      return;
+    }
+    if (!equipmentId || !visitId) return;
+
+    const visit = (rowsSource.visits ?? []).find((item) => item.id === visitId);
+    const equipment = rowsSource.equipment.find((item) => item.id === equipmentId);
+    if (!visit || !equipment) return;
+    if (visit.equipment_ids?.includes(equipmentId)) {
+      setNotice(`${equipment.name} is already assigned to this ticket.`);
+      return;
+    }
+
+    const conflicts = (rowsSource.visits ?? []).filter((item) => {
+      if (item.id === visitId || item.status === "cancelled") return false;
+      if (item.visit_date !== visit.visit_date || !item.equipment_ids?.includes(equipmentId)) return false;
+      return overlaps(
+        String(visit.start_time).slice(0, 5),
+        String(visit.end_time).slice(0, 5),
+        String(item.start_time).slice(0, 5),
+        String(item.end_time).slice(0, 5),
+      );
+    });
+    const conflictsText = conflicts
+      .map((item) => {
+        const project = rowsSource.projects.find((projectItem) => projectItem.id === item.project_id);
+        return `${project?.name || "another project"} (${formatTimeRange(item.start_time, item.end_time)})`;
+      })
+      .join(", ");
+
+    if (conflicts.length > 0 && !sourceVisitId) {
+      setNotice(`${equipment.name} already has an overlapping ticket: ${conflictsText}.`);
+      return;
+    }
+    if (conflicts.length > 0) {
+      const confirmed = await confirmAction({
+        title: "Move equipment?",
+        message: `${equipment.name} is already assigned during this time: ${conflictsText}. Move it to this ticket instead?`,
+        confirmLabel: "Move",
+        danger: false,
+      });
+      if (!confirmed) {
+        setNotice("Equipment assignment unchanged.");
+        return;
+      }
+    }
+
+    const conflictVisitIds = conflicts.map((item) => item.id);
+    const previousData = data;
+    commitWorkspaceData((current) => ({
+      ...current,
+      visits: (current.visits ?? []).map((item) => {
+        if (conflictVisitIds.includes(item.id)) {
+          return { ...item, equipment_ids: (item.equipment_ids ?? []).filter((id) => id !== equipmentId) };
+        }
+        if (item.id !== visitId) return item;
+        return { ...item, equipment_ids: [...new Set([...(item.equipment_ids ?? []), equipmentId])] };
+      }),
+    }));
+
+    setNotice(conflicts.length > 0 ? `Moving ${equipment.name}...` : `Assigning ${equipment.name}...`);
+    setLoading(true);
+    try {
+      if (conflictVisitIds.length > 0) {
+        const removeResult = await supabase.from("visit_equipment").delete().eq("equipment_id", equipmentId).in("visit_id", conflictVisitIds);
+        if (removeResult.error) throw removeResult.error;
+      }
+      const { error } = await supabase.from("visit_equipment").insert({ visit_id: visitId, equipment_id: equipmentId });
+      if (error) {
+        if (conflictVisitIds.length > 0) {
+          await supabase.from("visit_equipment").insert(conflictVisitIds.map((conflictVisitId) => ({ visit_id: conflictVisitId, equipment_id: equipmentId })));
+        }
+        throw error;
+      }
+      await Promise.all([
+        ...conflicts.map((conflictVisit) =>
+          logVisitActivity(conflictVisit, "equipment_removed", `${currentUserName} moved ${equipment.name} from this ticket.`, { equipmentId, movedToVisitId: visitId }),
+        ),
+        logVisitActivity(visit, "equipment_assigned", `${currentUserName} assigned ${equipment.name} to this ticket.`, { equipmentId, sourceVisitId, replacedVisitIds: conflictVisitIds }),
+      ]);
+      triggerSoftPulse();
+      setNotice(conflicts.length > 0 ? `${equipment.name} moved to ticket.` : `${equipment.name} assigned to ticket.`);
+      loadVisits();
+      loadActivities();
+    } catch (error) {
+      commitWorkspaceData(previousData);
+      setNotice(error.message);
+      loadVisits();
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function removePersonFromVisit({ personId, visitId }) {
     if (!supabase || !canManage) {
       setNotice("Only Owner, PM, or Office Manager can change ticket crews.");
@@ -2606,7 +2776,11 @@ export default function App() {
       setProjectForm(nextProjectForm);
       editorInitialSnapshotRef.current.project = serializeProjectEditorForm(nextProjectForm);
       setModalType("project");
-    } else if (activeNav === "equipment") setModalType("equipment");
+    } else if (activeNav === "equipment") {
+      setEditingEquipmentId(null);
+      setEquipmentForm(emptyEquipmentForm);
+      setModalType("equipment");
+    }
     else if (activeNav === "people") setModalType("people");
     else {
       if (!(await acquireEditLock({ mode: "create", resourceType: "visit" }))) return;
@@ -2619,6 +2793,55 @@ export default function App() {
       setVisitForm(nextVisitForm);
       editorInitialSnapshotRef.current.visit = serializeVisitEditorForm(nextVisitForm);
       setModalType("visit");
+    }
+  }
+
+  async function removeEquipmentFromVisit({ equipmentId, visitId }) {
+    if (!supabase || !canManage) {
+      setNotice("Only Owner, PM, or Office Manager can change ticket equipment.");
+      return;
+    }
+    if (!equipmentId || !visitId) return;
+
+    const visit = (rowsSource.visits ?? []).find((item) => item.id === visitId);
+    const equipment = rowsSource.equipment.find((item) => item.id === equipmentId);
+    if (!visit || !equipment || !visit.equipment_ids?.includes(equipmentId)) return;
+    const project = rowsSource.projects.find((item) => item.id === visit.project_id);
+    const confirmed = await confirmAction({
+      title: "Remove equipment?",
+      message: `Remove ${equipment.name} from ${project?.name || "this ticket"}?`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!confirmed) {
+      setNotice("Equipment assignment unchanged.");
+      return;
+    }
+
+    const previousData = data;
+    commitWorkspaceData((current) => ({
+      ...current,
+      visits: (current.visits ?? []).map((item) => {
+        if (item.id !== visitId) return item;
+        return { ...item, equipment_ids: (item.equipment_ids ?? []).filter((id) => id !== equipmentId) };
+      }),
+    }));
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("visit_equipment").delete().eq("visit_id", visitId).eq("equipment_id", equipmentId);
+      if (error) throw error;
+      await logVisitActivity(visit, "equipment_removed", `${currentUserName} removed ${equipment.name} from this ticket.`, { equipmentId });
+      triggerSoftPulse();
+      setNotice(`${equipment.name} removed from ticket.`);
+      loadVisits();
+      loadActivities();
+    } catch (error) {
+      commitWorkspaceData(previousData);
+      setNotice(error.message);
+      loadVisits();
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -2638,6 +2861,22 @@ export default function App() {
     setVisitForm(nextVisitForm);
     editorInitialSnapshotRef.current.visit = serializeVisitEditorForm(nextVisitForm);
     setModalType("visit");
+  }
+
+  function editEquipment(item) {
+    if (!canManage) {
+      setNotice("Only Owner, PM, or Office Manager can edit equipment.");
+      return;
+    }
+    setEditingEquipmentId(item.id);
+    setEquipmentForm({
+      name: item.name ?? "",
+      type: item.type ?? "",
+      unit_number: item.unit_number ?? "",
+      notes: item.notes ?? "",
+      avatar_key: getEquipmentAvatarOption(item).key,
+    });
+    setModalType("equipment");
   }
 
   function selectProject(project) {
@@ -3090,7 +3329,7 @@ export default function App() {
       return (
         <>
           <SectionToolbar label="Equipment" onAdd={openAddModal} />
-          <EquipmentView equipment={rowsSource.equipment} />
+          <EquipmentView equipment={rowsSource.equipment} onEdit={editEquipment} />
         </>
       );
     }
@@ -3109,6 +3348,7 @@ export default function App() {
     return (
       <ScheduleView
         assignmentsReady={assignmentsSource.length > 0}
+        availableEquipment={availableTodayEquipment}
         availablePeople={availableTodayPeople}
         equipmentRows={equipmentRows}
         peopleRows={peopleRows}
@@ -3122,10 +3362,13 @@ export default function App() {
         setSelectedDate={setSelectedDate}
         visits={rowsSource.visits ?? []}
         onAdd={openAddModal}
+        onAssignEquipment={assignEquipmentToVisit}
         onAssignPerson={assignPersonToVisit}
+        onAssignPeopleGroup={assignPeopleGroupToVisit}
         onDropAssignment={moveVisitAssignment}
         onOpenPerson={openPersonOverlay}
         onOpenProject={selectProject}
+        onRemoveEquipmentFromVisit={removeEquipmentFromVisit}
         onRemovePersonFromVisit={removePersonFromVisit}
         onRemoveVisit={deleteVisit}
         onSelect={selectAssignment}
@@ -3599,17 +3842,39 @@ export default function App() {
         )}
 
         {modalType === "equipment" && (
-          <AppModal title="Add equipment" onClose={() => setModalType(null)}>
+          <AppModal
+            title={editingEquipmentId ? "Edit equipment" : "Add equipment"}
+            onClose={() => {
+              setEditingEquipmentId(null);
+              setEquipmentForm(emptyEquipmentForm);
+              setModalType(null);
+            }}
+          >
             <form className="stackForm" onSubmit={saveEquipment}>
               <FormField label="Name">
                 <input required value={equipmentForm.name} onChange={(event) => setEquipmentForm({ ...equipmentForm, name: event.target.value })} />
               </FormField>
-              <FormField label="Type">
-                <input required placeholder="Trailer, Excavator, Pickup..." value={equipmentForm.type} onChange={(event) => setEquipmentForm({ ...equipmentForm, type: event.target.value })} />
-              </FormField>
-              <FormField label="Unit number">
-                <input value={equipmentForm.unit_number} onChange={(event) => setEquipmentForm({ ...equipmentForm, unit_number: event.target.value })} />
-              </FormField>
+                <FormField label="Type">
+                  <input required placeholder="Trailer, Excavator, Pickup..." value={equipmentForm.type} onChange={(event) => setEquipmentForm({ ...equipmentForm, type: event.target.value })} />
+                </FormField>
+                <FormField label="Avatar">
+                  <div className="equipmentAvatarPicker">
+                    {equipmentAvatarOptions.map((option) => (
+                      <button
+                        className={equipmentForm.avatar_key === option.key ? "equipmentAvatarOption active" : "equipmentAvatarOption"}
+                        key={option.key}
+                        type="button"
+                        onClick={() => setEquipmentForm({ ...equipmentForm, avatar_key: option.key })}
+                      >
+                        <EquipmentAvatar item={{ avatar_key: option.key }} />
+                        <span>{option.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </FormField>
+                <FormField label="Unit number">
+                  <input value={equipmentForm.unit_number} onChange={(event) => setEquipmentForm({ ...equipmentForm, unit_number: event.target.value })} />
+                </FormField>
               <FormField label="Notes">
                 <textarea value={equipmentForm.notes} onChange={(event) => setEquipmentForm({ ...equipmentForm, notes: event.target.value })} />
               </FormField>
@@ -3767,7 +4032,12 @@ export default function App() {
                 </select>
               </FormField>
               <FormField label="Trade">
-                <input placeholder="Carpenter, Operator, Electrician..." value={personForm.trade} onChange={(event) => setPersonForm({ ...personForm, trade: event.target.value })} />
+                <select value={personForm.trade} onChange={(event) => setPersonForm({ ...personForm, trade: event.target.value })}>
+                  <option value="">Select trade group</option>
+                  {tradeGroups.map((trade) => (
+                    <option key={trade} value={trade}>{trade}</option>
+                  ))}
+                </select>
               </FormField>
               <FormField label="Availability">
                 <select value={personForm.availability_status} onChange={(event) => setPersonForm({ ...personForm, availability_status: event.target.value })}>
@@ -4588,7 +4858,7 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit }) {
   );
 }
 
-function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projectRows = [], projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onAssignPerson, onDropAssignment, onOpenPerson, onOpenProject, onRemovePersonFromVisit, onRemoveVisit, onSelect }) {
+function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeople = [], avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projectRows = [], projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onDropAssignment, onOpenPerson, onOpenProject, onRemoveEquipmentFromVisit, onRemovePersonFromVisit, onRemoveVisit, onSelect }) {
   const [dragPreview, setDragPreview] = useState(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(selectedDate);
@@ -4692,14 +4962,17 @@ function ScheduleView({ assignmentsReady, availablePeople = [], avatarUrls, canD
           )}
           {projectRows.length === 0 && <div className="emptyTimeline">No project visits scheduled for this day.</div>}
 
-          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignPerson={onAssignPerson} onDropAssignment={onDropAssignment} onOpenPerson={onOpenPerson} onOpenProject={onOpenProject} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
+          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignEquipment={onAssignEquipment} onAssignPerson={onAssignPerson} onAssignPeopleGroup={onAssignPeopleGroup} onDropAssignment={onDropAssignment} onOpenPerson={onOpenPerson} onOpenProject={onOpenProject} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
         </div>
       ) : (
         <CalendarTileGrid equipment={equipmentRows} mode={scheduleMode} people={peopleRows} projects={projects} selectedDate={selectedDate} today={today} visits={visits} onSelectDay={openDay} />
       )}
 
       {scheduleMode === "day" && (
-        <AvailablePeoplePool avatarUrls={avatarUrls} people={availablePeople} onOpenPerson={onOpenPerson} onRemovePersonFromVisit={onRemovePersonFromVisit} />
+        <div className="availablePools">
+          <AvailablePeoplePool avatarUrls={avatarUrls} people={availablePeople} onOpenPerson={onOpenPerson} onRemovePersonFromVisit={onRemovePersonFromVisit} />
+          <AvailableEquipmentPool equipment={availableEquipment} onRemoveEquipmentFromVisit={onRemoveEquipmentFromVisit} />
+        </div>
       )}
     </>
   );
@@ -4901,18 +5174,21 @@ function PeopleView({ avatarUrls = {}, people, onApprove, onSelect, pendingPeopl
   );
 }
 
-function EquipmentView({ equipment }) {
+function EquipmentView({ equipment, onEdit }) {
   return (
     <div className="listView">
       {equipment.length === 0 && <div className="emptyState">No equipment yet. Press Add to create trailers, trucks, excavators, or lifts.</div>}
       {equipment.map((item) => (
         <div className="listRow" key={item.id}>
-          <div className="equipmentAvatar">{equipmentIcon(item.type)}</div>
+          <EquipmentAvatar item={item} />
           <span>
             <strong>{item.name}</strong>
             <small>{item.type}</small>
           </span>
           <em>{item.unit_number || item.status || "Available"}</em>
+          <button className="iconButton soft" type="button" title="Edit equipment" onClick={() => onEdit?.(item)}>
+            <Edit3 size={17} />
+          </button>
         </div>
       ))}
     </div>
@@ -5499,7 +5775,7 @@ function AuthGate({
   );
 }
 
-function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onAssignPerson, onDropAssignment, onOpenPerson, onOpenProject, onRemoveVisit, onSelect }) {
+function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onDropAssignment, onOpenPerson, onOpenProject, onRemoveVisit, onSelect }) {
   return (
     <div className="resourceGroup">
       <div className="groupLabel">
@@ -5531,7 +5807,7 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
             ) : row.kind === "project" ? (
               <div className={`equipmentAvatar projectAvatar ${row.color ?? "blue"}`}>{makeInitials(row.name, "PR")}</div>
             ) : (
-              <div className={`equipmentAvatar ${row.icon ?? "machine"}`}>{equipmentIcon(row.type)}</div>
+              <EquipmentAvatar item={row} />
             )}
             <div>
               <div className="resourceTitleLine">
@@ -5579,7 +5855,7 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
                 project_id: assignment.projectId,
                 visit_date: selectedDate,
               };
-              return <ScheduleBlock assignment={assignment} avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} key={assignment.id || assignment.visitId} onAssignPerson={onAssignPerson} onOpenPerson={onOpenPerson} onRemove={() => onRemoveVisit?.(visit)} onSelect={onSelect} />;
+              return <ScheduleBlock assignment={assignment} avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} key={assignment.id || assignment.visitId} onAssignEquipment={onAssignEquipment} onAssignPerson={onAssignPerson} onAssignPeopleGroup={onAssignPeopleGroup} onOpenPerson={onOpenPerson} onRemove={() => onRemoveVisit?.(visit)} onSelect={onSelect} />;
             })}
           </div>
         </div>
@@ -5591,6 +5867,11 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, setDrag
 function AvailablePeoplePool({ avatarUrls = {}, people = [], onOpenPerson, onRemovePersonFromVisit }) {
   const [isDropActive, setIsDropActive] = useState(false);
   const acceptsAssignedPerson = (event) => event.dataTransfer.types.includes("application/x-buildcore-assigned-person");
+  const sortedPeople = [...people].sort((a, b) => profileDisplayName(a).localeCompare(profileDisplayName(b)));
+  const groupedPeople = tradeGroups
+    .map((trade) => ({ trade, people: sortedPeople.filter((person) => person.trade === trade) }))
+    .concat([{ trade: unassignedTradeLabel, people: sortedPeople.filter((person) => !tradeGroups.includes(person.trade)) }])
+    .filter((group) => group.people.length > 0);
 
   return (
     <section
@@ -5614,23 +5895,93 @@ function AvailablePeoplePool({ avatarUrls = {}, people = [], onOpenPerson, onRem
     >
       <div>
         <strong>Available today</strong>
-        <span>{people.length ? "Drag people into a ticket, or drop assigned people here to remove" : "Drop assigned people here to remove them from a ticket"}</span>
+        <span>{people.length ? "Drag a group or one person into a ticket" : "Drop assigned people here to remove them from a ticket"}</span>
+      </div>
+      <div className="availableTradeScroller">
+        {groupedPeople.map((group) => (
+          <div
+            className="availableTradeGroup"
+            draggable={group.people.length > 0}
+            key={group.trade}
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "copy";
+              event.dataTransfer.setData("application/x-buildcore-person-group", JSON.stringify({ trade: group.trade, personIds: group.people.map((person) => person.id) }));
+            }}
+          >
+            <div className="availableTradeHeader">
+              <strong>{group.trade}</strong>
+              <em>{group.people.length}</em>
+            </div>
+            <div className="availableAvatarStrip">
+              {group.people.map((person) => (
+                <button
+                  className="availableAvatarCard"
+                  draggable
+                  key={person.id}
+                  type="button"
+                  onDragStart={(event) => {
+                    event.stopPropagation();
+                    event.dataTransfer.effectAllowed = "copy";
+                    event.dataTransfer.setData("application/x-buildcore-person", person.id);
+                  }}
+                  onClick={() => onOpenPerson?.(person)}
+                >
+                  <Avatar profile={person} url={avatarUrls[person.id]} />
+                  <span>{profileDisplayName(person)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AvailableEquipmentPool({ equipment = [], onRemoveEquipmentFromVisit }) {
+  const [isDropActive, setIsDropActive] = useState(false);
+  const acceptsAssignedEquipment = (event) => event.dataTransfer.types.includes("application/x-buildcore-assigned-equipment");
+  const sortedEquipment = [...equipment].sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")));
+
+  return (
+    <section
+      className={isDropActive ? "availablePeoplePool availableEquipmentPool dropActive" : "availablePeoplePool availableEquipmentPool"}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setIsDropActive(false);
+      }}
+      onDragOver={(event) => {
+        if (!acceptsAssignedEquipment(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setIsDropActive(true);
+      }}
+      onDrop={(event) => {
+        const raw = event.dataTransfer.getData("application/x-buildcore-assigned-equipment");
+        if (!raw) return;
+        event.preventDefault();
+        setIsDropActive(false);
+        onRemoveEquipmentFromVisit?.(JSON.parse(raw));
+      }}
+    >
+      <div>
+        <strong>Available equipment</strong>
+        <span>{equipment.length ? "Drag equipment into a ticket" : "Drop assigned equipment here to remove it"}</span>
       </div>
       <div className="availableAvatarStrip">
-        {people.map((person) => (
+        {sortedEquipment.map((item) => (
           <button
-            className="availableAvatarCard"
+            className="availableAvatarCard equipmentCard"
             draggable
-            key={person.id}
+            key={item.id}
             type="button"
             onDragStart={(event) => {
               event.dataTransfer.effectAllowed = "copy";
-              event.dataTransfer.setData("application/x-buildcore-person", person.id);
+              event.dataTransfer.setData("application/x-buildcore-equipment", item.id);
             }}
-            onClick={() => onOpenPerson?.(person)}
           >
-            <Avatar profile={person} url={avatarUrls[person.id]} />
-            <span>{profileDisplayName(person)}</span>
+            <EquipmentAvatar item={item} />
+            <span>{item.name}</span>
+            <small>{item.unit_number || item.type}</small>
           </button>
         ))}
       </div>
@@ -5638,7 +5989,7 @@ function AvailablePeoplePool({ avatarUrls = {}, people = [], onOpenPerson, onRem
   );
 }
 
-function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssignPerson, onOpenPerson, onRemove, onSelect }) {
+function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onOpenPerson, onRemove, onSelect }) {
   const span = scheduleEndHour - scheduleStartHour;
   const left = Math.max(0, ((assignment.start - scheduleStartHour) / span) * 100);
   const width = Math.min(100 - left, ((assignment.end - assignment.start) / span) * 100);
@@ -5674,20 +6025,51 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssign
         event.dataTransfer.setData("application/json", JSON.stringify(assignment));
       }}
       onDragOver={(event) => {
-        if (event.dataTransfer.types.includes("application/x-buildcore-person") || event.dataTransfer.types.includes("application/x-buildcore-assigned-person")) event.preventDefault();
+        if (
+          event.dataTransfer.types.includes("application/x-buildcore-person") ||
+          event.dataTransfer.types.includes("application/x-buildcore-person-group") ||
+          event.dataTransfer.types.includes("application/x-buildcore-assigned-person") ||
+          event.dataTransfer.types.includes("application/x-buildcore-equipment") ||
+          event.dataTransfer.types.includes("application/x-buildcore-assigned-equipment")
+        ) {
+          event.preventDefault();
+        }
       }}
       onDrop={(event) => {
         const personId = event.dataTransfer.getData("application/x-buildcore-person");
+        const personGroupRaw = event.dataTransfer.getData("application/x-buildcore-person-group");
         const assignedPersonRaw = event.dataTransfer.getData("application/x-buildcore-assigned-person");
-        if (!personId && !assignedPersonRaw) return;
+        const equipmentId = event.dataTransfer.getData("application/x-buildcore-equipment");
+        const assignedEquipmentRaw = event.dataTransfer.getData("application/x-buildcore-assigned-equipment");
+        if (!personId && !personGroupRaw && !assignedPersonRaw && !equipmentId && !assignedEquipmentRaw) return;
         event.preventDefault();
         event.stopPropagation();
         if (personId) {
           onAssignPerson?.({ personId, visitId: assignment.visitId });
           return;
         }
-        const assignedPerson = JSON.parse(assignedPersonRaw);
-        onAssignPerson?.({ personId: assignedPerson.personId, sourceVisitId: assignedPerson.visitId, visitId: assignment.visitId });
+        if (personGroupRaw) {
+          const group = JSON.parse(personGroupRaw);
+          onAssignPeopleGroup?.({ personIds: group.personIds ?? [], visitId: assignment.visitId });
+          return;
+        }
+        if (equipmentId) {
+          onAssignEquipment?.({ equipmentId, visitId: assignment.visitId });
+          return;
+        }
+        if (assignedPersonRaw) {
+          const assignedPerson = JSON.parse(assignedPersonRaw);
+          if (assignedPerson?.personId) {
+            onAssignPerson?.({ personId: assignedPerson.personId, sourceVisitId: assignedPerson.visitId, visitId: assignment.visitId });
+            return;
+          }
+        }
+        if (assignedEquipmentRaw) {
+          const assignedEquipment = JSON.parse(assignedEquipmentRaw);
+          if (assignedEquipment?.equipmentId) {
+            onAssignEquipment?.({ equipmentId: assignedEquipment.equipmentId, sourceVisitId: assignedEquipment.visitId, visitId: assignment.visitId });
+          }
+        }
       }}
       onKeyDown={(event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
@@ -5725,6 +6107,32 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, onAssign
             ))}
           </div>
           <i>{assignment.people.map((person) => profileDisplayName(person)).join(", ")}</i>
+        </div>
+      )}
+      {assignment.equipment?.length > 0 && (
+        <div className="assignmentCrew assignmentEquipment">
+          <div className="assignmentAvatarStack">
+            {assignment.equipment.slice(0, 4).map((item) => (
+              <button
+                className="crewAvatarButton equipmentCrewButton"
+                draggable
+                key={item.id}
+                type="button"
+                title={`Drag ${item.name} to Available equipment to remove from ticket.`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                }}
+                onDragStart={(event) => {
+                  event.stopPropagation();
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("application/x-buildcore-assigned-equipment", JSON.stringify({ equipmentId: item.id, visitId: assignment.visitId }));
+                }}
+              >
+                <EquipmentAvatar item={item} small />
+              </button>
+            ))}
+          </div>
+          <i>{assignment.equipment.map((item) => item.name).join(", ")}</i>
         </div>
       )}
       {canDeleteTickets && assignment.visitId && (

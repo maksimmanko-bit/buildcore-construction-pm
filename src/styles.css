@@ -1945,28 +1945,53 @@ h1 {
   place-items: center;
   width: 48px;
   height: 48px;
-  border-radius: 10px;
+  border-radius: 15px;
   color: #111827;
-  font-size: 12px;
-  font-weight: 950;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.76),
+    0 12px 24px rgba(15, 23, 42, 0.12);
+}
+
+.equipmentAvatar.small {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+}
+
+.equipmentAvatar svg {
+  stroke-width: 2.25;
 }
 
 .equipmentAvatar.excavator {
-  background: linear-gradient(135deg, #ffd54f, #f97316);
+  background: linear-gradient(135deg, #fff7c2, #f59e0b 54%, #92400e);
 }
 
-.equipmentAvatar.loader {
+.equipmentAvatar.loader,
+.equipmentAvatar.skid_steer {
   background: linear-gradient(135deg, #facc15, #111827);
   color: #fff;
 }
 
 .equipmentAvatar.truck {
-  background: linear-gradient(135deg, #e5e7eb, #94a3b8);
+  background: linear-gradient(135deg, #f8fafc, #94a3b8);
+}
+
+.equipmentAvatar.trailer {
+  background: linear-gradient(135deg, #f8fafc, #cbd5e1 45%, #64748b);
 }
 
 .equipmentAvatar.lift {
   background: linear-gradient(135deg, #fde68a, #84cc16);
+}
+
+.equipmentAvatar.concrete {
+  background: linear-gradient(135deg, #f1f5f9, #94a3b8 52%, #475569);
+}
+
+.equipmentAvatar.tools {
+  background: linear-gradient(135deg, #e0f2fe, #60a5fa 52%, #1d4ed8);
+  color: #fff;
 }
 
 .projectAvatar {
@@ -2207,10 +2232,15 @@ h1 {
   transform: translateY(-1px);
 }
 
+.availablePools {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
 .availablePeoplePool {
   display: grid;
   gap: 12px;
-  margin-top: 14px;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -2241,6 +2271,62 @@ h1 {
   gap: 10px;
   overflow-x: auto;
   padding-bottom: 2px;
+}
+
+.availableTradeScroller {
+  display: grid;
+  grid-auto-columns: minmax(260px, 320px);
+  grid-auto-flow: column;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scroll-snap-type: x proximity;
+}
+
+.availableTradeGroup {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.74));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+  cursor: grab;
+  scroll-snap-align: start;
+}
+
+.availableTradeGroup:active {
+  cursor: grabbing;
+}
+
+.availableTradeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.availableTradeHeader strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #0f172a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.availableTradeHeader em {
+  display: inline-flex;
+  min-width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 950;
 }
 
 .availableAvatarCard {
@@ -3350,6 +3436,71 @@ canvas {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.availableAvatarCard small {
+  max-width: 88px;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.availableAvatarCard.equipmentCard {
+  min-width: 114px;
+}
+
+.equipmentAvatarPicker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 10px;
+}
+
+.equipmentAvatarOption {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #0f172a;
+  text-align: left;
+  transition:
+    border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.equipmentAvatarOption:hover {
+  transform: translateY(-1px);
+}
+
+.equipmentAvatarOption.active {
+  border-color: rgba(37, 99, 235, 0.36);
+  background: rgba(239, 246, 255, 0.84);
+  box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.09);
+}
+
+.equipmentAvatarOption span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assignmentEquipment {
+  margin-top: 4px;
+}
+
+.assignmentEquipment .equipmentAvatar {
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
 }
 
 .nativeDateInput {
@@ -5306,7 +5457,7 @@ body.overlayLocked {
   inset: 0;
   z-index: 120;
   display: grid;
-  place-items: end center;
+  place-items: center;
   padding: 22px;
 }
 
@@ -5598,12 +5749,12 @@ body.overlayLocked {
 @keyframes sheetSpringIn {
   from {
     opacity: 0;
-    transform: translateY(28px) scale(0.96);
+    transform: scale(0.94);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: scale(1);
   }
 }
 
