@@ -69,8 +69,14 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
   const [busy, setBusy] = useState(false);
   const [progressLabel, setProgressLabel] = useState("");
   const [pendingPreviews, setPendingPreviews] = useState([]);
-  const [captionRequest, setCaptionRequest] = useState(null);
-  const [captionText, setCaptionText] = useState("");
+  const [photoBatch, setPhotoBatch] = useState([]);
+  const objectUrlsRef = useRef([]);
+
+  useEffect(() => {
+    return () => {
+      objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
 
   async function indexDocumentInBackground(row, file) {
     try {
@@ -86,32 +92,48 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
     }
   }
 
-  function requestPhotoCaption(file) {
-    if (!file) return;
-    setCaptionRequest(file);
-    setCaptionText("");
-  }
-
-  function closeCaptionRequest() {
-    setCaptionRequest(null);
-    setCaptionText("");
+  function clearPhotoBatch() {
+    objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    objectUrlsRef.current = [];
+    setPhotoBatch([]);
     if (photoInputRef.current) photoInputRef.current.value = "";
   }
 
-  function saveCaptionRequest() {
-    const file = captionRequest;
-    setCaptionRequest(null);
-    setCaptionText("");
-    if (photoInputRef.current) photoInputRef.current.value = "";
-    void handleFile(file, captionText.trim());
+  function requestPhotoCaptions(fileList) {
+    const files = Array.from(fileList ?? []).filter(isPhoto);
+    if (files.length === 0) return;
+
+    clearPhotoBatch();
+    const batchId = Date.now();
+    const nextBatch = files.map((file, index) => {
+      const previewUrl = URL.createObjectURL(file);
+      objectUrlsRef.current.push(previewUrl);
+      return {
+        id: `${batchId}-${index}-${file.name}`,
+        file,
+        previewUrl,
+        caption: "",
+      };
+    });
+    setPhotoBatch(nextBatch);
   }
 
-  async function handleFile(file, providedCaption = "") {
-    if (!file) return;
-    const photo = isPhoto(file);
-    const photoCaption = photo ? providedCaption : "";
-    const pendingId = `pending-${Date.now()}-${file.name}`;
-    const previewUrl = photo ? URL.createObjectURL(file) : "";
+  function updateBatchCaption(id, caption) {
+    setPhotoBatch((items) => items.map((item) => (item.id === id ? { ...item, caption } : item)));
+  }
+
+  function savePhotoBatch() {
+    const entries = photoBatch.map((item) => ({
+      caption: item.caption.trim(),
+      file: item.file,
+    }));
+    clearPhotoBatch();
+    void uploadEntries(entries);
+  }
+
+  async function uploadEntries(entries) {
+    const queue = entries.filter((entry) => entry?.file);
+    if (queue.length === 0) return;
 
     if (!supabase) {
       onUploaded?.("Demo mode: connect Supabase to upload files.");
@@ -123,47 +145,64 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
       return;
     }
 
+    const pendingIds = [];
+    const pendingUrls = [];
     setBusy(true);
-    setProgressLabel(photo ? "Uploading photo..." : "Uploading document...");
-    if (photo && previewUrl) {
-      setPendingPreviews((items) => [
-        {
-          id: pendingId,
-          file_name: file.name,
-          file_kind: "photo",
-          mime_type: file.type,
-          photo_caption: photoCaption,
-          created_at: new Date().toISOString(),
-          thumbnailUrl: previewUrl,
-          viewUrl: previewUrl,
-          localPreview: true,
-        },
-        ...items,
-      ]);
-    }
 
     try {
-      const row = await uploadVisitAttachment({
-        companyId,
-        projectId,
-        visitId,
-        profileId,
-        file,
-        photoCaption,
-        searchText: photo ? photoCaption : "Indexing in background...",
-      });
+      let uploadedCount = 0;
+      for (const [index, entry] of queue.entries()) {
+        const file = entry.file;
+        const photo = isPhoto(file);
+        const photoCaption = photo ? entry.caption || "" : "";
 
-      onUploaded?.(`${photo ? "Photo" : "Document"} uploaded to Supabase Storage: ${row.file_name}`);
-      if (!photo) void indexDocumentInBackground(row, file);
+        setProgressLabel(`Uploading ${index + 1} of ${queue.length}...`);
+        if (photo) {
+          const previewUrl = URL.createObjectURL(file);
+          const pendingId = `pending-${Date.now()}-${index}-${file.name}`;
+          pendingIds.push(pendingId);
+          pendingUrls.push(previewUrl);
+          setPendingPreviews((items) => [
+            {
+              id: pendingId,
+              file_name: file.name,
+              file_kind: "photo",
+              mime_type: file.type,
+              photo_caption: photoCaption,
+              created_at: new Date().toISOString(),
+              thumbnailUrl: previewUrl,
+              viewUrl: previewUrl,
+              localPreview: true,
+            },
+            ...items,
+          ]);
+        }
+
+        const row = await uploadVisitAttachment({
+          companyId,
+          projectId,
+          visitId,
+          profileId,
+          file,
+          photoCaption,
+          searchText: photo ? photoCaption : "Indexing in background...",
+        });
+
+        uploadedCount += 1;
+        if (!photo) void indexDocumentInBackground(row, file);
+      }
+
+      onUploaded?.(`${uploadedCount} file${uploadedCount === 1 ? "" : "s"} uploaded to Supabase Storage.`);
     } catch (error) {
       onUploaded?.(error.message);
       setProgressLabel("");
     } finally {
       setBusy(false);
-      if (photo) setProgressLabel("");
-      if (previewUrl) {
+      setProgressLabel("");
+      if (pendingIds.length > 0) {
         window.setTimeout(() => {
-          setPendingPreviews((items) => items.filter((item) => item.id !== pendingId));
+          setPendingPreviews((items) => items.filter((item) => !pendingIds.includes(item.id)));
+          pendingUrls.forEach((url) => URL.revokeObjectURL(url));
         }, 2400);
       }
       if (documentInputRef.current) documentInputRef.current.value = "";
@@ -177,10 +216,11 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
         <input
           ref={documentInputRef}
           accept=".pdf,.xls,.xlsx,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          multiple
           type="file"
-          onChange={(event) => handleFile(event.target.files?.[0])}
+          onChange={(event) => uploadEntries(Array.from(event.target.files ?? []).map((file) => ({ file })))}
         />
-        <input ref={photoInputRef} accept="image/jpeg,image/png,image/webp" type="file" onChange={(event) => requestPhotoCaption(event.target.files?.[0])} />
+        <input ref={photoInputRef} accept="image/jpeg,image/png,image/webp" multiple type="file" onChange={(event) => requestPhotoCaptions(event.target.files)} />
 
         <button type="button" onClick={() => photoInputRef.current?.click()} disabled={busy}>
           <Image size={18} />
@@ -221,28 +261,35 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
 
       {progressLabel && <div className="uploadProgressPill">{progressLabel}</div>}
 
-      {captionRequest && (
-        <div className="captionSheetOverlay" role="dialog" aria-modal="true" aria-label="Photo note">
-          <div className="captionSheetBackdrop" onClick={closeCaptionRequest} />
-          <section className="captionSheet">
-            <button className="captionClose" type="button" onClick={closeCaptionRequest} aria-label="Close">
+      {photoBatch.length > 0 && (
+        <div className="captionSheetOverlay" role="dialog" aria-modal="true" aria-label="Photo notes">
+          <div className="captionSheetBackdrop" />
+          <section className="captionSheet photoBatchSheet">
+            <button className="captionClose" type="button" onClick={clearPhotoBatch} aria-label="Close">
               <X size={18} />
             </button>
-            <h3>Photo note</h3>
-            <p>{captionRequest.name}</p>
-            <textarea
-              autoFocus
-              value={captionText}
-              onChange={(event) => setCaptionText(event.target.value)}
-              placeholder="Add a short explanation for this photo"
-              rows={4}
-            />
+            <h3>Photo notes</h3>
+            <p>{photoBatch.length} photo{photoBatch.length === 1 ? "" : "s"} selected. Notes are optional and can be added later.</p>
+            <div className="photoBatchGrid">
+              {photoBatch.map((item) => (
+                <label className="photoBatchCard" key={item.id}>
+                  <img src={item.previewUrl} alt="" />
+                  <span title={item.file.name}>{item.file.name}</span>
+                  <textarea
+                    value={item.caption}
+                    onChange={(event) => updateBatchCaption(item.id, event.target.value)}
+                    placeholder="Add photo note..."
+                    rows={3}
+                  />
+                </label>
+              ))}
+            </div>
             <div className="captionActions">
-              <button className="outlineButton" type="button" onClick={closeCaptionRequest}>
+              <button className="outlineButton" type="button" onClick={clearPhotoBatch}>
                 Cancel
               </button>
-              <button className="addButton" type="button" onClick={saveCaptionRequest}>
-                Continue
+              <button className="addButton" type="button" onClick={savePhotoBatch} disabled={busy}>
+                Upload photos
               </button>
             </div>
           </section>

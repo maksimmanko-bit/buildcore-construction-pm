@@ -3369,6 +3369,35 @@ export default function App() {
     }
   }
 
+  async function saveSelectedPhotoCaption(attachment, caption) {
+    if (!attachment?.id || !supabase) return;
+    const nextCaption = caption.trim();
+    setLoading(true);
+    try {
+      const { data: updatedFile, error } = await supabase
+        .from("visit_files")
+        .update({ photo_caption: nextCaption || null })
+        .eq("id", attachment.id)
+        .select()
+        .single();
+      if (error) throw error;
+
+      const updated = { ...attachment, ...updatedFile };
+      setSelectedAttachment(updated);
+      setViewerItems((items) => items.map((item) => (item.id === updated.id ? { ...item, ...updatedFile } : item)));
+      commitWorkspaceData((current) => ({
+        ...current,
+        files: (current.files ?? []).map((file) => (file.id === updated.id ? { ...file, ...updatedFile } : file)),
+      }));
+      triggerSoftPulse();
+      setNotice(nextCaption ? "Photo note saved." : "Photo note removed.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function downloadAttachment(attachment) {
     try {
       const urls = attachment.viewUrl ? attachment : await createAttachmentUrls(attachment);
@@ -4450,6 +4479,7 @@ export default function App() {
                   onCancelAnnotate={() => setIsAnnotatingPhoto(false)}
                   onDelete={removeSelectedAttachment}
                   onDownload={() => downloadAttachment(selectedAttachment)}
+                  onSaveCaption={saveSelectedPhotoCaption}
                   onSaveAnnotation={annotateSelectedAttachment}
                   onSelect={setSelectedAttachment}
                   onZoom={setPhotoZoom}
@@ -5171,10 +5201,7 @@ function PhotoStepModal({ captions = {}, files = [], label, loading, onCaption, 
         {selectedFiles.map((file) => {
           const key = fileInputKey(file);
           return (
-            <label className="selectedFileWithCaption" key={key}>
-              <span>{file.name}</span>
-              <input placeholder="Photo note..." value={captions[key] || ""} onChange={(event) => onCaption?.(key, event.target.value)} />
-            </label>
+            <SelectedPhotoCaptionCard caption={captions[key] || ""} file={file} key={key} onCaption={(value) => onCaption?.(key, value)} />
           );
         })}
       </div>
@@ -5212,10 +5239,12 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit, requirePhotos =
             {selectedFiles.map((file) => {
               const key = fileInputKey(file);
               return (
-                <label className="selectedFileWithCaption" key={key}>
-                  <span>{file.name}</span>
-                  <input placeholder="Photo note..." value={form.captions?.[key] || ""} onChange={(event) => onChange({ ...form, captions: { ...form.captions, [key]: event.target.value } })} />
-                </label>
+                <SelectedPhotoCaptionCard
+                  caption={form.captions?.[key] || ""}
+                  file={file}
+                  key={key}
+                  onCaption={(value) => onChange({ ...form, captions: { ...form.captions, [key]: value } })}
+                />
               );
             })}
           </div>
@@ -5228,6 +5257,25 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit, requirePhotos =
         </button>
       </div>
     </form>
+  );
+}
+
+function SelectedPhotoCaptionCard({ caption, file, onCaption }) {
+  const [previewUrl, setPreviewUrl] = useState("");
+
+  useEffect(() => {
+    if (!file) return undefined;
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  return (
+    <label className="selectedFileWithCaption photoFileWithCaption">
+      {previewUrl && <img src={previewUrl} alt="" />}
+      <span>{file.name}</span>
+      <input placeholder="Photo note..." value={caption} onChange={(event) => onCaption?.(event.target.value)} />
+    </label>
   );
 }
 
@@ -6820,13 +6868,20 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
   );
 }
 
-function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading, onAnnotate, onCancelAnnotate, onDelete, onDownload, onSaveAnnotation, onSelect, onZoom, profiles = [], zoom }) {
+function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading, onAnnotate, onCancelAnnotate, onDelete, onDownload, onSaveAnnotation, onSaveCaption, onSelect, onZoom, profiles = [], zoom }) {
+  const [captionDraft, setCaptionDraft] = useState(attachment.photo_caption || "");
+  const [isEditingCaption, setIsEditingCaption] = useState(false);
   const uploader = profiles.find((person) => person.id === attachment.uploaded_by);
   const history = Array.isArray(attachment.annotation_history) ? attachment.annotation_history : [];
   const currentIndex = Math.max(0, items.findIndex((item) => item.id === attachment.id));
   const hasMultiplePhotos = items.length > 1;
   const previousPhoto = hasMultiplePhotos ? items[(currentIndex - 1 + items.length) % items.length] : null;
   const nextPhoto = hasMultiplePhotos ? items[(currentIndex + 1) % items.length] : null;
+
+  useEffect(() => {
+    setCaptionDraft(attachment.photo_caption || "");
+    setIsEditingCaption(false);
+  }, [attachment.id, attachment.photo_caption]);
 
   if (isAnnotating) {
     return (
@@ -6854,7 +6909,37 @@ function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading,
         <div>
           <strong>{uploader ? `Uploaded by ${uploader.full_name || uploader.email}` : "Photo details"}</strong>
           <small>{formatDateTimeLabel(attachment.created_at)}</small>
-          {attachment.photo_caption && <p className="photoCaption">{attachment.photo_caption}</p>}
+          {isEditingCaption ? (
+            <div className="photoCaptionEditor">
+              <textarea value={captionDraft} onChange={(event) => setCaptionDraft(event.target.value)} placeholder="Add a clear note for this photo..." rows={3} />
+              <span>
+                <button className="outlineButton" type="button" onClick={() => setIsEditingCaption(false)}>
+                  Cancel
+                </button>
+                <button
+                  className="addButton"
+                  type="button"
+                  disabled={loading}
+                  onClick={async () => {
+                    await onSaveCaption?.(attachment, captionDraft);
+                    setIsEditingCaption(false);
+                  }}
+                >
+                  Save note
+                </button>
+              </span>
+            </div>
+          ) : (
+            <div className="photoCaptionLine">
+              <p className={attachment.photo_caption ? "photoCaption" : "photoCaption empty"}>{attachment.photo_caption || "No photo note yet."}</p>
+              {!attachment.localPreview && (
+                <button className="captionEditButton" type="button" onClick={() => setIsEditingCaption(true)}>
+                  <Edit3 size={14} />
+                  {attachment.photo_caption ? "Edit note" : "Add note"}
+                </button>
+              )}
+            </div>
+          )}
         </div>
         <div className="viewerControls">
           <button type="button" title="Previous photo" disabled={!previousPhoto} onClick={() => previousPhoto && onSelect(previousPhoto)}>

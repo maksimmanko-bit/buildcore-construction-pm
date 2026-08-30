@@ -944,13 +944,17 @@ h1 {
 .todayTicket h2 {
   font-size: 30px;
   line-height: 1.08;
+  overflow-wrap: anywhere;
 }
 
 .detailHero p,
 .ticketHeaderCard p,
 .todayTicket p {
+  min-width: 0;
   color: var(--muted);
   line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .overviewScopeGrid,
@@ -1130,6 +1134,7 @@ h1 {
   display: grid;
   gap: 8px;
   min-width: 0;
+  overflow: hidden;
   padding: 14px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 16px;
@@ -1147,10 +1152,13 @@ h1 {
 .overviewScopeGrid p,
 .overviewAssignmentGrid p {
   margin: 0;
+  min-width: 0;
   color: #334155;
   font-size: 13px;
   font-weight: 760;
   line-height: 1.48;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .overviewChipList {
@@ -1451,6 +1459,8 @@ h1 {
 .ticketScopeGrid section {
   display: grid;
   gap: 8px;
+  min-width: 0;
+  overflow: hidden;
   padding: 15px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 15px;
@@ -1465,10 +1475,13 @@ h1 {
 
 .ticketScopeGrid p {
   margin: 0;
+  min-width: 0;
   color: #334155;
   font-size: 13px;
   font-weight: 700;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .wideActions {
@@ -1994,6 +2007,27 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 11px;
   background: #fff;
+}
+
+.photoFileWithCaption {
+  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.photoFileWithCaption img {
+  grid-row: 1 / span 2;
+  width: 72px;
+  height: 72px;
+  border-radius: 13px;
+  object-fit: cover;
+  background: #111827;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
+}
+
+.photoFileWithCaption input {
+  min-width: 0;
 }
 
 .thanksBox {
@@ -4931,6 +4965,7 @@ canvas {
   .overviewDatePanel,
   .overviewScopeGrid,
   .overviewAssignmentGrid,
+  .ticketScopeGrid,
   .pendingRow,
   .wideActions {
     grid-template-columns: 1fr;
@@ -6901,6 +6936,12 @@ body.overlayLocked {
   animation: overlaySpringIn 420ms cubic-bezier(0.18, 1.18, 0.22, 1) both;
 }
 
+.photoBatchSheet {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(760px, calc(100dvh - 48px));
+  overflow: hidden;
+}
+
 .captionClose {
   position: absolute;
   top: 14px;
@@ -6932,6 +6973,11 @@ body.overlayLocked {
   white-space: nowrap;
 }
 
+.photoBatchSheet p {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .captionSheet textarea {
   width: 100%;
   min-height: 118px;
@@ -6956,6 +7002,127 @@ body.overlayLocked {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+.photoBatchGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  max-height: min(480px, calc(100dvh - 250px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 2px 2px 4px;
+  overscroll-behavior: contain;
+}
+
+.photoBatchCard {
+  display: grid;
+  grid-template-columns: 106px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  gap: 8px 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.78)),
+    #fff;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
+}
+
+.photoBatchCard img {
+  grid-row: 1 / span 2;
+  width: 106px;
+  height: 106px;
+  border-radius: 14px;
+  object-fit: cover;
+  background: #111827;
+}
+
+.photoBatchCard span {
+  min-width: 0;
+  overflow: hidden;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photoBatchCard textarea {
+  min-height: 76px;
+  padding: 10px 11px;
+  border-radius: 14px;
+  font-size: 13px;
+}
+
+.photoCaptionLine {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin-top: 7px;
+}
+
+.photoCaption {
+  margin: 0;
+  max-width: min(620px, 100%);
+  color: #334155;
+  font-size: 13px;
+  font-weight: 780;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.photoCaption.empty {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.captionEditButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #334155;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.photoCaptionEditor {
+  display: grid;
+  gap: 9px;
+  min-width: min(520px, 100%);
+  margin-top: 9px;
+}
+
+.photoCaptionEditor textarea {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 780;
+}
+
+.photoCaptionEditor span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.photoCaptionEditor .outlineButton,
+.photoCaptionEditor .addButton {
+  min-height: 38px;
+  padding: 0 13px;
 }
 
 .softHapticPulse {
@@ -8326,5 +8493,25 @@ html {
 
   .modalBackdrop .modalBody {
     padding: 14px 14px max(22px, env(safe-area-inset-bottom));
+  }
+
+  .photoBatchSheet {
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - max(20px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom)));
+    padding: 18px;
+  }
+
+  .photoBatchGrid {
+    grid-template-columns: 1fr;
+    max-height: calc(100dvh - 260px);
+  }
+
+  .photoBatchCard {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+
+  .photoBatchCard img {
+    width: 92px;
+    height: 92px;
   }
 }
