@@ -931,6 +931,7 @@ export default function App() {
   const [featureFlags, setFeatureFlags] = useState(defaultFeatureFlags);
   const [developerForm, setDeveloperForm] = useState({ ...defaultFeatureFlags, botCount: "10" });
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isAccountMenuClosing, setIsAccountMenuClosing] = useState(false);
   const [avatarUrls, setAvatarUrls] = useState({});
   const accountMenuRef = useRef(null);
 
@@ -1079,11 +1080,28 @@ export default function App() {
     if (!isAccountMenuOpen) return undefined;
     function handlePointerDown(event) {
       if (accountMenuRef.current?.contains(event.target)) return;
-      setIsAccountMenuOpen(false);
+      closeAccountMenuAnimated();
     }
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [isAccountMenuOpen]);
+
+  function closeAccountMenuAnimated() {
+    if (!isAccountMenuOpen) return 0;
+    setIsAccountMenuOpen(false);
+    setIsAccountMenuClosing(true);
+    window.setTimeout(() => setIsAccountMenuClosing(false), 190);
+    return 190;
+  }
+
+  function closeMenusThen(action) {
+    const accountDelay = closeAccountMenuAnimated();
+    window.setTimeout(() => {
+      const drawerDelay = isMobileMenuOpen ? 330 : 0;
+      setIsMobileMenuOpen(false);
+      window.setTimeout(action, drawerDelay);
+    }, accountDelay);
+  }
 
   useEffect(() => {
     if (!session) return;
@@ -2325,9 +2343,10 @@ export default function App() {
 
   function openMyProfile() {
     if (!profile?.id) return;
-    setIsAccountMenuOpen(false);
-    setSelectedPersonId(profile.id);
-    showDetailOverlay("person");
+    closeMenusThen(() => {
+      setSelectedPersonId(profile.id);
+      showDetailOverlay("person");
+    });
   }
 
   function editMyProfile() {
@@ -2351,8 +2370,9 @@ export default function App() {
       return;
     }
     setDeveloperForm({ ...normalizeFeatureFlags(featureFlags), botCount: "10" });
-    setIsAccountMenuOpen(false);
-    setModalType("developerMode");
+    closeMenusThen(() => {
+      setModalType("developerMode");
+    });
   }
 
   function startArrivalWorkflow(visit = currentVisit) {
@@ -3806,8 +3826,8 @@ export default function App() {
         </nav>
 
         <div className="sidebarUserWrap" ref={accountMenuRef}>
-          {isAccountMenuOpen && (
-            <div className="accountMenu">
+          {(isAccountMenuOpen || isAccountMenuClosing) && (
+            <div className={isAccountMenuClosing ? "accountMenu closing" : "accountMenu"}>
               <button type="button" onClick={openMyProfile}>
                 <UserRound size={18} />
                 <span>My profile</span>
@@ -3818,13 +3838,20 @@ export default function App() {
                   <span>Developer mode</span>
                 </button>
               )}
-              <button type="button" onClick={signOut}>
+              <button type="button" onClick={() => closeMenusThen(signOut)}>
                 <LogOut size={18} />
                 <span>Sign out</span>
               </button>
             </div>
           )}
-          <button className={isAccountMenuOpen ? "sidebarUser active" : "sidebarUser"} type="button" onClick={() => setIsAccountMenuOpen((value) => !value)}>
+          <button
+            className={isAccountMenuOpen ? "sidebarUser active" : "sidebarUser"}
+            type="button"
+            onClick={() => {
+              if (isAccountMenuOpen) closeAccountMenuAnimated();
+              else setIsAccountMenuOpen(true);
+            }}
+          >
             <Avatar profile={profile} url={avatarUrls[profile?.id]} />
             <span>
               <strong>{currentUserName}</strong>
@@ -5793,10 +5820,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
   const firstVisit = assignedVisits[0];
   const firstProject = firstVisit ? projects.find((project) => project.id === firstVisit.project_id) : null;
   const isToday = selectedDate === today;
-  const weekDates = getWeekDates(selectedDate);
   const setOverviewDate = (date) => onDateChange?.(date);
-  const assignedVisitCount = (date) =>
-    (data.visits ?? []).filter((visit) => visit.visit_date === date && (!profile?.id || visit.people_ids?.includes(profile.id))).length;
 
   useEffect(() => {
     let alive = true;
@@ -5841,7 +5865,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
           <strong>{isToday ? "Today" : formatDateLabel(selectedDate)}</strong>
         </div>
         <div className="overviewDateActions">
-          <button type="button" title="Previous day" onClick={() => setOverviewDate(shiftDate(selectedDate, -1))}>
+          <button className="overviewArrowButton previous" type="button" title="Previous day" onClick={() => setOverviewDate(shiftDate(selectedDate, -1))}>
             <ChevronLeft size={18} />
           </button>
           <div className="calendarPickerWrap overviewDatePicker" ref={calendarWrapRef}>
@@ -5863,7 +5887,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
               />
             )}
           </div>
-          <button type="button" title="Next day" onClick={() => setOverviewDate(shiftDate(selectedDate, 1))}>
+          <button className="overviewArrowButton next" type="button" title="Next day" onClick={() => setOverviewDate(shiftDate(selectedDate, 1))}>
             <ChevronRight size={18} />
           </button>
           <button className="overviewTodayButton" type="button" onClick={() => setOverviewDate(today)}>
@@ -5871,19 +5895,6 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
           </button>
         </div>
       </section>
-
-      <div className="overviewWeekStrip" aria-label="Assigned visits this week">
-        {weekDates.map((date) => {
-          const count = assignedVisitCount(date);
-          return (
-            <button className={`${date === selectedDate ? "active" : ""} ${date === today ? "today" : ""}`} key={date} type="button" onClick={() => setOverviewDate(date)}>
-              <span>{new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(new Date(`${date}T12:00:00`))}</span>
-              <strong>{new Date(`${date}T12:00:00`).getDate()}</strong>
-              <em>{count ? `${count} ticket${count === 1 ? "" : "s"}` : "Free"}</em>
-            </button>
-          );
-        })}
-      </div>
 
       {assignedVisits.length === 0 && <div className="emptyState">{isToday ? "No visits assigned to you today." : `No visits assigned to you on ${formatDateLabel(selectedDate)}.`}</div>}
       {assignedVisits.map((visit) => {
@@ -5983,7 +5994,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
               </section>
             </div>
 
-            {visit.status === "planned" && (
+            {isToday && visit.status === "planned" && (
               <div className="visitActions wideActions">
                 <button type="button" onClick={() => onArrive(visit)}>
                   <ClipboardCheck size={18} />
@@ -5991,7 +6002,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                 </button>
               </div>
             )}
-            {visit.status === "on_site" && (
+            {isToday && visit.status === "on_site" && (
               <div className="visitActions wideActions">
                 <button type="button" onClick={() => onComplete(visit)}>
                   <CheckCircle2 size={18} />
@@ -5999,7 +6010,8 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                 </button>
               </div>
             )}
-            {visit.status === "completed" && <div className="thanksBox">Thank you. Work is Done.</div>}
+            {isToday && visit.status === "completed" && <div className="thanksBox">Thank you. Work is Done.</div>}
+            {!isToday && <div className="thanksBox muted">Workflow actions are available only for today's ticket.</div>}
           </section>
         );
       })}
