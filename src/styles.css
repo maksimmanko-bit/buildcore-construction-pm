@@ -8202,15 +8202,30 @@ html {
   }
 
   .calendarToolbar {
-    grid-template-columns: 1fr;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: stretch;
   }
 
-  .dateStepper,
-  .scheduleDatePicker,
+  .dateStepper {
+    grid-column: 1;
+    width: auto;
+  }
+
+  .scheduleDatePicker {
+    grid-column: 2;
+    width: 100%;
+    min-width: 0;
+  }
+
   .calendarToolbar > .outlineButton,
   .calendarToolbar > .addButton {
+    grid-column: 1 / -1;
     width: 100%;
+  }
+
+  .scheduleDatePicker .dateDisplay {
+    width: 100%;
+    min-height: 50px;
   }
 
   .dateDisplay {
