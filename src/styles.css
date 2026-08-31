@@ -9957,3 +9957,67 @@ html {
     transform: translateX(-50%);
   }
 }
+
+/* Schedule ticket label guard: status/type badges must never cover the time pill. */
+.resourceRow .scheduleBlock .scheduleBlockTop,
+.scheduleBlock .scheduleBlockTop,
+.scheduleBlock.tightBlock .scheduleBlockTop {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-auto-rows: min-content;
+  align-items: start;
+  gap: 3px 8px;
+  min-height: 0;
+}
+
+.resourceRow .scheduleBlock .scheduleBlockTop strong,
+.scheduleBlock .scheduleBlockTop strong,
+.scheduleBlock.tightBlock .scheduleBlockTop strong {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  min-width: 0;
+  padding-right: 2px;
+}
+
+.resourceRow .scheduleBlock .scheduleBlockType,
+.scheduleBlock .scheduleBlockType,
+.scheduleBlock.tightBlock .scheduleBlockType {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  max-width: 86px;
+}
+
+.resourceRow .scheduleBlock .scheduleBlockStatus,
+.scheduleBlock .scheduleBlockStatus,
+.scheduleBlock.tightBlock .scheduleBlockStatus {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: end;
+  max-width: 86px;
+}
+
+.resourceRow .scheduleBlock .scheduleBlockTime,
+.scheduleBlock .scheduleBlockTime,
+.scheduleBlock.tightBlock .scheduleBlockTime {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  margin-right: auto;
+  max-width: min(100%, 178px);
+}
+
+.scheduleBlock.tightBlock,
+.scheduleBlock.shortBlock {
+  gap: 5px;
+}
+
+.scheduleBlock.tightBlock .scheduleBlockType,
+.scheduleBlock.tightBlock .scheduleBlockStatus,
+.scheduleBlock.shortBlock .scheduleBlockType,
+.scheduleBlock.shortBlock .scheduleBlockStatus {
+  max-width: 74px;
+  padding-inline: 6px;
+  font-size: 9px;
+}
