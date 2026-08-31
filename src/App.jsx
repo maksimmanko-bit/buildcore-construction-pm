@@ -4171,13 +4171,18 @@ export default function App() {
     return { start_time: toTimeValue(startHour), end_time: toTimeValue(endHour) };
   }
 
-  async function openVisitModalFromScheduleDrop({ clientX, personId, projectId, trackElement }) {
-    if (!personId) return;
-    const person = rowsSource.people.find((item) => item.id === personId);
+  async function openVisitModalFromScheduleDrop({ clientX, groupLabel, personId, personIds, projectId, trackElement }) {
+    const requestedPersonIds = [...new Set(personIds?.length ? personIds : personId ? [personId] : [])];
+    if (requestedPersonIds.length === 0) return;
+    const selectedPeople = requestedPersonIds
+      .map((id) => rowsSource.people.find((item) => item.id === id))
+      .filter(Boolean);
     const project = rowsSource.projects.find((item) => item.id === projectId);
-    if (!person) return;
-    if (person.availability_status === "not_available") {
-      setNotice(`${profileDisplayName(person)} is marked Not Available.`);
+    if (selectedPeople.length === 0) return;
+    const availablePeople = selectedPeople.filter((person) => person.availability_status !== "not_available");
+    const skippedCount = selectedPeople.length - availablePeople.length;
+    if (availablePeople.length === 0) {
+      setNotice(groupLabel ? `${groupLabel} has no available people for this ticket.` : `${profileDisplayName(selectedPeople[0])} is marked Not Available.`);
       return;
     }
     const timeDefaults = getDropTimeRange(clientX, trackElement);
@@ -4186,9 +4191,13 @@ export default function App() {
       visit_date: selectedDate,
       project_id: project?.id ?? "",
       address: primaryProjectAddress(project),
-      people_ids: [person.id],
+      people_ids: availablePeople.map((person) => person.id),
     });
-    setNotice(`${profileDisplayName(person)} selected for the new ticket.`);
+    setNotice(
+      availablePeople.length > 1
+        ? `${availablePeople.length} people from ${groupLabel || "group"} selected for the new ticket${skippedCount ? `, ${skippedCount} skipped` : ""}.`
+        : `${profileDisplayName(availablePeople[0])} selected for the new ticket.`,
+    );
   }
 
   function openChangeOrderForVisit(visit = currentVisit) {
@@ -7250,9 +7259,9 @@ function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeop
 }
 
 function EmptyScheduleDropZone({ dragPreview, onCreateVisitFromDrop, setDragPreview }) {
-  const acceptsAvailablePerson = (event) => event.dataTransfer.types.includes("application/x-buildcore-person");
+  const acceptsAvailablePeople = (event) => event.dataTransfer.types.includes("application/x-buildcore-person") || event.dataTransfer.types.includes("application/x-buildcore-person-group");
   const updatePreview = (event) => {
-    if (!acceptsAvailablePerson(event)) return;
+    if (!acceptsAvailablePeople(event)) return;
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     const percent = Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width)));
@@ -7279,15 +7288,23 @@ function EmptyScheduleDropZone({ dragPreview, onCreateVisitFromDrop, setDragPrev
         onDragLeave={() => setDragPreview?.(null)}
         onDragOver={updatePreview}
         onDrop={(event) => {
-          if (!acceptsAvailablePerson(event)) return;
+          if (!acceptsAvailablePeople(event)) return;
           event.preventDefault();
           const personId = event.dataTransfer.getData("application/x-buildcore-person");
+          const groupRaw = event.dataTransfer.getData("application/x-buildcore-person-group");
+          const group = groupRaw ? JSON.parse(groupRaw) : null;
           setDragPreview?.(null);
-          onCreateVisitFromDrop?.({ clientX: event.clientX, personId, trackElement: event.currentTarget });
+          onCreateVisitFromDrop?.({
+            clientX: event.clientX,
+            groupLabel: group?.trade,
+            personId,
+            personIds: group?.personIds,
+            trackElement: event.currentTarget,
+          });
         }}
       >
         {dragPreview?.rowId === "__empty__" && <div className="dragPreview" style={{ left: `${dragPreview.left}%`, width: `${dragPreview.width}%` }}>{dragPreview.label}</div>}
-        <div className="emptyTimeline">Drag an available person here to create a ticket.</div>
+        <div className="emptyTimeline">Drag an available person or group here to create a ticket.</div>
       </div>
     </div>
   );
@@ -8649,7 +8666,8 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleG
               event.preventDefault();
               const raw = event.dataTransfer.getData("application/json");
               const personId = event.dataTransfer.getData("application/x-buildcore-person");
-              if (!raw && !(personId && row.kind === "project")) return;
+              const hasPersonGroup = event.dataTransfer.types.includes("application/x-buildcore-person-group");
+              if (!raw && !(row.kind === "project" && (personId || hasPersonGroup))) return;
               const rect = event.currentTarget.getBoundingClientRect();
               const percent = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
               const assignment = raw ? JSON.parse(raw) : null;
@@ -8661,17 +8679,27 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleG
                 rowId: row.id,
                 left: ((start - scheduleStartHour) / (scheduleEndHour - scheduleStartHour)) * 100,
                 width: ((end - start) / (scheduleEndHour - scheduleStartHour)) * 100,
-                label: personId && !assignment ? `New ticket ${formatTimeRange(toTimeValue(start), toTimeValue(end))}` : formatTimeRange(toTimeValue(start), toTimeValue(end)),
+                label: row.kind === "project" && !assignment && (personId || hasPersonGroup) ? `New ticket ${formatTimeRange(toTimeValue(start), toTimeValue(end))}` : formatTimeRange(toTimeValue(start), toTimeValue(end)),
               });
             }}
             onDrop={(event) => {
               event.preventDefault();
               const raw = event.dataTransfer.getData("application/json");
               const personId = event.dataTransfer.getData("application/x-buildcore-person");
-              if (!raw && !(personId && row.kind === "project")) return;
+              const personGroupRaw = event.dataTransfer.getData("application/x-buildcore-person-group");
+              const hasPersonGroup = Boolean(personGroupRaw);
+              if (!raw && !(row.kind === "project" && (personId || hasPersonGroup))) return;
               setDragPreview?.(null);
-              if (personId && row.kind === "project") {
-                onCreateVisitFromDrop?.({ clientX: event.clientX, personId, projectId: row.id, trackElement: event.currentTarget });
+              if (row.kind === "project" && (personId || hasPersonGroup)) {
+                const group = personGroupRaw ? JSON.parse(personGroupRaw) : null;
+                onCreateVisitFromDrop?.({
+                  clientX: event.clientX,
+                  groupLabel: group?.trade,
+                  personId,
+                  personIds: group?.personIds,
+                  projectId: row.id,
+                  trackElement: event.currentTarget,
+                });
                 return;
               }
               onDropAssignment?.({ assignment: JSON.parse(raw), row, clientX: event.clientX, trackElement: event.currentTarget });
