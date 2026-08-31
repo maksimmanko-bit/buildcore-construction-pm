@@ -34,11 +34,6 @@ function getCanvasPoint(canvas, event) {
   };
 }
 
-function getEventClientPoint(event) {
-  const pointer = event.touches?.[0] || event.changedTouches?.[0] || event;
-  return { x: pointer.clientX || 0, y: pointer.clientY || 0 };
-}
-
 function imageToDataUrl(url) {
   return fetch(url)
     .then((response) => {
@@ -216,7 +211,6 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
   const [color, setColor] = useState(swatches[0].value);
   const [fill, setFill] = useState(swatches[0].fill);
   const [isSaving, setIsSaving] = useState(false);
-  const [propertyPanel, setPropertyPanel] = useState(null);
   const [saveFlash, setSaveFlash] = useState(false);
   const [strokeWidth, setStrokeWidth] = useState(5);
   const [textComposer, setTextComposer] = useState(null);
@@ -281,24 +275,21 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     const object = getActiveObject(canvas);
     if (!object || !object.data?.annotation) {
       setActiveObjectId("");
-      setPropertyPanel(null);
       return;
     }
 
-    const bounds = object.getBoundingRect();
     setActiveObjectId(object.__annotationId || "");
-    setPropertyPanel({
-      left: Math.min(88, Math.max(12, (bounds.left / canvas.width) * 100)),
-      top: Math.min(80, Math.max(10, (bounds.top / canvas.height) * 100)),
-      type: object.data.annotationType || "annotation",
-    });
   }
 
   function selectTool(nextTool) {
     toolRef.current = nextTool;
     setTool(nextTool);
-    setTextComposer(null);
     const canvas = fabricRef.current;
+    if (nextTool === "text" && canvas) {
+      setTextComposer((current) => current || { canvasPoint: { x: canvas.width / 2, y: canvas.height / 2 }, value: "" });
+    } else {
+      setTextComposer(null);
+    }
     if (!canvas) return;
     canvas.isDrawingMode = nextTool === "draw";
     canvas.skipTargetFind = nextTool === "draw" || nextTool === "pan";
@@ -395,14 +386,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     event.stopImmediatePropagation?.();
     const point = getCanvasPoint(canvas, event);
     if (activeTool === "text") {
-      const rect = canvas.upperCanvasEl.getBoundingClientRect();
-      const clientPoint = getEventClientPoint(event);
-      setTextComposer({
-        canvasPoint: point,
-        left: ((clientPoint.x - rect.left) / rect.width) * 100,
-        top: ((clientPoint.y - rect.top) / rect.height) * 100,
-        value: "",
-      });
+      setTextComposer((current) => ({ canvasPoint: point, value: current?.value || "" }));
       return;
     }
 
@@ -691,52 +675,6 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     <section className={`annotator ${saveFlash ? "saved" : ""}`}>
       <div className="canvasShell" style={{ "--annotation-aspect": canvasSize.width / canvasSize.height, aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}>
         <canvas ref={canvasElement} />
-        {textComposer && (
-          <form
-            className="annotationTextBubbleComposer"
-            style={{ left: `${textComposer.left}%`, top: `${textComposer.top}%` }}
-            onSubmit={(event) => {
-              event.preventDefault();
-              commitTextBubble();
-            }}
-          >
-            <input
-              autoFocus
-              placeholder="Add text"
-              value={textComposer.value}
-              onChange={(event) => setTextComposer({ ...textComposer, value: event.target.value })}
-              onBlur={commitTextBubble}
-            />
-          </form>
-        )}
-        {propertyPanel && (
-          <div className="annotationPropertyPopover" style={{ left: `${propertyPanel.left}%`, top: `${propertyPanel.top}%` }}>
-            <div className="miniSwatches">
-              {swatches.map((item) => (
-                <button
-                  className={item.value === color ? "active" : ""}
-                  key={item.id}
-                  style={{ "--swatch": item.value }}
-                  title={item.label}
-                  type="button"
-                  onClick={() => updateActiveColor(item)}
-                />
-              ))}
-            </div>
-            <button type="button" title="Smaller" onClick={() => updateActiveSize(-1)}>
-              <Minus size={15} />
-            </button>
-            <button type="button" title="Bigger" onClick={() => updateActiveSize(1)}>
-              <Plus size={15} />
-            </button>
-            <button type="button" title="Duplicate" onClick={duplicateActiveObject}>
-              <Copy size={15} />
-            </button>
-            <button className="dangerIcon" type="button" title="Delete" onClick={deleteActiveObject}>
-              <Trash2 size={15} />
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="annotatorFloatingToolbar" aria-label="Photo annotation tools">
@@ -772,18 +710,52 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
             <Maximize2 size={18} />
           </button>
         </div>
-        <div className="annotatorSwatches" aria-label="Annotation colors">
-          {swatches.map((item) => (
-            <button
-              className={item.value === color ? "active" : ""}
-              key={item.id}
-              style={{ "--swatch": item.value }}
-              title={item.label}
-              type="button"
-              onClick={() => updateActiveColor(item)}
+        {tool === "text" ? (
+          <form
+            className="annotatorTextInputBar"
+            onSubmit={(event) => {
+              event.preventDefault();
+              commitTextBubble();
+            }}
+          >
+            <input
+              autoFocus
+              placeholder="Type text, then tap Add"
+              value={textComposer?.value || ""}
+              onChange={(event) => setTextComposer((current) => ({ canvasPoint: current?.canvasPoint || { x: canvasSize.width / 2, y: canvasSize.height / 2 }, value: event.target.value }))}
             />
-          ))}
-        </div>
+            <button type="submit">Add</button>
+          </form>
+        ) : (
+          <div className="annotatorSwatches" aria-label="Annotation colors">
+            {swatches.map((item) => (
+              <button
+                className={item.value === color ? "active" : ""}
+                key={item.id}
+                style={{ "--swatch": item.value }}
+                title={item.label}
+                type="button"
+                onClick={() => updateActiveColor(item)}
+              />
+            ))}
+          </div>
+        )}
+        {activeObjectId && tool !== "text" && (
+          <div className="annotatorSelectionActions" aria-label="Selected annotation actions">
+            <button className="iconButton" type="button" title="Smaller" onClick={() => updateActiveSize(-1)}>
+              <Minus size={17} />
+            </button>
+            <button className="iconButton" type="button" title="Bigger" onClick={() => updateActiveSize(1)}>
+              <Plus size={17} />
+            </button>
+            <button className="iconButton" type="button" title="Duplicate" onClick={duplicateActiveObject}>
+              <Copy size={17} />
+            </button>
+            <button className="iconButton dangerIcon" type="button" title="Delete" onClick={deleteActiveObject}>
+              <Trash2 size={17} />
+            </button>
+          </div>
+        )}
         <div className="annotatorHistoryActions">
           <button className="iconButton" type="button" title="Undo" aria-label="Undo" disabled={!canUndo} onClick={undo}>
             <Undo2 size={18} />

@@ -9620,7 +9620,7 @@ html {
   z-index: 20;
   bottom: max(12px, env(safe-area-inset-bottom));
   display: grid;
-  grid-template-columns: auto auto auto auto;
+  grid-template-columns: auto auto auto auto auto;
   align-items: center;
   justify-content: center;
   gap: 10px;
@@ -9643,6 +9643,7 @@ html {
 .annotatorFloatingToolbar .annotatorToolGroup,
 .annotatorDesktopNav,
 .annotatorHistoryActions,
+.annotatorSelectionActions,
 .annotatorSwatches,
 .miniSwatches {
   display: inline-flex;
@@ -9652,7 +9653,8 @@ html {
 
 .annotatorFloatingToolbar .annotatorToolGroup,
 .annotatorDesktopNav,
-.annotatorHistoryActions {
+.annotatorHistoryActions,
+.annotatorSelectionActions {
   padding: 4px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.54);
@@ -9698,6 +9700,50 @@ html {
   opacity: 0.34;
   transform: none;
   cursor: default;
+}
+
+.annotatorSelectionActions .dangerIcon {
+  color: #cf2e2e;
+}
+
+.annotatorTextInputBar {
+  display: flex;
+  width: min(420px, 42vw);
+  min-width: 280px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.74);
+}
+
+.annotatorTextInputBar input {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 42px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #111827;
+  font-size: 15px;
+  font-weight: 850;
+  outline: 0;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.16);
+}
+
+.annotatorTextInputBar button {
+  display: grid;
+  min-width: 64px;
+  height: 42px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #e43b3b, #cf2e2e);
+  color: #fff;
+  font-weight: 950;
+  box-shadow: 0 12px 24px rgba(207, 46, 46, 0.22);
 }
 
 .annotatorDesktopNav {
@@ -9883,6 +9929,7 @@ html {
   .annotatorFloatingToolbar .annotatorToolGroup,
   .annotatorDesktopNav,
   .annotatorHistoryActions,
+  .annotatorSelectionActions,
   .annotatorSwatches {
     justify-content: center;
   }
@@ -9974,6 +10021,16 @@ html {
   .annotatorFloatingToolbar .saveButton {
     flex: 1 1 auto;
     min-height: 44px;
+  }
+
+  .annotatorTextInputBar {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .annotatorTextInputBar input,
+  .annotatorTextInputBar button {
+    height: 44px;
   }
 
   .annotationPropertyPopover {
