@@ -3,6 +3,8 @@ const searchableFields = {
   person: ["full_name", "role", "trade", "phone"],
   equipment: ["name", "type", "unit_number", "status"],
   visit: ["visit_date", "start_time", "end_time", "work_scope", "office_notes", "status"],
+  siteVisit: ["visit_date", "start_time", "end_time", "description", "status"],
+  changeOrder: ["order_date", "order_time", "description", "approved_by", "status"],
   file: ["file_name", "photo_caption", "search_text", "project_name"],
 };
 
@@ -25,8 +27,8 @@ function collectMatches(type, rows, query) {
       return {
         id: `${type}-${row.id}`,
         type,
-        title: row.name ?? row.full_name ?? row.file_name ?? row.visit_date,
-        subtitle: row.address ?? row.trade ?? row.type ?? row.project_name ?? row.status,
+        title: row.name ?? row.full_name ?? row.file_name ?? row.visit_date ?? row.order_date,
+        subtitle: row.address ?? row.trade ?? row.type ?? row.project_name ?? row.status ?? row.approved_by,
         snippet: makeSnippet(row[matchedField], query),
         fileKind: row.file_kind,
       };
@@ -42,6 +44,8 @@ export function localGlobalSearch(data, query) {
     ...collectMatches("person", data.people, normalized),
     ...collectMatches("equipment", data.equipment, normalized),
     ...collectMatches("visit", data.visits, normalized),
+    ...collectMatches("siteVisit", data.siteVisits ?? [], normalized),
+    ...collectMatches("changeOrder", data.changeOrders ?? [], normalized),
     ...collectMatches("file", data.files ?? [], normalized),
   ].slice(0, 12);
 }

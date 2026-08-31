@@ -303,3 +303,68 @@ export async function exportProjectPdf({ project, visits = [], people = [], equi
 
   downloadBlob(doc.output("blob"), `${cleanFileName(project?.job_number || project?.name)}-project.pdf`);
 }
+
+export async function exportFieldReportPdf({ type, record, project, files = [], creatorName = "" }) {
+  const isSiteVisit = type === "siteVisit";
+  const title = isSiteVisit ? "Site Visit" : "Change Order";
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  doc.setFillColor(17, 24, 39);
+  doc.rect(0, 0, 612, 88, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(21);
+  doc.text(`${project?.name || "Project"} ${title}`, 36, 38);
+  doc.setFontSize(11);
+  doc.text(`${project?.job_number || "No job number"} / ${record.status || "planned"}`, 36, 62);
+
+  doc.setTextColor(17, 24, 39);
+  let y = 124;
+  y = addSection(doc, `${title} Details`, y);
+  y = addWrapped(doc, `Project: ${project?.name || "-"}`, 50, y, 500);
+  y = addWrapped(doc, `Address: ${project?.address || "-"}`, 50, y + 4, 500);
+  y = addWrapped(doc, `Date: ${dateLabel(isSiteVisit ? record.visit_date : record.order_date)}`, 50, y + 4, 500);
+  y = addWrapped(doc, `Time: ${isSiteVisit ? timeRange(record.start_time, record.end_time) : time(record.order_time)}`, 50, y + 4, 500);
+  y = addWrapped(doc, `Created by: ${creatorName || "-"}`, 50, y + 4, 500);
+  if (!isSiteVisit) {
+    y = addWrapped(doc, `Approved by: ${record.approved_by || "-"}`, 50, y + 4, 500);
+  }
+
+  y = addSection(doc, "Description", y + 18);
+  y = addWrapped(doc, record.description || "-", 50, y, 500);
+
+  if (!isSiteVisit && record.approval_signature) {
+    y = addSection(doc, "Approval Signature", y + 18);
+    if (y > 610) {
+      doc.addPage();
+      y = 48;
+    }
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(48, y - 8, 260, 82, 8, 8);
+    doc.addImage(record.approval_signature, "PNG", 62, y + 2, 220, 54);
+    y += 100;
+  }
+
+  const groupedFiles = files.reduce((groups, file) => {
+    const key = file.folder_name || "Photos";
+    if (!groups.has(key)) groups.set(key, { description: file.folder_description || "", items: [] });
+    const group = groups.get(key);
+    if (!group.description && file.folder_description) group.description = file.folder_description;
+    group.items.push(file);
+    return groups;
+  }, new Map());
+
+  y = addSection(doc, "Photos and Files", y + 18);
+  if (groupedFiles.size === 0) {
+    y = addWrapped(doc, "No photos or files saved.", 50, y, 500);
+  }
+  for (const [folderName, group] of groupedFiles.entries()) {
+    y = addSection(doc, folderName, y + 8);
+    if (group.description) y = addWrapped(doc, group.description, 50, y, 500);
+    for (const file of group.items) {
+      y = addWrapped(doc, `${file.file_name}${file.photo_caption ? ` / ${file.photo_caption}` : ""}`, 50, y + 4, 500);
+      y = await maybeAddPhoto(doc, file, y + 6);
+    }
+  }
+
+  downloadBlob(doc.output("blob"), `${cleanFileName(project?.job_number || project?.name)}-${cleanFileName(title)}-${isSiteVisit ? record.visit_date : record.order_date}.pdf`);
+}

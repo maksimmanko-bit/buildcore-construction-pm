@@ -168,11 +168,28 @@ export function makeSimplePdfBlob(lines) {
   return new Blob([pdf], { type: "application/pdf" });
 }
 
-export async function uploadVisitGeneratedFile({ bucket = "project-documents", companyId, projectId, visitId, profileId, blob, fileName, fileType = "project_document", fileKind = "pdf", mimeType = "application/pdf", photoCaption = "", searchText = "" }) {
+export async function uploadVisitGeneratedFile({
+  bucket = "project-documents",
+  changeOrderId,
+  companyId,
+  folderDescription = "",
+  folderName = "",
+  projectId,
+  profileId,
+  siteVisitId,
+  visitId,
+  blob,
+  fileName,
+  fileType = "project_document",
+  fileKind = "pdf",
+  mimeType = "application/pdf",
+  photoCaption = "",
+  searchText = "",
+}) {
   if (!supabase) throw new Error("Supabase is not configured.");
   if (!companyId || !projectId || !blob || !fileName) throw new Error("Missing file upload details.");
 
-  const folder = visitId || "project-files";
+  const folder = visitId || (siteVisitId ? `site-visit-${siteVisitId}` : changeOrderId ? `change-order-${changeOrderId}` : "project-files");
   const storagePath = `${companyId}/${projectId}/${folder}/${Date.now()}-${cleanStorageFileName(fileName)}`;
 
   const { error: uploadError } = await supabase.storage.from(bucket).upload(storagePath, blob, {
@@ -188,6 +205,8 @@ export async function uploadVisitGeneratedFile({ bucket = "project-documents", c
       company_id: companyId,
       project_id: projectId,
       visit_id: visitId || null,
+      site_visit_id: siteVisitId || null,
+      change_order_id: changeOrderId || null,
       uploaded_by: profileId || null,
       bucket_id: bucket,
       storage_path: storagePath,
@@ -196,6 +215,8 @@ export async function uploadVisitGeneratedFile({ bucket = "project-documents", c
       file_kind: fileKind,
       mime_type: mimeType,
       photo_caption: photoCaption || null,
+      folder_name: folderName || null,
+      folder_description: folderDescription || null,
       search_text: searchText,
     })
     .select()
@@ -205,11 +226,11 @@ export async function uploadVisitGeneratedFile({ bucket = "project-documents", c
   return data;
 }
 
-export async function uploadVisitAttachment({ companyId, projectId, visitId, profileId, file, photoCaption = "", searchText = "" }) {
+export async function uploadVisitAttachment({ changeOrderId, companyId, folderDescription = "", folderName = "", projectId, siteVisitId, visitId, profileId, file, photoCaption = "", searchText = "" }) {
   if (!supabase) throw new Error("Supabase is not configured.");
 
   const bucket = getAttachmentBucket(file);
-  const folder = visitId || "project-files";
+  const folder = visitId || (siteVisitId ? `site-visit-${siteVisitId}` : changeOrderId ? `change-order-${changeOrderId}` : "project-files");
   const storagePath = `${companyId}/${projectId}/${folder}/${Date.now()}-${cleanStorageFileName(file.name)}`;
   const kind = getAttachmentKind(file);
 
@@ -226,6 +247,8 @@ export async function uploadVisitAttachment({ companyId, projectId, visitId, pro
       company_id: companyId,
       project_id: projectId,
       visit_id: visitId || null,
+      site_visit_id: siteVisitId || null,
+      change_order_id: changeOrderId || null,
       uploaded_by: profileId || null,
       bucket_id: bucket,
       storage_path: storagePath,
@@ -234,6 +257,8 @@ export async function uploadVisitAttachment({ companyId, projectId, visitId, pro
       file_kind: kind,
       mime_type: file.type || "application/octet-stream",
       photo_caption: kind === "photo" ? photoCaption || null : null,
+      folder_name: folderName || null,
+      folder_description: folderDescription || null,
       search_text: searchText,
     })
     .select()

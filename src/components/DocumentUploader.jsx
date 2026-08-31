@@ -63,7 +63,7 @@ function AttachmentThumbnail({ attachment, onOpen }) {
   );
 }
 
-export default function DocumentUploader({ companyId, projectId, visitId, profileId, attachments = [], onUploaded, onOpen, showPreview = true }) {
+export default function DocumentUploader({ changeOrderId, companyId, projectId, siteVisitId, visitId, profileId, attachments = [], onUploaded, onOpen, showPreview = true }) {
   const documentInputRef = useRef(null);
   const photoInputRef = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -180,7 +180,9 @@ export default function DocumentUploader({ companyId, projectId, visitId, profil
 
         const row = await uploadVisitAttachment({
           companyId,
+          changeOrderId,
           projectId,
+          siteVisitId,
           visitId,
           profileId,
           file,
