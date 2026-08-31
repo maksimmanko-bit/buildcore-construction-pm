@@ -818,6 +818,10 @@ function normalizeStatus(status) {
   return projectStatusMap[status] ?? status ?? "Planned";
 }
 
+function projectStatusClass(status) {
+  return projectStatusMap[status] ? status : "planning";
+}
+
 function normalizeVisitStatus(status) {
   return visitStatusMap[status] ?? status ?? "Planned";
 }
@@ -2103,6 +2107,43 @@ export default function App() {
     setSelectedProjectId(saved.id);
     triggerSoftPulse();
     setNotice(editingProjectId ? "Project changes saved." : "Project saved.");
+  }
+
+  async function changeProjectStatus(project, nextStatus) {
+    if (!supabase || !canManage) {
+      setNotice("Only Owner, PM, or Office Manager can change project status.");
+      return;
+    }
+    if (!project?.id || project.status === nextStatus) return;
+
+    const confirmed = await confirmAction({
+      title: "Change project status?",
+      message: `Set "${project.name}" to ${normalizeStatus(nextStatus)}?`,
+      confirmLabel: "Change status",
+    });
+    if (!confirmed) {
+      setNotice("Project status unchanged.");
+      return;
+    }
+
+    const previousData = data;
+    commitWorkspaceData((current) => ({
+      ...current,
+      projects: (current.projects ?? []).map((item) => (item.id === project.id ? { ...item, status: nextStatus } : item)),
+    }));
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("projects").update({ status: nextStatus }).eq("id", project.id);
+      if (error) throw error;
+      triggerSoftPulse();
+      setNotice(`Project status changed to ${normalizeStatus(nextStatus)}.`);
+    } catch (error) {
+      commitWorkspaceData(previousData);
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function editProject(project) {
@@ -4767,7 +4808,7 @@ export default function App() {
               </button>
             }
           />
-          <ProjectsView canManage={canManage} getProfileName={getProfileName} projects={rowsSource.projects} onDelete={deleteProject} onEdit={editProject} onSelect={selectProject} />
+          <ProjectsView canManage={canManage} getProfileName={getProfileName} projects={rowsSource.projects} onDelete={deleteProject} onEdit={editProject} onSelect={selectProject} onStatusChange={changeProjectStatus} />
         </>
       );
     }
@@ -7349,7 +7390,7 @@ function SectionToolbar({ actions, label, onAdd }) {
   );
 }
 
-function ProjectsView({ canManage, getProfileName, projects, onDelete, onEdit, onSelect }) {
+function ProjectsView({ canManage, getProfileName, onDelete, onEdit, onSelect, onStatusChange, projects }) {
   return (
     <div className="listView">
       {projects.length === 0 && <div className="emptyState">No projects yet. Press Add to create the first project.</div>}
@@ -7362,20 +7403,72 @@ function ProjectsView({ canManage, getProfileName, projects, onDelete, onEdit, o
               <small>PM / Owner: {getProfileName(project.manager_id ?? project.created_by)}</small>
               <small>{project.job_number ? `${project.job_number} · ${primaryProjectAddress(project)}` : primaryProjectAddress(project)}</small>
             </span>
-            <em>{normalizeStatus(project.status)}</em>
           </button>
-          {canManage && (
-            <div className="rowActions">
+          <div className="rowActions projectRowActions">
+            <ProjectStatusControl canManage={canManage} project={project} onStatusChange={onStatusChange} />
+            {canManage && (
+              <>
               <button type="button" title="Edit project" onClick={() => onEdit(project)}>
                 <Edit3 size={16} />
               </button>
               <button className="dangerIcon" type="button" title="Delete project" onClick={() => onDelete(project)}>
                 <Trash2 size={16} />
               </button>
-            </div>
-          )}
+              </>
+            )}
+          </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ProjectStatusControl({ canManage, onStatusChange, project }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const wrapRef = useRef(null);
+  const statusClass = projectStatusClass(project.status);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    function handlePointerDown(event) {
+      if (wrapRef.current?.contains(event.target)) return;
+      setIsOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isOpen]);
+
+  return (
+    <div className="projectStatusControl" ref={wrapRef}>
+      <button
+        className={`projectStatusChip ${statusClass}`}
+        type="button"
+        disabled={!canManage}
+        title={canManage ? "Change project status" : normalizeStatus(project.status)}
+        onClick={() => setIsOpen((value) => !value)}
+      >
+        <span />
+        {normalizeStatus(project.status)}
+        {canManage && <ChevronDown size={13} />}
+      </button>
+      {isOpen && canManage && (
+        <div className="projectStatusMenu">
+          {Object.entries(projectStatusMap).map(([status, label]) => (
+            <button
+              className={status === project.status ? "active" : ""}
+              key={status}
+              type="button"
+              onClick={() => {
+                setIsOpen(false);
+                onStatusChange?.(project, status);
+              }}
+            >
+              <i className={`projectStatusDot ${projectStatusClass(status)}`} />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
