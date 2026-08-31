@@ -1511,6 +1511,37 @@ export default function App() {
   }, [confirmation, detailOverlay, isMobileMenuOpen, isSearchOpen, modalType, selectedAttachment]);
 
   useEffect(() => {
+    if (!selectedAttachment) return undefined;
+    const isInsideAttachmentViewer = (target) => target instanceof Element && Boolean(target.closest(".attachmentModal"));
+    const preventViewerPageZoom = (event) => {
+      if (!isInsideAttachmentViewer(event.target)) return;
+      event.preventDefault();
+    };
+    const preventMultiTouchZoom = (event) => {
+      if (event.touches?.length < 2 || !isInsideAttachmentViewer(event.target)) return;
+      event.preventDefault();
+    };
+    const preventTrackpadPageZoom = (event) => {
+      if (!event.ctrlKey || !isInsideAttachmentViewer(event.target)) return;
+      event.preventDefault();
+    };
+
+    document.addEventListener("gesturestart", preventViewerPageZoom, { passive: false });
+    document.addEventListener("gesturechange", preventViewerPageZoom, { passive: false });
+    document.addEventListener("gestureend", preventViewerPageZoom, { passive: false });
+    document.addEventListener("touchmove", preventMultiTouchZoom, { passive: false });
+    document.addEventListener("wheel", preventTrackpadPageZoom, { passive: false });
+
+    return () => {
+      document.removeEventListener("gesturestart", preventViewerPageZoom);
+      document.removeEventListener("gesturechange", preventViewerPageZoom);
+      document.removeEventListener("gestureend", preventViewerPageZoom);
+      document.removeEventListener("touchmove", preventMultiTouchZoom);
+      document.removeEventListener("wheel", preventTrackpadPageZoom);
+    };
+  }, [selectedAttachment]);
+
+  useEffect(() => {
     if (!isLive || loading || !notice) return undefined;
     const handle = window.setTimeout(() => setNotice(""), 3400);
     return () => window.clearTimeout(handle);
@@ -9027,10 +9058,6 @@ function PhotoViewer({ attachment, canDelete, dictation, dictationBusy = false, 
     return (
       <div className="photoAnnotatorPanel">
         <div className="viewerTopBar">
-          <div>
-            <strong>Annotate photo</strong>
-            <small>Draw, add shapes or text, then save to replace the original.</small>
-          </div>
           <button className="outlineButton" type="button" onClick={onCancelAnnotate}>
             <X size={17} />
             Cancel

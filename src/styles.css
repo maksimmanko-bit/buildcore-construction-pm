@@ -9470,6 +9470,8 @@ html {
   .attachmentModal .viewerTopBar {
     order: 3;
     display: grid;
+    align-items: stretch;
+    justify-items: stretch;
     width: calc(100% - 20px);
     margin: 10px 10px max(10px, env(safe-area-inset-bottom)) !important;
     padding: 14px;
@@ -9507,9 +9509,13 @@ html {
 
   .attachmentModal .viewerControls {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(56px, 1fr));
+    align-items: center;
+    justify-items: stretch;
     gap: 10px;
     width: 100%;
+    max-width: none;
+    justify-self: stretch;
     justify-content: stretch;
   }
 
@@ -9531,9 +9537,423 @@ html {
     font-size: 13px;
   }
 
+  .attachmentModal .photoStage,
+  .attachmentModal .photoStage img,
+  .attachmentModal .documentFileViewer,
+  .attachmentModal .documentFileViewer iframe {
+    touch-action: pan-y;
+  }
+
+  .attachmentModal .attachmentViewer.annotating,
+  .attachmentModal .attachmentViewer.annotating .photoAnnotatorPanel,
+  .attachmentModal .attachmentViewer.annotating .annotator,
+  .attachmentModal .attachmentViewer.annotating .canvasShell,
+  .attachmentModal .attachmentViewer.annotating canvas {
+    touch-action: none;
+  }
+
   .attachmentModal .annotationHistory {
     order: 4;
     margin: 0 10px 12px;
     border-radius: 20px;
+  }
+}
+
+/* iOS-style photo annotator */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.photoAnnotatorPanel {
+  width: min(1180px, 100%);
+}
+
+.photoAnnotatorPanel .viewerTopBar {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 0;
+  padding: 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.photoAnnotatorPanel .viewerTopBar .outlineButton {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 10px 24px rgba(15, 23, 42, 0.14);
+}
+
+.annotator {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  padding: 0 0 12px;
+}
+
+.annotator.saved .canvasShell {
+  box-shadow:
+    0 0 0 5px rgba(22, 163, 74, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.annotatorFloatingToolbar {
+  position: sticky;
+  z-index: 20;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: fit-content;
+  max-width: calc(100% - 20px);
+  margin: -78px auto 0;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(241, 245, 249, 0.58)),
+    rgba(248, 250, 252, 0.62);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 22px 64px rgba(15, 23, 42, 0.24);
+  -webkit-backdrop-filter: blur(26px) saturate(1.24);
+  backdrop-filter: blur(26px) saturate(1.24);
+}
+
+.annotatorFloatingToolbar .annotatorToolGroup,
+.annotatorHistoryActions,
+.annotatorSwatches,
+.miniSwatches {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.annotatorFloatingToolbar .annotatorToolGroup,
+.annotatorHistoryActions {
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.annotatorFloatingToolbar .iconButton,
+.annotationPropertyPopover > button {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  min-height: 42px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: #111827;
+  box-shadow: none;
+  transition:
+    transform 0.24s cubic-bezier(0.18, 1.22, 0.24, 1),
+    background 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.annotatorFloatingToolbar .iconButton:hover,
+.annotationPropertyPopover > button:hover {
+  transform: translateY(-2px) scale(1.03);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.annotatorFloatingToolbar .iconButton.active {
+  background:
+    radial-gradient(circle at 34% 20%, rgba(255, 255, 255, 0.85), transparent 42%),
+    linear-gradient(135deg, #cf2e2e, #2563eb);
+  color: #fff;
+  box-shadow:
+    0 0 0 5px rgba(37, 99, 235, 0.12),
+    0 12px 24px rgba(207, 46, 46, 0.22);
+  transform: translateY(-2px) scale(1.06);
+}
+
+.annotatorFloatingToolbar .iconButton:disabled {
+  opacity: 0.34;
+  transform: none;
+  cursor: default;
+}
+
+.annotatorSwatches,
+.miniSwatches {
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.055);
+}
+
+.annotatorSwatches button,
+.miniSwatches button {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-radius: 999px;
+  background: var(--swatch);
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 23, 42, 0.1),
+    0 5px 12px rgba(15, 23, 42, 0.1);
+}
+
+.annotatorSwatches button.active,
+.miniSwatches button.active {
+  box-shadow:
+    0 0 0 3px rgba(37, 99, 235, 0.22),
+    inset 0 0 0 1px rgba(15, 23, 42, 0.1),
+    0 8px 18px rgba(15, 23, 42, 0.16);
+  transform: scale(1.08);
+}
+
+.annotatorFloatingToolbar .saveButton {
+  display: inline-flex;
+  width: auto;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, #e43b3b, #cf2e2e);
+  color: #fff;
+  box-shadow: 0 14px 28px rgba(207, 46, 46, 0.28);
+  font-weight: 950;
+  transition:
+    transform 0.24s cubic-bezier(0.18, 1.22, 0.24, 1),
+    box-shadow 0.2s ease;
+}
+
+.annotatorFloatingToolbar .saveButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px rgba(207, 46, 46, 0.34);
+}
+
+.annotatorFloatingToolbar .saveButton:disabled {
+  opacity: 0.66;
+  transform: none;
+}
+
+.annotator .canvasShell {
+  position: relative;
+  aspect-ratio: 1040 / 700;
+  min-height: 0;
+  max-height: min(74vh, 820px);
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 50% 0, rgba(255, 255, 255, 0.08), transparent 34%),
+    #070b13;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 24px 70px rgba(15, 23, 42, 0.24);
+  transition: box-shadow 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.annotator .canvasShell .annotationBaseImage {
+  position: absolute;
+  inset: auto;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  width: min(100%, 1040px);
+  height: auto;
+  max-height: 100%;
+  aspect-ratio: 1040 / 700;
+  object-fit: contain;
+  object-position: center;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.annotator .canvasShell .canvas-container {
+  position: relative !important;
+  z-index: 2;
+  width: min(100%, 1040px) !important;
+  height: auto !important;
+  aspect-ratio: 1040 / 700;
+}
+
+.annotator .canvasShell canvas {
+  width: 100% !important;
+  height: 100% !important;
+  touch-action: none;
+}
+
+.annotationTextBubbleComposer {
+  position: absolute;
+  z-index: 30;
+  width: min(280px, 74%);
+  transform: translate(-8px, -50%);
+}
+
+.annotationTextBubbleComposer input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 18px 42px rgba(15, 23, 42, 0.24);
+  color: #111827;
+  font-size: 16px;
+  font-weight: 850;
+  outline: 0;
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+
+.annotationPropertyPopover {
+  position: absolute;
+  z-index: 32;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(94%, 560px);
+  padding: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 18px 44px rgba(15, 23, 42, 0.22);
+  transform: translate(-10px, calc(-100% - 12px));
+  -webkit-backdrop-filter: blur(22px) saturate(1.18);
+  backdrop-filter: blur(22px) saturate(1.18);
+}
+
+.annotationPropertyPopover .dangerIcon {
+  color: #cf2e2e;
+}
+
+@media (max-width: 980px) {
+  .annotatorFloatingToolbar {
+    grid-template-columns: 1fr;
+    width: min(520px, calc(100% - 20px));
+    border-radius: 28px;
+  }
+
+  .annotatorFloatingToolbar .annotatorToolGroup,
+  .annotatorHistoryActions,
+  .annotatorSwatches {
+    justify-content: center;
+  }
+
+  .annotatorSwatches {
+    width: fit-content;
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 860px) {
+  .attachmentViewer.annotating {
+    overflow: hidden;
+  }
+
+  .attachmentModal .attachmentViewer.annotating {
+    background: #070b13;
+  }
+
+  .photoAnnotatorPanel {
+    display: grid;
+    min-height: 100%;
+    width: 100%;
+  }
+
+  .photoAnnotatorPanel .viewerTopBar {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 35;
+    margin: 0 !important;
+    padding: 0;
+  }
+
+  .photoAnnotatorPanel .viewerTopBar .outlineButton {
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+    min-height: 42px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .photoAnnotatorPanel .viewerTopBar .outlineButton svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .annotator {
+    min-height: 100%;
+    padding: 0;
+  }
+
+  .annotator .canvasShell {
+    height: calc(100dvh - max(78px, env(safe-area-inset-top)) - max(156px, env(safe-area-inset-bottom)));
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .annotatorFloatingToolbar {
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: calc(100% - 18px);
+    margin-top: -136px;
+    padding: 8px;
+    border-radius: 26px;
+  }
+
+  .annotatorFloatingToolbar .iconButton,
+  .annotationPropertyPopover > button {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .annotatorSwatches button,
+  .miniSwatches button {
+    width: 24px;
+    height: 24px;
+    min-height: 24px;
+  }
+
+  .annotatorFloatingToolbar .saveButton {
+    flex: 1 1 auto;
+    min-height: 44px;
+  }
+
+  .annotationPropertyPopover {
+    left: 50% !important;
+    top: auto !important;
+    bottom: max(148px, calc(env(safe-area-inset-bottom) + 138px));
+    width: calc(100% - 24px);
+    justify-content: center;
+    overflow-x: auto;
+    border-radius: 24px;
+    transform: translateX(-50%);
   }
 }
