@@ -174,6 +174,7 @@ export async function uploadVisitGeneratedFile({
   companyId,
   folderDescription = "",
   folderName = "",
+  noteId,
   projectId,
   profileId,
   siteVisitId,
@@ -205,6 +206,7 @@ export async function uploadVisitGeneratedFile({
       company_id: companyId,
       project_id: projectId,
       visit_id: visitId || null,
+      note_id: noteId || null,
       site_visit_id: siteVisitId || null,
       change_order_id: changeOrderId || null,
       uploaded_by: profileId || null,
@@ -226,7 +228,7 @@ export async function uploadVisitGeneratedFile({
   return data;
 }
 
-export async function uploadVisitAttachment({ changeOrderId, companyId, folderDescription = "", folderName = "", projectId, siteVisitId, visitId, profileId, file, photoCaption = "", searchText = "" }) {
+export async function uploadVisitAttachment({ changeOrderId, companyId, fileType, folderDescription = "", folderName = "", noteId, projectId, siteVisitId, visitId, profileId, file, photoCaption = "", searchText = "" }) {
   if (!supabase) throw new Error("Supabase is not configured.");
 
   const bucket = getAttachmentBucket(file);
@@ -247,13 +249,14 @@ export async function uploadVisitAttachment({ changeOrderId, companyId, folderDe
       company_id: companyId,
       project_id: projectId,
       visit_id: visitId || null,
+      note_id: noteId || null,
       site_visit_id: siteVisitId || null,
       change_order_id: changeOrderId || null,
       uploaded_by: profileId || null,
       bucket_id: bucket,
       storage_path: storagePath,
       file_name: file.name,
-      file_type: getAttachmentType(file, visitId),
+      file_type: fileType || getAttachmentType(file, visitId),
       file_kind: kind,
       mime_type: file.type || "application/octet-stream",
       photo_caption: kind === "photo" ? photoCaption || null : null,
@@ -268,10 +271,11 @@ export async function uploadVisitAttachment({ changeOrderId, companyId, folderDe
   return data;
 }
 
-export async function uploadVisitPhoto({ companyId, projectId, visitId, profileId, file, fileType = "completion_photo", photoCaption = "", searchText = "" }) {
+export async function uploadVisitPhoto({ companyId, noteId, projectId, visitId, profileId, file, fileType = "completion_photo", photoCaption = "", searchText = "" }) {
   return uploadVisitGeneratedFile({
     bucket: "visit-photos",
     companyId,
+    noteId,
     projectId,
     visitId,
     profileId,

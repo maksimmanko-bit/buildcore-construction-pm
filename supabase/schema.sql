@@ -154,6 +154,20 @@ create table if not exists public.visit_files (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.visit_notes (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  project_id uuid not null references public.projects(id) on delete cascade,
+  visit_id uuid not null references public.visits(id) on delete cascade,
+  author_id uuid references public.profiles(id),
+  note_text text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.visit_files
+  add column if not exists note_id uuid references public.visit_notes(id) on delete cascade;
+
 create index if not exists projects_company_idx on public.projects(company_id);
 create index if not exists equipment_company_idx on public.equipment(company_id);
 create index if not exists profiles_company_bot_idx on public.profiles(company_id, is_bot);
@@ -164,7 +178,7 @@ create table if not exists public.visit_activity (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies(id) on delete cascade,
   project_id uuid not null references public.projects(id) on delete cascade,
-  visit_id uuid not null references public.visits(id) on delete cascade,
+  visit_id uuid references public.visits(id) on delete cascade,
   actor_id uuid references public.profiles(id),
   activity_type text not null,
   message text not null,
@@ -174,6 +188,7 @@ create table if not exists public.visit_activity (
 
 create index if not exists visit_activity_visit_idx on public.visit_activity(visit_id, created_at desc);
 create index if not exists visit_activity_project_idx on public.visit_activity(project_id, created_at desc);
+create index if not exists visit_notes_visit_idx on public.visit_notes(visit_id, created_at desc);
 
 create table if not exists public.site_visits (
   id uuid primary key default gen_random_uuid(),
@@ -789,6 +804,7 @@ alter table public.visits enable row level security;
 alter table public.visit_people enable row level security;
 alter table public.visit_equipment enable row level security;
 alter table public.visit_files enable row level security;
+alter table public.visit_notes enable row level security;
 alter table public.visit_activity enable row level security;
 alter table public.site_visits enable row level security;
 alter table public.change_orders enable row level security;
@@ -797,6 +813,7 @@ alter table public.visits replica identity full;
 alter table public.visit_people replica identity full;
 alter table public.visit_equipment replica identity full;
 alter table public.visit_activity replica identity full;
+alter table public.visit_notes replica identity full;
 alter table public.visit_files replica identity full;
 alter table public.site_visits replica identity full;
 alter table public.change_orders replica identity full;
@@ -806,7 +823,7 @@ do $$
 declare
   table_name text;
 begin
-  foreach table_name in array array['companies', 'visits', 'visit_people', 'visit_equipment', 'visit_activity', 'visit_files', 'site_visits', 'change_orders']
+  foreach table_name in array array['companies', 'visits', 'visit_people', 'visit_equipment', 'visit_activity', 'visit_notes', 'visit_files', 'site_visits', 'change_orders']
   loop
     if not exists (
       select 1
@@ -957,6 +974,27 @@ create policy "members delete own visit files" on public.visit_files
 for delete to authenticated
 using (company_id = public.current_company_id() and (uploaded_by = auth.uid() or public.can_manage()));
 
+drop policy if exists "members read visit notes" on public.visit_notes;
+create policy "members read visit notes" on public.visit_notes
+for select to authenticated
+using (company_id = public.current_company_id());
+
+drop policy if exists "active members add visit notes" on public.visit_notes;
+create policy "active members add visit notes" on public.visit_notes
+for insert to authenticated
+with check (company_id = public.current_company_id() and author_id = auth.uid());
+
+drop policy if exists "authors and managers update visit notes" on public.visit_notes;
+create policy "authors and managers update visit notes" on public.visit_notes
+for update to authenticated
+using (company_id = public.current_company_id() and (author_id = auth.uid() or public.can_manage()))
+with check (company_id = public.current_company_id() and (author_id = auth.uid() or public.can_manage()));
+
+drop policy if exists "authors and managers delete visit notes" on public.visit_notes;
+create policy "authors and managers delete visit notes" on public.visit_notes
+for delete to authenticated
+using (company_id = public.current_company_id() and (author_id = auth.uid() or public.can_manage()));
+
 drop policy if exists "members read visit activity" on public.visit_activity;
 create policy "members read visit activity" on public.visit_activity
 for select to authenticated
@@ -996,6 +1034,7 @@ with check (company_id = public.current_company_id() and public.current_role() <
 
 grant select, insert, update, delete on public.site_visits to authenticated;
 grant select, insert, update, delete on public.change_orders to authenticated;
+grant select, insert, update, delete on public.visit_notes to authenticated;
 
 alter table public.edit_locks enable row level security;
 
@@ -1138,6 +1177,11 @@ declare
   current_company uuid := public.current_company_id();
   safe_count integer := greatest(0, least(coalesce(bot_count, 0), 100));
   trades text[] := array['Demo/Asbestos', 'Drywall/Mud/Taping/Flooring', 'General Construction', 'Management', 'Shop/Trucking'];
+  first_names text[] := array['Liam','Noah','Oliver','Ethan','Lucas','Mason','Logan','Jacob','William','James','Benjamin','Henry','Jack','Owen','Leo','Daniel','Samuel','Carter','Hudson','Wyatt','Emma','Olivia','Ava','Charlotte','Sophia','Mia','Amelia','Harper','Evelyn','Abigail','Emily','Ella','Grace','Chloe','Nora'];
+  last_names text[] := array['Anderson','Campbell','MacDonald','Singh','Patel','Brown','Wilson','Taylor','Martin','Thompson','White','Clark','Lewis','Walker','Hall','Allen','Young','King','Wright','Scott','Green','Baker','Adams','Nelson','Carter','Mitchell','Roberts','Turner','Phillips','Parker'];
+  first_name text;
+  last_name text;
+  bot_id uuid;
   i integer;
 begin
   if current_company is null or not public.can_manage() then
@@ -1145,13 +1189,16 @@ begin
   end if;
 
   for i in 1..safe_count loop
+    first_name := first_names[(floor(random() * array_length(first_names, 1))::integer) + 1];
+    last_name := last_names[(floor(random() * array_length(last_names, 1))::integer) + 1];
+    bot_id := gen_random_uuid();
     insert into public.profiles (id, company_id, first_name, last_name, full_name, email, role, trade, phone, availability_status, is_active, is_bot)
     values (
-      gen_random_uuid(),
+      bot_id,
       current_company,
-      'Test',
-      'Builder ' || lpad(i::text, 2, '0'),
-      'Test Builder ' || lpad(i::text, 2, '0'),
+      first_name,
+      last_name,
+      first_name || ' ' || last_name,
       null,
       'builder',
       trades[((i - 1) % array_length(trades, 1)) + 1],

@@ -27,6 +27,7 @@ import {
   LogIn,
   LogOut,
   Menu,
+  MessageSquarePlus,
   MoreHorizontal,
   Phone,
   Plus,
@@ -56,6 +57,32 @@ import { readCachedWorkspace, writeCachedWorkspace } from "./lib/localCache.js";
 
 const PhotoAnnotator = lazy(() => import("./components/PhotoAnnotator.jsx"));
 const DocumentUploader = lazy(() => import("./components/DocumentUploader.jsx"));
+
+const WINNIPEG_TIME_ZONE = "America/Winnipeg";
+
+function getWinnipegParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: WINNIPEG_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value ?? "";
+  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour"), minute: get("minute") };
+}
+
+function getWinnipegDateValue(date = new Date()) {
+  const parts = getWinnipegParts(date);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function getWinnipegTimeValue(date = new Date()) {
+  const parts = getWinnipegParts(date);
+  return `${parts.hour}:${parts.minute}`;
+}
 
 const tradeGroups = ["Demo/Asbestos", "Drywall/Mud/Taping/Flooring", "General Construction", "Management", "Shop/Trucking"];
 const unassignedTradeLabel = "Unassigned";
@@ -247,6 +274,7 @@ const demo = {
     { id: "eq-3", name: "Pickup Truck #12", type: "Truck", unit_number: "TR-12", icon: "truck", avatar_key: "truck" },
     { id: "eq-4", name: "Boom Lift 45ft", type: "Lift", unit_number: "BL-45", icon: "lift", avatar_key: "lift" },
   ],
+  visitNotes: [],
   siteVisits: [],
   changeOrders: [],
   files: [
@@ -346,7 +374,7 @@ const emptyEquipmentForm = { name: "", type: "", unit_number: "", notes: "", ava
 const emptyVisitForm = {
   project_id: "",
   address: "",
-  visit_date: new Date().toISOString().slice(0, 10),
+  visit_date: getWinnipegDateValue(),
   duration_days: "1",
   start_time: "07:00",
   end_time: "17:00",
@@ -359,12 +387,14 @@ const emptyVisitForm = {
 const emptyPhotoFolder = { id: "folder-1", name: "", description: "", files: [], captions: {} };
 const emptySiteVisitForm = {
   project_id: "",
-  visit_date: new Date().toISOString().slice(0, 10),
+  visit_date: getWinnipegDateValue(),
   start_time: "07:00",
   end_time: "17:00",
   status: "planned",
   description: "",
-  folders: [emptyPhotoFolder],
+  files: [],
+  captions: {},
+  folders: [],
 };
 
 const fieldReportLabels = {
@@ -440,14 +470,17 @@ function nextChangeOrderNumber(project, changeOrders = []) {
 }
 const emptyChangeOrderForm = {
   project_id: "",
-  order_date: new Date().toISOString().slice(0, 10),
-  order_time: "07:00",
-  status: "planned",
+  order_date: getWinnipegDateValue(),
+  order_time: getWinnipegTimeValue(),
+  status: "completed",
   description: "",
   approved_by: "",
   approval_signature: "",
-  folders: [emptyPhotoFolder],
+  files: [],
+  captions: {},
+  folders: [],
 };
+const emptyVisitNoteForm = { id: "", visit_id: "", note_text: "", files: [], captions: {} };
 
 function makePhotoFolder(index = 1) {
   return { id: `folder-${Date.now()}-${index}`, name: "", description: "", files: [], captions: {} };
@@ -458,6 +491,8 @@ function fieldReportFormHasDraft(form = {}) {
     String(form.description ?? "").trim().length > 0 ||
     String(form.approved_by ?? "").trim().length > 0 ||
     String(form.approval_signature ?? "").trim().length > 0 ||
+    (form.files?.length ?? 0) > 0 ||
+    Object.values(form.captions ?? {}).some((caption) => String(caption ?? "").trim().length > 0) ||
     (form.folders ?? []).some(
       (folder) =>
         String(folder.name ?? "").trim().length > 0 ||
@@ -667,6 +702,7 @@ function addHoursToTime(value, hoursToAdd = 1) {
 function formatDateTimeLabel(value) {
   if (!value) return "";
   return new Intl.DateTimeFormat("en-US", {
+    timeZone: WINNIPEG_TIME_ZONE,
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -900,9 +936,9 @@ function FormField({ label, children }) {
 
 function DateField({ label, onChange, value }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [monthDate, setMonthDate] = useState(value || new Date().toISOString().slice(0, 10));
+  const [monthDate, setMonthDate] = useState(value || getWinnipegDateValue());
   const fieldRef = useRef(null);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getWinnipegDateValue();
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -1008,8 +1044,8 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [data, setData] = useState({ ...demo, visits: [] });
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
-  const [overviewDate, setOverviewDate] = useState(new Date().toISOString().slice(0, 10));
+  const [selectedDate, setSelectedDate] = useState(getWinnipegDateValue());
+  const [overviewDate, setOverviewDate] = useState(getWinnipegDateValue());
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedAssignmentId, setSelectedAssignmentId] = useState("");
   const [selectedVisitId, setSelectedVisitId] = useState("");
@@ -1046,12 +1082,14 @@ export default function App() {
   const [editingProjectId, setEditingProjectId] = useState(null);
   const [editingEquipmentId, setEditingEquipmentId] = useState(null);
   const [editingVisitId, setEditingVisitId] = useState(null);
+  const [editingSiteVisitId, setEditingSiteVisitId] = useState(null);
   const [companyForm, setCompanyForm] = useState({ company_name: "BuildCore Construction", full_name: "", phone: "" });
   const [projectForm, setProjectForm] = useState(emptyProjectForm);
   const [equipmentForm, setEquipmentForm] = useState(emptyEquipmentForm);
   const [visitForm, setVisitForm] = useState(emptyVisitForm);
   const [siteVisitForm, setSiteVisitForm] = useState(emptySiteVisitForm);
   const [changeOrderForm, setChangeOrderForm] = useState(emptyChangeOrderForm);
+  const [visitNoteForm, setVisitNoteForm] = useState(emptyVisitNoteForm);
   const [safetyForm, setSafetyForm] = useState({ hazards: [], notes: "", signatures: {}, presentIds: [] });
   const [workflowVisitId, setWorkflowVisitId] = useState("");
   const [photoStep, setPhotoStep] = useState({ kind: "", visitId: "", files: [], captions: {} });
@@ -1147,7 +1185,7 @@ export default function App() {
         ? supabase.from("profiles").select("*").order("is_active", { ascending: true }).order("full_name")
         : supabase.from("profiles").select("*").eq("is_active", true).order("full_name");
 
-      const [companyResult, projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult] = await Promise.all([
+      const [companyResult, projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult, visitNotesResult] = await Promise.all([
         supabase.from("companies").select("feature_flags").eq("id", nextProfile.company_id).single(),
         supabase.from("projects").select("*").order("created_at", { ascending: false }),
         peopleQuery,
@@ -1155,10 +1193,12 @@ export default function App() {
         supabase.from("visit_schedule_view").select("*").order("visit_date", { ascending: false }).order("start_time"),
         supabase.from("visit_files").select("*").order("created_at", { ascending: false }),
         supabase.from("visit_activity").select("*").order("created_at", { ascending: false }).limit(500),
+        supabase.from("visit_notes").select("*").order("created_at", { ascending: false }),
       ]);
 
       const failed = [companyResult, projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult].find((result) => result.error);
       if (failed) throw failed.error;
+      if (visitNotesResult.error && visitNotesResult.error.code !== "42P01") throw visitNotesResult.error;
 
       const nextProjects = projectsResult.data ?? [];
       const allPeople = peopleResult.data ?? [];
@@ -1182,6 +1222,7 @@ export default function App() {
         changeOrders: changeOrdersResult.data ?? [],
         files: filesResult.data ?? [],
         activities: activityResult.data ?? [],
+        visitNotes: visitNotesResult.error?.code === "42P01" ? [] : visitNotesResult.data ?? [],
       };
       setData(nextData);
       setServerConnected(true);
@@ -1346,6 +1387,9 @@ export default function App() {
       .on("postgres_changes", { event: "*", schema: "public", table: "visit_activity", filter: `company_id=eq.${profile.company_id}` }, () => {
         void loadActivities();
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "visit_notes", filter: `company_id=eq.${profile.company_id}` }, () => {
+        void loadVisitNotes();
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "visit_files", filter: `company_id=eq.${profile.company_id}` }, () => {
         void loadFiles();
       })
@@ -1492,6 +1536,7 @@ export default function App() {
   const selectedChangeOrder = selectedChangeOrderId ? (rowsSource.changeOrders ?? []).find((item) => item.id === selectedChangeOrderId) ?? null : null;
   const currentVisit = selectedVisit ?? selectedProjectVisits[0] ?? null;
   const currentVisitFiles = (rowsSource.files ?? []).filter((file) => currentVisit?.id && file.visit_id === currentVisit.id);
+  const currentVisitNotes = getVisitNotes(currentVisit);
   const selectedSiteVisitFiles = (rowsSource.files ?? []).filter((file) => selectedSiteVisit?.id && file.site_visit_id === selectedSiteVisit.id);
   const selectedChangeOrderFiles = (rowsSource.files ?? []).filter((file) => selectedChangeOrder?.id && file.change_order_id === selectedChangeOrder.id);
   const currentVisitPeople = currentVisit ? rowsSource.people.filter((person) => currentVisit.people_ids?.includes(person.id)) : [];
@@ -1501,7 +1546,7 @@ export default function App() {
   const workflowProject = workflowVisit ? rowsSource.projects.find((project) => project.id === workflowVisit.project_id) ?? selectedProject : selectedProject;
   const workflowPeople = workflowVisit ? rowsSource.people.filter((person) => workflowVisit.people_ids?.includes(person.id)) : currentVisitPeople;
   const selectedPerson = selectedPersonId ? [...(rowsSource.people ?? []), ...(rowsSource.pendingPeople ?? [])].find((person) => person.id === selectedPersonId) : null;
-  const todayValue = new Date().toISOString().slice(0, 10);
+  const todayValue = getWinnipegDateValue();
   const overviewVisits = (rowsSource.visits ?? [])
     .filter((visit) => visit.visit_date === overviewDate && (!isLive || visit.people_ids?.includes(profile?.id)))
     .sort((a, b) => {
@@ -1567,20 +1612,10 @@ export default function App() {
           id: `siteVisit-${item.id}`,
           sourceId: item.id,
           sourceType: "siteVisit",
-          start_time: item.start_time,
-          end_time: item.end_time,
+          start_time: item.status === "completed" && item.completed_at ? addHoursToTime(getWinnipegTimeValue(new Date(item.completed_at)), -1) : item.start_time,
+          end_time: item.status === "completed" && item.completed_at ? getWinnipegTimeValue(new Date(item.completed_at)) : item.end_time,
         }));
-      const projectChangeOrders = (rowsSource.changeOrders ?? [])
-        .filter((item) => activeFeatureFlags.changeOrders && item.project_id === project.id && item.order_date === selectedDate && item.status !== "cancelled")
-        .map((item) => ({
-          ...item,
-          id: `changeOrder-${item.id}`,
-          sourceId: item.id,
-          sourceType: "changeOrder",
-          start_time: item.order_time,
-          end_time: addHoursToTime(item.order_time, 1),
-        }));
-      const projectScheduleItems = [...projectVisits, ...projectSiteVisits, ...projectChangeOrders].sort((a, b) => `${a.start_time} ${a.end_time}`.localeCompare(`${b.start_time} ${b.end_time}`));
+      const projectScheduleItems = [...projectVisits, ...projectSiteVisits].sort((a, b) => `${a.start_time} ${a.end_time}`.localeCompare(`${b.start_time} ${b.end_time}`));
       const visitLanes = packVisitLanes(projectScheduleItems);
       return {
         ...project,
@@ -1591,22 +1626,21 @@ export default function App() {
         laneCount: visitLanes.laneCount,
         assignments: projectScheduleItems.map((item) => {
           const isSiteVisit = item.sourceType === "siteVisit";
-          const isChangeOrder = item.sourceType === "changeOrder";
           return {
-            id: isSiteVisit || isChangeOrder ? item.id : `visit-${item.id}`,
-            visitId: isSiteVisit || isChangeOrder ? "" : item.id,
+            id: isSiteVisit ? item.id : `visit-${item.id}`,
+            visitId: isSiteVisit ? "" : item.id,
             projectId: item.project_id,
             recordId: item.sourceId ?? item.id,
             recordType: item.sourceType ?? "visit",
             title: project.name,
-            subtitle: isSiteVisit ? getFieldReportLabel("siteVisit") : isChangeOrder ? getFieldReportLabel("changeOrder") : item.work_scope || normalizeVisitStatus(item.status),
+            subtitle: isSiteVisit ? getFieldReportLabel("siteVisit") : item.work_scope || normalizeVisitStatus(item.status),
             start: toHour(item.start_time),
             end: toHour(item.end_time),
             timeText: formatTimeRange(item.start_time, item.end_time),
             status: item.status,
             isFirstVisit: item.is_first_visit,
-            color: isSiteVisit ? "green" : isChangeOrder ? "purple" : colors[index % colors.length],
-            people: isSiteVisit || isChangeOrder ? rowsSource.people.filter((person) => person.id === item.created_by) : rowsSource.people.filter((person) => item.people_ids?.includes(person.id)),
+            color: isSiteVisit ? "green" : colors[index % colors.length],
+            people: isSiteVisit ? rowsSource.people.filter((person) => person.id === item.created_by) : rowsSource.people.filter((person) => item.people_ids?.includes(person.id)),
             equipment: [],
             laneIndex: visitLanes.laneByVisitId.get(item.id) ?? 0,
             laneCount: visitLanes.laneCount,
@@ -1820,6 +1854,24 @@ export default function App() {
     } catch (error) {
       setServerConnected(false);
       setNotice(error.message);
+    } finally {
+      if (!quiet) setLoading(false);
+    }
+  }
+
+  async function loadVisitNotes({ quiet = true } = {}) {
+    if (!supabase || !session) return;
+    if (!quiet) setLoading(true);
+    try {
+      const { data: visitNotes, error } = await supabase.from("visit_notes").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      commitWorkspaceData((current) => ({ ...current, visitNotes: visitNotes ?? [] }));
+      setServerConnected(true);
+    } catch (error) {
+      if (error.code !== "42P01") {
+        setServerConnected(false);
+        setNotice(error.message);
+      }
     } finally {
       if (!quiet) setLoading(false);
     }
@@ -2282,40 +2334,53 @@ export default function App() {
     setLoading(true);
     setNotice("Saving Site Inspection...");
     try {
-      const { data: saved, error } = await supabase
-        .from("site_visits")
-        .insert({
+      const completedNow = new Date();
+      const completedTime = getWinnipegTimeValue(completedNow);
+      const savedStatus = siteVisitForm.status === "completed" ? "completed" : "planned";
+      const payload = {
           company_id: rowsSource.companyId,
           project_id: project.id,
-          visit_date: siteVisitForm.visit_date,
-          start_time: siteVisitForm.start_time,
-          end_time: siteVisitForm.end_time,
-          status: siteVisitForm.status,
+          visit_date: savedStatus === "completed" ? getWinnipegDateValue(completedNow) : siteVisitForm.visit_date,
+          start_time: savedStatus === "completed" ? addHoursToTime(completedTime, -1) : siteVisitForm.start_time,
+          end_time: savedStatus === "completed" ? completedTime : siteVisitForm.end_time,
+          status: savedStatus,
           description: siteVisitForm.description.trim() || null,
           created_by: profile.id,
-          completed_at: siteVisitForm.status === "completed" ? new Date().toISOString() : null,
-        })
-        .select()
-        .single();
+          completed_at: savedStatus === "completed" ? completedNow.toISOString() : null,
+        };
+      if (editingSiteVisitId) delete payload.created_by;
+
+      const siteVisitQuery = editingSiteVisitId
+        ? supabase.from("site_visits").update(payload).eq("id", editingSiteVisitId).select().single()
+        : supabase.from("site_visits").insert(payload).select().single();
+      const { data: saved, error } = await siteVisitQuery;
       if (error) throw error;
 
       await uploadFieldReportPhotos({
         description: siteVisitForm.description,
+        files: siteVisitForm.files,
+        captions: siteVisitForm.captions,
         folders: siteVisitForm.folders,
         label: "Site Inspection photos",
         project,
         siteVisitId: saved.id,
       });
 
-      commitWorkspaceData((current) => ({ ...current, siteVisits: [saved, ...(current.siteVisits ?? [])] }));
+      await logProjectActivity(project.id, editingSiteVisitId ? "site_inspection_updated" : "site_inspection_saved", `${currentUserName} ${editingSiteVisitId ? "updated" : "created"} Site Inspection.`, { siteVisitId: saved.id, status: saved.status });
+
+      commitWorkspaceData((current) => {
+        const kept = (current.siteVisits ?? []).filter((item) => item.id !== saved.id);
+        return { ...current, siteVisits: [saved, ...kept] };
+      });
       setSelectedProjectId(project.id);
       setSelectedSiteVisitId(saved.id);
-      setSiteVisitForm({ ...emptySiteVisitForm, project_id: rowsSource.projects[0]?.id ?? "", visit_date: todayValue, folders: [makePhotoFolder(1)] });
+      setEditingSiteVisitId(null);
+      setSiteVisitForm({ ...emptySiteVisitForm, project_id: rowsSource.projects[0]?.id ?? "", visit_date: todayValue, files: [], captions: {}, folders: [] });
       setModalType(null);
       setUploadProgress(null);
       triggerSoftPulse();
-      setNotice("Site Inspection saved.");
-      await Promise.all([loadSiteVisits(), loadFiles()]);
+      setNotice(editingSiteVisitId ? "Site Inspection changes saved." : "Site Inspection saved.");
+      await Promise.all([loadSiteVisits(), loadFiles(), loadActivities()]);
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -2336,14 +2401,15 @@ export default function App() {
       setNotice("Select project before saving Change Order.");
       return;
     }
-    if (changeOrderForm.status === "completed" && !changeOrderForm.approval_signature) {
-      setNotice("Digital signature is required before completing Change Order.");
+    if (!changeOrderForm.approval_signature) {
+      setNotice("Digital signature is required before saving Change Order.");
       return;
     }
 
     setLoading(true);
     setNotice("Saving Change Order...");
     try {
+      const createdNow = new Date();
       const orderNumber = changeOrderForm.order_number || nextChangeOrderNumber(project, rowsSource.changeOrders ?? []);
       const { data: saved, error } = await supabase
         .from("change_orders")
@@ -2351,14 +2417,14 @@ export default function App() {
           company_id: rowsSource.companyId,
           project_id: project.id,
           order_number: orderNumber,
-          order_date: changeOrderForm.order_date,
-          order_time: changeOrderForm.order_time,
-          status: changeOrderForm.status,
+          order_date: getWinnipegDateValue(createdNow),
+          order_time: getWinnipegTimeValue(createdNow),
+          status: "completed",
           description: changeOrderForm.description.trim() || null,
           approved_by: changeOrderForm.approved_by.trim() || null,
           approval_signature: changeOrderForm.approval_signature || null,
           created_by: profile.id,
-          completed_at: changeOrderForm.status === "completed" ? new Date().toISOString() : null,
+          completed_at: createdNow.toISOString(),
         })
         .select()
         .single();
@@ -2367,20 +2433,23 @@ export default function App() {
       await uploadFieldReportPhotos({
         changeOrderId: saved.id,
         description: changeOrderForm.description,
+        files: changeOrderForm.files,
+        captions: changeOrderForm.captions,
         folders: changeOrderForm.folders,
         label: "Change Order photos",
         project,
       });
 
+      await logProjectActivity(project.id, "change_order_created", `${currentUserName} created ${orderNumber}.`, { changeOrderId: saved.id, orderNumber });
       commitWorkspaceData((current) => ({ ...current, changeOrders: [saved, ...(current.changeOrders ?? [])] }));
       setSelectedProjectId(project.id);
       setSelectedChangeOrderId(saved.id);
-      setChangeOrderForm({ ...emptyChangeOrderForm, project_id: rowsSource.projects[0]?.id ?? "", order_date: todayValue, order_time: "07:00", folders: [makePhotoFolder(1)] });
+      setChangeOrderForm({ ...emptyChangeOrderForm, project_id: rowsSource.projects[0]?.id ?? "", order_date: todayValue, order_time: getWinnipegTimeValue(), files: [], captions: {}, folders: [] });
       setModalType(null);
       setUploadProgress(null);
       triggerSoftPulse();
       setNotice("Change Order saved.");
-      await Promise.all([loadChangeOrders(), loadFiles()]);
+      await Promise.all([loadChangeOrders(), loadFiles(), loadActivities()]);
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -2391,15 +2460,28 @@ export default function App() {
 
   async function updateSiteVisitStatus(item, status) {
     if (!supabase || !item?.id || !canCreateFieldReports) return;
-    const patch = { status, completed_at: status === "completed" ? new Date().toISOString() : null };
+    const completedNow = new Date();
+    const completedTime = getWinnipegTimeValue(completedNow);
+    const patch =
+      status === "completed"
+        ? {
+            status,
+            visit_date: getWinnipegDateValue(completedNow),
+            start_time: addHoursToTime(completedTime, -1),
+            end_time: completedTime,
+            completed_at: completedNow.toISOString(),
+          }
+        : { status, completed_at: null };
     const { data: saved, error } = await supabase.from("site_visits").update(patch).eq("id", item.id).select().single();
     if (error) {
       setNotice(error.message);
       return;
     }
     commitWorkspaceData((current) => ({ ...current, siteVisits: (current.siteVisits ?? []).map((row) => (row.id === saved.id ? saved : row)) }));
+    await logProjectActivity(saved.project_id, "site_inspection_completed", `${currentUserName} completed Site Inspection.`, { siteVisitId: saved.id });
     triggerSoftPulse();
     setNotice(status === "completed" ? "Site Inspection completed." : "Site Inspection updated.");
+    loadActivities();
   }
 
   async function updateChangeOrderStatus(item, status) {
@@ -2717,6 +2799,10 @@ export default function App() {
     return (rowsSource.files ?? []).filter((file) => visit?.id && file.visit_id === visit.id);
   }
 
+  function getVisitNotes(visit) {
+    return (rowsSource.visitNotes ?? []).filter((note) => visit?.id && note.visit_id === visit.id);
+  }
+
   async function logVisitActivity(visit, activityType, message, metadata = {}) {
     if (!supabase || !profile || !visit?.id) return;
     const projectId = visit.project_id ?? selectedProject?.id;
@@ -2726,6 +2812,22 @@ export default function App() {
       company_id: rowsSource.companyId,
       project_id: projectId,
       visit_id: visit.id,
+      actor_id: profile.id,
+      activity_type: activityType,
+      message,
+      metadata,
+    });
+
+    if (error) setNotice(error.message);
+  }
+
+  async function logProjectActivity(projectId, activityType, message, metadata = {}) {
+    if (!supabase || !profile || !projectId || !rowsSource.companyId) return;
+
+    const { error } = await supabase.from("visit_activity").insert({
+      company_id: rowsSource.companyId,
+      project_id: projectId,
+      visit_id: null,
       actor_id: profile.id,
       activity_type: activityType,
       message,
@@ -2798,8 +2900,18 @@ export default function App() {
     return (rowsSource.files ?? []).filter((file) => item?.id && file.change_order_id === item.id);
   }
 
-  async function uploadFieldReportPhotos({ changeOrderId, description, folders = [], label, project, siteVisitId }) {
-    const queue = folders.flatMap((folder) =>
+  function getVisitNoteFiles(note) {
+    return (rowsSource.files ?? []).filter((file) => note?.id && file.note_id === note.id);
+  }
+
+  async function uploadFieldReportPhotos({ captions = {}, changeOrderId, description, files = [], folders = [], label, project, siteVisitId }) {
+    const plainQueue = (files ?? []).map((file) => ({
+      caption: captions?.[fileInputKey(file)]?.trim() || "",
+      file,
+      folderDescription: "",
+      folderName: "",
+    }));
+    const folderQueue = folders.flatMap((folder) =>
       (folder.files ?? []).map((file) => ({
         caption: folder.captions?.[fileInputKey(file)]?.trim() || "",
         file,
@@ -2807,6 +2919,7 @@ export default function App() {
         folderName: folder.name?.trim() || "",
       })),
     );
+    const queue = [...plainQueue, ...folderQueue];
     if (queue.length === 0) return [];
 
     const rows = [];
@@ -2828,6 +2941,32 @@ export default function App() {
       rows.push(row);
       completed += 1;
       setUploadProgress({ current: completed, total: queue.length, label });
+      commitWorkspaceData((current) => ({ ...current, files: [row, ...(current.files ?? [])] }));
+    }
+    return rows;
+  }
+
+  async function uploadVisitNotePhotos({ captions = {}, files = [], note, project, visit }) {
+    if (!note?.id || !visit?.id || files.length === 0) return [];
+    const rows = [];
+    let completed = 0;
+    setUploadProgress({ current: 0, total: files.length, label: "Ticket note photos" });
+    for (const file of files) {
+      const caption = captions?.[fileInputKey(file)]?.trim() || "";
+      const row = await uploadVisitAttachment({
+        companyId: rowsSource.companyId,
+        projectId: project.id,
+        visitId: visit.id,
+        noteId: note.id,
+        profileId: profile.id,
+        file,
+        fileType: "project_document",
+        photoCaption: caption,
+        searchText: `Ticket note photo. ${project.name}. ${visit.work_scope || ""}. ${note.note_text || ""}. ${caption}`,
+      });
+      rows.push(row);
+      completed += 1;
+      setUploadProgress({ current: completed, total: files.length, label: "Ticket note photos" });
       commitWorkspaceData((current) => ({ ...current, files: [row, ...(current.files ?? [])] }));
     }
     return rows;
@@ -2876,6 +3015,26 @@ export default function App() {
     setSelectedSiteVisitId(item.id);
     setSelectedDate(item.visit_date);
     showDetailOverlay("siteVisit");
+  }
+
+  function editSiteVisit(item) {
+    if (!item || !canCreateFieldReports) return;
+    setSelectedProjectId(item.project_id);
+    setSelectedSiteVisitId(item.id);
+    setEditingSiteVisitId(item.id);
+    setSiteVisitForm({
+      ...emptySiteVisitForm,
+      project_id: item.project_id,
+      visit_date: item.visit_date || getWinnipegDateValue(),
+      start_time: String(item.start_time || "07:00").slice(0, 5),
+      end_time: String(item.end_time || "17:00").slice(0, 5),
+      status: item.status || "planned",
+      description: item.description || "",
+      files: [],
+      captions: {},
+      folders: [],
+    });
+    setModalType("siteVisit");
   }
 
   function openChangeOrderOverlay(item) {
@@ -2992,6 +3151,85 @@ export default function App() {
     setModalType("completeVisit");
   }
 
+  function openVisitNoteModal(visit = currentVisit, note = null) {
+    if (!visit?.id || visit.status !== "on_site") {
+      setNotice("Ticket notes are available only while the ticket is Active.");
+      return;
+    }
+    setSelectedProjectId(visit.project_id);
+    setSelectedVisitId(visit.id);
+    setWorkflowVisitId(visit.id);
+    setVisitNoteForm({
+      ...emptyVisitNoteForm,
+      id: note?.id || "",
+      visit_id: visit.id,
+      note_text: note?.note_text || "",
+      files: [],
+      captions: {},
+    });
+    setModalType("visitNote");
+  }
+
+  async function saveVisitNote(event) {
+    event.preventDefault();
+    const activeVisit = (rowsSource.visits ?? []).find((visit) => visit.id === visitNoteForm.visit_id) ?? workflowVisit ?? currentVisit;
+    const activeProject = activeVisit ? rowsSource.projects.find((project) => project.id === activeVisit.project_id) ?? workflowProject ?? selectedProject : workflowProject ?? selectedProject;
+    if (!supabase || !profile || !activeVisit || !activeProject) {
+      setNotice("Select an active ticket before saving a note.");
+      return;
+    }
+    if (activeVisit.status !== "on_site") {
+      setNotice("Notes can be added only while the ticket is Active.");
+      return;
+    }
+    const noteText = visitNoteForm.note_text.trim();
+    if (!noteText && visitNoteForm.files.length === 0) {
+      setNotice("Add a comment or at least one photo before saving.");
+      return;
+    }
+
+    setLoading(true);
+    setNotice(visitNoteForm.id ? "Saving ticket note..." : "Adding ticket note...");
+    try {
+      const payload = {
+        company_id: rowsSource.companyId,
+        project_id: activeProject.id,
+        visit_id: activeVisit.id,
+        author_id: profile.id,
+        note_text: noteText || null,
+      };
+      const noteQuery = visitNoteForm.id
+        ? supabase.from("visit_notes").update({ note_text: payload.note_text, updated_at: new Date().toISOString() }).eq("id", visitNoteForm.id).select().single()
+        : supabase.from("visit_notes").insert(payload).select().single();
+      const { data: savedNote, error } = await noteQuery;
+      if (error) throw error;
+
+      await uploadVisitNotePhotos({
+        captions: visitNoteForm.captions,
+        files: visitNoteForm.files,
+        note: savedNote,
+        project: activeProject,
+        visit: activeVisit,
+      });
+      await logVisitActivity(activeVisit, visitNoteForm.id ? "ticket_note_updated" : "ticket_note_added", `${currentUserName} ${visitNoteForm.id ? "updated" : "added"} an active ticket note.`, { noteId: savedNote.id });
+      commitWorkspaceData((current) => {
+        const kept = (current.visitNotes ?? []).filter((note) => note.id !== savedNote.id);
+        return { ...current, visitNotes: [savedNote, ...kept] };
+      });
+      setVisitNoteForm(emptyVisitNoteForm);
+      setModalType(null);
+      setUploadProgress(null);
+      triggerSoftPulse();
+      setNotice("Ticket note saved.");
+      await Promise.all([loadVisitNotes(), loadFiles(), loadActivities()]);
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+      setUploadProgress(null);
+    }
+  }
+
   async function saveSafetyForm(event) {
     event.preventDefault();
     const activeVisit = workflowVisit ?? currentVisit;
@@ -3034,7 +3272,7 @@ export default function App() {
       doc.text(`Job Number: ${activeProject.job_number || "Not set"}`, 42, 154);
       doc.text(doc.splitTextToSize(`Address: ${getVisitAddress(activeVisit, activeProject)}`, 492), 42, 170);
       doc.text(`Visit Date: ${formatDateLabel(activeVisit.visit_date)}`, 42, 196);
-      doc.text(`Current Time: ${formatTimeLabel(`${signedAt.getHours()}:${signedAt.getMinutes()}`)}`, 220, 196);
+      doc.text(`Current Time: ${formatTimeLabel(getWinnipegTimeValue(signedAt))}`, 220, 196);
       doc.text(`Scheduled Time: ${formatTimeRange(activeVisit.start_time, activeVisit.end_time)}`, 398, 196);
 
       doc.setDrawColor(226, 232, 240);
@@ -3710,11 +3948,14 @@ export default function App() {
       setModalType("equipment");
     }
     else if (activeNav === "siteVisits") {
+      setEditingSiteVisitId(null);
       setSiteVisitForm({
         ...emptySiteVisitForm,
         project_id: selectedProject?.id ?? rowsSource.projects[0]?.id ?? "",
         visit_date: selectedDate,
-        folders: [makePhotoFolder(1)],
+        files: [],
+        captions: {},
+        folders: [],
       });
       setModalType("siteVisit");
     }
@@ -3722,9 +3963,11 @@ export default function App() {
       setChangeOrderForm({
         ...emptyChangeOrderForm,
         project_id: selectedProject?.id ?? rowsSource.projects[0]?.id ?? "",
-        order_date: selectedDate,
-        order_time: "07:00",
-        folders: [makePhotoFolder(1)],
+        order_date: getWinnipegDateValue(),
+        order_time: getWinnipegTimeValue(),
+        files: [],
+        captions: {},
+        folders: [],
       });
       setModalType("changeOrder");
     }
@@ -3840,11 +4083,6 @@ export default function App() {
     if (assignment.recordType === "siteVisit") {
       const item = (rowsSource.siteVisits ?? []).find((row) => row.id === assignment.recordId);
       if (item) openSiteVisitOverlay(item);
-      return;
-    }
-    if (assignment.recordType === "changeOrder") {
-      const item = (rowsSource.changeOrders ?? []).find((row) => row.id === assignment.recordId);
-      if (item) openChangeOrderOverlay(item);
       return;
     }
     const visit = rowsSource.visits.find((item) => item.id === assignment.visitId);
@@ -4131,6 +4369,53 @@ export default function App() {
         creatorName: getProfileName(item.created_by, currentUserName),
       });
       setNotice("Change Order PDF exported.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function emailChangeOrderReport(item = selectedChangeOrder) {
+    if (!item) return;
+    const project = rowsSource.projects.find((projectItem) => projectItem.id === item.project_id) ?? selectedProject;
+    const clientEmail = project?.contact_email?.trim();
+    if (!clientEmail) {
+      setNotice("Add client email to the project before emailing a Change Order.");
+      return;
+    }
+
+    const subject = `Change Order ${item.order_number || ""}`.trim();
+    const body = `Hi,\n\nPlease see attached change order report approved by ${item.approved_by || "the approver"}.`;
+    setLoading(true);
+    setNotice("Preparing Change Order email...");
+    try {
+      const { exportFieldReportPdf } = await import("./lib/exporters.js");
+      const files = await hydrateExportFiles(getChangeOrderFiles(item));
+      const { blob, fileName } = await exportFieldReportPdf({
+        type: "changeOrder",
+        record: item,
+        project,
+        files,
+        creatorName: getProfileName(item.created_by, currentUserName),
+        download: false,
+      });
+      const pdfFile = new File([blob], fileName, { type: "application/pdf" });
+      if (navigator.canShare?.({ files: [pdfFile] }) && navigator.share) {
+        await navigator.share({ files: [pdfFile], title: subject, text: body });
+        setNotice("Change Order email package ready.");
+      } else {
+        const { exportFieldReportPdf: exportForDownload } = await import("./lib/exporters.js");
+        await exportForDownload({
+          type: "changeOrder",
+          record: item,
+          project,
+          files,
+          creatorName: getProfileName(item.created_by, currentUserName),
+        });
+        window.location.href = `mailto:${encodeURIComponent(clientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        setNotice("PDF downloaded. Email draft opened.");
+      }
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -4464,6 +4749,7 @@ export default function App() {
             getProfileName={getProfileName}
             kind="changeOrder"
             onDelete={deleteChangeOrder}
+            onEmail={emailChangeOrderReport}
             onExport={exportChangeOrderPdf}
             onOpen={openChangeOrderOverlay}
             onStatus={updateChangeOrderStatus}
@@ -4483,7 +4769,7 @@ export default function App() {
       return <SafetyReportsView files={rowsSource.files ?? []} onOpen={openAttachment} profiles={rowsSource.people} projects={rowsSource.projects} />;
     }
     if (activeNav === "overview") {
-      return <OverviewView data={rowsSource} getProfileName={getProfileName} getVisitFiles={getVisitFiles} onArrive={startArrivalWorkflow} onComplete={startCompletionWorkflow} onDateChange={setOverviewDate} onOpenVisit={openVisitOverlay} profile={profile} projects={rowsSource.projects} selectedDate={overviewDate} today={todayValue} visits={overviewVisits} />;
+      return <OverviewView data={rowsSource} getProfileName={getProfileName} getVisitFiles={getVisitFiles} onArrive={startArrivalWorkflow} onComplete={startCompletionWorkflow} onDateChange={setOverviewDate} onOpenNote={openVisitNoteModal} onOpenVisit={openVisitOverlay} profile={profile} projects={rowsSource.projects} selectedDate={overviewDate} today={todayValue} visits={overviewVisits} />;
     }
     return (
       <ScheduleView
@@ -4877,6 +5163,7 @@ export default function App() {
             onClose={closeDetailOverlay}
             onEditProject={() => editProject(selectedProject)}
             onEditVisit={editVisit}
+            onEmailChangeOrder={emailChangeOrderReport}
             onExportPdf={() => exportCurrentProjectPdf(selectedProject)}
             onExportTicketsExcel={() => exportProjectTicketsToExcel(selectedProject)}
             onOpenAttachment={openAttachment}
@@ -4914,12 +5201,15 @@ export default function App() {
             kind="siteVisit"
             onClose={closeDetailOverlay}
             onDelete={deleteSiteVisit}
+            onEdit={editSiteVisit}
             onExport={exportSiteVisitPdf}
             onOpenAttachment={openAttachment}
             onStatus={updateSiteVisitStatus}
             onUploaded={(message) => {
               setNotice(message);
               loadFiles();
+              logProjectActivity(selectedProject.id, "site_inspection_file_uploaded", `${currentUserName} added files to Site Inspection.`, { siteVisitId: selectedSiteVisit.id });
+              loadActivities();
             }}
             profileId={profile?.id}
             project={selectedProject}
@@ -4937,12 +5227,15 @@ export default function App() {
             kind="changeOrder"
             onClose={closeDetailOverlay}
             onDelete={deleteChangeOrder}
+            onEmail={emailChangeOrderReport}
             onExport={exportChangeOrderPdf}
             onOpenAttachment={openAttachment}
             onStatus={updateChangeOrderStatus}
             onUploaded={(message) => {
               setNotice(message);
               loadFiles();
+              logProjectActivity(selectedProject.id, "change_order_file_uploaded", `${currentUserName} added files to ${selectedChangeOrder.order_number || "Change Order"}.`, { changeOrderId: selectedChangeOrder.id });
+              loadActivities();
             }}
             profileId={profile?.id}
             project={selectedProject}
@@ -4965,6 +5258,7 @@ export default function App() {
             onEdit={() => editVisit(currentVisit)}
             onExportPdf={() => exportCurrentVisitPdf(currentVisit)}
             onOpenAttachment={openAttachment}
+            onOpenNote={openVisitNoteModal}
             onUploaded={(message) => {
               setNotice(message);
               loadFiles();
@@ -4974,6 +5268,7 @@ export default function App() {
             profileId={profile?.id}
             profiles={rowsSource.people}
             project={selectedProject}
+            notes={currentVisitNotes}
             visit={currentVisit}
           />
         )}
@@ -5191,7 +5486,7 @@ export default function App() {
         )}
 
         {activeFeatureFlags.siteInspections && modalType === "siteVisit" && (
-          <AppModal title="Create Site Inspection" onClose={() => closeModalWithConfirmation(fieldReportFormHasDraft(siteVisitForm))} wide>
+          <AppModal title={editingSiteVisitId ? "Edit Site Inspection" : "Create Site Inspection"} onClose={() => closeModalWithConfirmation(fieldReportFormHasDraft(siteVisitForm))} wide>
             <SiteVisitForm form={siteVisitForm} loading={loading} onChange={setSiteVisitForm} onSubmit={saveSiteVisit} projects={rowsSource.projects} />
           </AppModal>
         )}
@@ -5234,6 +5529,12 @@ export default function App() {
         {modalType === "completeVisit" && workflowVisit && workflowProject && (
           <AppModal confirmOnClose={completionHasDraft} title="Complete Work" onClose={() => closeModalWithConfirmation(completionHasDraft)}>
             <CompleteVisitModal form={completionForm} loading={loading} onChange={setCompletionForm} onSubmit={saveCompletion} requirePhotos={activeFeatureFlags.beforeAfterPhotos} />
+          </AppModal>
+        )}
+
+        {modalType === "visitNote" && workflowVisit && workflowProject && (
+          <AppModal title={visitNoteForm.id ? "Edit Ticket Note" : "Add Ticket Note"} onClose={() => closeModalWithConfirmation(Boolean(visitNoteForm.note_text.trim()) || visitNoteForm.files.length > 0)}>
+            <VisitNoteModal form={visitNoteForm} loading={loading} onChange={setVisitNoteForm} onSubmit={saveVisitNote} />
           </AppModal>
         )}
 
@@ -5429,7 +5730,7 @@ function DetailOverlayShell({ children, onClose, title }) {
   );
 }
 
-function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, changeOrders = [], companyId, currentVisit, featureFlags = defaultFeatureFlags, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onExportChangeOrder, onExportPdf, onExportSiteVisit, onExportTicketsExcel, onOpenAttachment, onOpenChangeOrder, onOpenSiteVisit, onOpenVisit, onRemoveActivity, onRemoveChangeOrder, onRemoveSiteVisit, onRemoveVisit, onUpdateChangeOrderStatus, onUpdateSiteVisitStatus, onUploaded, people, profileId, project, siteVisits = [], visits }) {
+function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, changeOrders = [], companyId, currentVisit, featureFlags = defaultFeatureFlags, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onEmailChangeOrder, onExportChangeOrder, onExportPdf, onExportSiteVisit, onExportTicketsExcel, onOpenAttachment, onOpenChangeOrder, onOpenSiteVisit, onOpenVisit, onRemoveActivity, onRemoveChangeOrder, onRemoveSiteVisit, onRemoveVisit, onUpdateChangeOrderStatus, onUpdateSiteVisitStatus, onUploaded, people, profileId, project, siteVisits = [], visits }) {
   const addresses = getProjectAddressOptions(project);
   const mainAddress = primaryProjectAddress(project);
   return (
@@ -5467,6 +5768,7 @@ function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, ch
         <ProjectFact icon={UsersRound} label="PM / Owner" value={getProfileName(project.manager_id ?? project.created_by)} />
         <ProjectFact icon={UserRound} label="Contact" value={project.contact_name || "Not set"} />
         <ProjectFact icon={ClipboardCheck} label="Phone" value={project.contact_phone || "Not set"} />
+        <ProjectFact icon={Mail} label="Client Email" value={project.contact_email || "Not set"} />
         <ProjectFact icon={CircleGauge} label="Status" value={normalizeStatus(project.status)} badge />
       </dl>
 
@@ -5528,6 +5830,7 @@ function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, ch
           getProfileName={getProfileName}
           kind="changeOrder"
           onDelete={onRemoveChangeOrder}
+          onEmail={onEmailChangeOrder}
           onExport={onExportChangeOrder}
           onOpen={onOpenChangeOrder}
           onStatus={onUpdateChangeOrderStatus}
@@ -5560,7 +5863,7 @@ function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, ch
   );
 }
 
-function ProjectFieldReportSection({ getProfileName, kind, onDelete, onExport, onOpen, onStatus, records = [] }) {
+function ProjectFieldReportSection({ getProfileName, kind, onDelete, onEmail, onExport, onOpen, onStatus, records = [] }) {
   const isSiteVisit = kind === "siteVisit";
   const title = getFieldReportLabel(kind, true);
   const Icon = isSiteVisit ? ClipboardCheck : FileBarChart2;
@@ -5589,6 +5892,7 @@ function ProjectFieldReportSection({ getProfileName, kind, onDelete, onExport, o
               key={record.id}
               kind={kind}
               onDelete={onDelete}
+              onEmail={onEmail}
               onExport={onExport}
               onOpen={onOpen}
               onStatus={onStatus}
@@ -5612,6 +5916,14 @@ function ActivityFeed({ activities = [], canDeleteItems = false, getProfileName,
     after_photos_uploaded: Camera,
     photo_annotated: Edit3,
     file_deleted: Trash2,
+    site_inspection_saved: ClipboardCheck,
+    site_inspection_updated: Edit3,
+    site_inspection_completed: CheckCircle2,
+    site_inspection_file_uploaded: Camera,
+    change_order_created: FileBarChart2,
+    change_order_file_uploaded: Camera,
+    ticket_note_added: MessageSquarePlus,
+    ticket_note_updated: Edit3,
   };
 
   return (
@@ -5653,7 +5965,7 @@ function ActivityFeed({ activities = [], canDeleteItems = false, getProfileName,
   );
 }
 
-function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, onArrive, onClose, onComplete, onEdit, onExportPdf, onOpenAttachment, onRemove, onUploaded, people, profileId, profiles, project, visit }) {
+function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onUploaded, people, profileId, profiles, project, visit }) {
   const ticketAddress = getVisitAddress(visit, project);
   return (
     <DetailOverlayShell title={`${project.name} Ticket`} onClose={onClose}>
@@ -5717,10 +6029,18 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, featureFla
               Complete
             </button>
           )}
+          {visit.status === "on_site" && (
+            <button type="button" onClick={() => onOpenNote?.(visit)}>
+              <MessageSquarePlus size={18} />
+              Add Note
+            </button>
+          )}
         </div>
       ) : (
         <div className="thanksBox">Thank you. This ticket is Done.</div>
       )}
+
+      <VisitNotesSection files={files} getProfileName={getProfileName} notes={notes} onEdit={(note) => onOpenNote?.(visit, note)} onOpenAttachment={onOpenAttachment} profiles={profiles} visit={visit} />
 
       <AttachmentSections
         featureFlags={featureFlags}
@@ -5742,7 +6062,56 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, featureFla
   );
 }
 
-function FieldReportDetailOverlay({ canManage, companyId, files = [], getProfileName, kind, onClose, onDelete, onExport, onOpenAttachment, onStatus, onUploaded, profileId, project, record, profiles = [] }) {
+function VisitNotesSection({ files = [], getProfileName, notes = [], onEdit, onOpenAttachment, profiles = [], visit }) {
+  const sortedNotes = [...notes].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+
+  return (
+    <section className="visitNotesSection detailSection">
+      <div className="panelSectionHeader">
+        <h3>
+          <MessageSquarePlus size={17} />
+          Active Ticket Notes
+        </h3>
+        <span>{sortedNotes.length}</span>
+      </div>
+      {sortedNotes.length === 0 ? (
+        <div className="emptyPanelState">No active ticket notes yet.</div>
+      ) : (
+        <div className="visitNotesList">
+          {sortedNotes.map((note) => {
+            const noteFiles = files.filter((file) => file.note_id === note.id);
+            return (
+              <article className="visitNoteCard" key={note.id}>
+                <div className="visitNoteHeader">
+                  <span>
+                    <strong>{getProfileName(note.author_id, "Unknown")}</strong>
+                    <small>{formatDateTimeLabel(note.updated_at || note.created_at)}</small>
+                  </span>
+                  {visit?.status === "on_site" && (
+                    <button className="outlineButton" type="button" onClick={() => onEdit?.(note)}>
+                      <Edit3 size={15} />
+                      Edit
+                    </button>
+                  )}
+                </div>
+                {note.note_text && <p>{note.note_text}</p>}
+                {noteFiles.length > 0 && (
+                  <div className="attachmentStrip">
+                    {noteFiles.map((file) => (
+                      <AttachmentPreviewCard file={file} key={file.id} onOpen={onOpenAttachment} profiles={profiles} />
+                    ))}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function FieldReportDetailOverlay({ canManage, companyId, files = [], getProfileName, kind, onClose, onDelete, onEdit, onEmail, onExport, onOpenAttachment, onStatus, onUploaded, profileId, project, record, profiles = [] }) {
   const isSiteVisit = kind === "siteVisit";
   const title = getFieldReportLabel(kind);
   const date = isSiteVisit ? record.visit_date : record.order_date;
@@ -5753,16 +6122,28 @@ function FieldReportDetailOverlay({ canManage, companyId, files = [], getProfile
     <DetailOverlayShell title={`${project.name} ${title}`} onClose={onClose}>
       <div className={`ticketHeaderCard fieldReportDetailHero ${kind}`}>
         <div>
-          <span className={`ticketStatus ${record.status}`}>{normalizeVisitStatus(record.status)}</span>
+          {isSiteVisit && <span className={`ticketStatus ${record.status}`}>{normalizeVisitStatus(record.status)}</span>}
           <h3>{title}</h3>
           <p>{formatDateLabel(date)} / {timeText}</p>
         </div>
         <div className="detailActionRow">
+          {canManage && isSiteVisit && (
+            <button className="outlineButton" type="button" onClick={() => onEdit?.(record)}>
+              <Edit3 size={17} />
+              Edit
+            </button>
+          )}
           <button className="outlineButton" type="button" onClick={() => onExport?.(record)}>
             <Download size={17} />
             Export PDF
           </button>
-          {canManage && record.status === "planned" && (
+          {!isSiteVisit && (
+            <button className="outlineButton" type="button" onClick={() => onEmail?.(record)}>
+              <Mail size={17} />
+              Email
+            </button>
+          )}
+          {canManage && isSiteVisit && record.status === "planned" && (
             <button className="addButton" type="button" onClick={() => onStatus?.(record, "completed")}>
               <CheckCircle2 size={17} />
               Complete
@@ -5782,7 +6163,7 @@ function FieldReportDetailOverlay({ canManage, companyId, files = [], getProfile
         {!isSiteVisit && <ProjectFact icon={FileBarChart2} label="CO Number" value={record.order_number || nextChangeOrderNumber(project, [])} />}
         <ProjectFact icon={ClipboardCheck} label="Created by" value={getProfileName(record.created_by, "Unknown")} />
         <ProjectFact icon={MapPin} label="Address" value={primaryProjectAddress(project) || "Not set"} />
-        <ProjectFact icon={CheckCircle2} label="Completed" value={completedText} />
+        <ProjectFact icon={CheckCircle2} label={isSiteVisit ? "Completed" : "Created"} value={completedText} />
         {!isSiteVisit && <ProjectFact icon={UserRound} label="Approved by" value={record.approved_by || "Not set"} />}
       </dl>
 
@@ -6055,7 +6436,7 @@ function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, 
   const absentTeam = team.filter((person) => !presentIds.includes(person.id));
   const signaturesReady = presentTeam.length > 0 && presentTeam.every((person) => form.signatures[person.id]?.trim());
   const canSubmit = form.hazards.length > 0 && signaturesReady;
-  const currentTime = formatTimeLabel(`${new Date().getHours()}:${new Date().getMinutes()}`);
+  const currentTime = formatTimeLabel(getWinnipegTimeValue());
 
   function toggleHazard(hazard) {
     const set = new Set(form.hazards);
@@ -6303,6 +6684,43 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit, requirePhotos =
   );
 }
 
+function VisitNoteModal({ form, loading, onChange, onSubmit }) {
+  const selectedFiles = Array.isArray(form.files) ? form.files : [];
+
+  return (
+    <form className="workflowForm" onSubmit={onSubmit}>
+      <FormField label="Note">
+        <textarea placeholder="Add a quick note about the active ticket..." value={form.note_text} onChange={(event) => onChange({ ...form, note_text: event.target.value })} />
+      </FormField>
+      <label className="fileDropControl">
+        <Upload size={22} />
+        <strong>Add photos</strong>
+        <span>{selectedFiles.length ? `${selectedFiles.length} photo${selectedFiles.length === 1 ? "" : "s"} selected` : "Optional JPG, PNG, or WebP"}</span>
+        <input accept="image/jpeg,image/png,image/webp" multiple type="file" onChange={(event) => onChange({ ...form, files: [...event.target.files], captions: {} })} />
+      </label>
+      <div className="selectedFiles">
+        {selectedFiles.map((file) => {
+          const key = fileInputKey(file);
+          return (
+            <SelectedPhotoCaptionCard
+              caption={form.captions?.[key] || ""}
+              file={file}
+              key={key}
+              onCaption={(value) => onChange({ ...form, captions: { ...(form.captions ?? {}), [key]: value } })}
+            />
+          );
+        })}
+      </div>
+      <div className="formActions wide">
+        <button className="addButton" type="submit" disabled={loading || (!form.note_text.trim() && selectedFiles.length === 0)}>
+          <Save size={18} />
+          Save Note
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function SiteVisitForm({ form, loading, onChange, onSubmit, projects = [] }) {
   return (
     <form className="stackForm twoColumns fieldReportForm" onSubmit={onSubmit}>
@@ -6317,30 +6735,34 @@ function SiteVisitForm({ form, loading, onChange, onSubmit, projects = [] }) {
         </select>
       </FormField>
       <DateField label="Inspection date" value={form.visit_date} onChange={(date) => onChange({ ...form, visit_date: date })} />
-      <FormField label="Start time">
-        <select required value={form.start_time} onChange={(event) => onChange({ ...form, start_time: event.target.value })}>
-          {timePickerOptions.map((option) => (
-            <option value={option.value} key={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </FormField>
-      <FormField label="End time">
-        <select required value={form.end_time} onChange={(event) => onChange({ ...form, end_time: event.target.value })}>
-          {timePickerOptions.map((option) => (
-            <option value={option.value} key={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </FormField>
       <FormField label="Status">
         <select value={form.status} onChange={(event) => onChange({ ...form, status: event.target.value })}>
           <option value="planned">Planned</option>
           <option value="completed">Completed</option>
         </select>
       </FormField>
+      {form.status === "planned" && (
+        <>
+          <FormField label="Start time">
+            <select required value={form.start_time} onChange={(event) => onChange({ ...form, start_time: event.target.value })}>
+              {timePickerOptions.map((option) => (
+                <option value={option.value} key={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="End time">
+            <select required value={form.end_time} onChange={(event) => onChange({ ...form, end_time: event.target.value })}>
+              {timePickerOptions.map((option) => (
+                <option value={option.value} key={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        </>
+      )}
       <FormField label="Inspection description">
         <textarea value={form.description} onChange={(event) => onChange({ ...form, description: event.target.value })} />
       </FormField>
@@ -6358,6 +6780,7 @@ function SiteVisitForm({ form, loading, onChange, onSubmit, projects = [] }) {
 function ChangeOrderForm({ changeOrders = [], form, loading, onChange, onSubmit, projects = [] }) {
   const selectedProject = projects.find((project) => project.id === form.project_id);
   const previewNumber = form.order_number || nextChangeOrderNumber(selectedProject, changeOrders);
+  const nowLabel = `${formatDateLabel(getWinnipegDateValue())} / ${formatTimeLabel(getWinnipegTimeValue())}`;
   return (
     <form className="stackForm twoColumns fieldReportForm" onSubmit={onSubmit}>
       <FormField label="Project">
@@ -6370,37 +6793,24 @@ function ChangeOrderForm({ changeOrders = [], form, loading, onChange, onSubmit,
           ))}
         </select>
       </FormField>
-      <DateField label="Change date" value={form.order_date} onChange={(date) => onChange({ ...form, order_date: date })} />
       <FormField label="CO number">
         <input readOnly value={form.project_id ? previewNumber : "Select project first"} />
       </FormField>
-      <FormField label="Time">
-        <select required value={form.order_time} onChange={(event) => onChange({ ...form, order_time: event.target.value })}>
-          {timePickerOptions.map((option) => (
-            <option value={option.value} key={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </FormField>
-      <FormField label="Status">
-        <select value={form.status} onChange={(event) => onChange({ ...form, status: event.target.value })}>
-          <option value="planned">Planned</option>
-          <option value="completed">Completed</option>
-        </select>
-      </FormField>
-      <FormField label="Approved by">
-        <input value={form.approved_by} onChange={(event) => onChange({ ...form, approved_by: event.target.value })} />
+      <FormField label="Created">
+        <input readOnly value={nowLabel} />
       </FormField>
       <FormField label="Change description">
         <textarea value={form.description} onChange={(event) => onChange({ ...form, description: event.target.value })} />
       </FormField>
       <FieldPhotoFoldersEditor form={form} onChange={onChange} />
+      <FormField label="Approved by">
+        <input required value={form.approved_by} onChange={(event) => onChange({ ...form, approved_by: event.target.value })} />
+      </FormField>
       <div className="wide">
         <SignaturePad label="Approval digital signature" value={form.approval_signature} onChange={(dataUrl) => onChange({ ...form, approval_signature: dataUrl })} />
       </div>
       <div className="formActions wide">
-        <button className="addButton" type="submit" disabled={loading || !form.project_id || (form.status === "completed" && !form.approval_signature)}>
+        <button className="addButton" type="submit" disabled={loading || !form.project_id || !form.approval_signature}>
           <Save size={18} />
           Save Change Order
         </button>
@@ -6410,7 +6820,8 @@ function ChangeOrderForm({ changeOrders = [], form, loading, onChange, onSubmit,
 }
 
 function FieldPhotoFoldersEditor({ form, onChange }) {
-  const folders = form.folders?.length ? form.folders : [makePhotoFolder(1)];
+  const folders = form.folders ?? [];
+  const selectedFiles = form.files ?? [];
 
   function updateFolder(folderId, patch) {
     onChange({
@@ -6422,19 +6833,46 @@ function FieldPhotoFoldersEditor({ form, onChange }) {
   function removeFolder(folderId) {
     onChange({
       ...form,
-      folders: folders.length === 1 ? [makePhotoFolder(1)] : folders.filter((folder) => folder.id !== folderId),
+      folders: folders.filter((folder) => folder.id !== folderId),
     });
   }
 
   return (
     <section className="fieldPhotoFolders wide">
       <div className="panelSectionHeader">
-        <h3>Photo folders</h3>
+        <h3>Photos</h3>
         <button type="button" onClick={() => onChange({ ...form, folders: [...folders, makePhotoFolder(folders.length + 1)] })}>
           <Plus size={15} />
-          Folder
+          Add Folder
         </button>
       </div>
+      <div className="fieldPhotoFolder plainPhotos">
+        <label className="fileDropControl">
+          <Upload size={22} />
+          <strong>Select photos</strong>
+          <span>{selectedFiles.length ? `${selectedFiles.length} photo${selectedFiles.length === 1 ? "" : "s"} selected` : "JPG, PNG, or WebP"}</span>
+          <input
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            type="file"
+            onChange={(event) => onChange({ ...form, files: [...event.target.files], captions: {} })}
+          />
+        </label>
+        <div className="selectedFiles">
+          {selectedFiles.map((file) => {
+            const key = fileInputKey(file);
+            return (
+              <SelectedPhotoCaptionCard
+                caption={form.captions?.[key] || ""}
+                file={file}
+                key={key}
+                onCaption={(value) => onChange({ ...form, captions: { ...(form.captions ?? {}), [key]: value } })}
+              />
+            );
+          })}
+        </div>
+      </div>
+      {folders.length === 0 && <div className="formHint">Folders are optional. Use Add Folder only when photos need separate sections in the PDF.</div>}
       {folders.map((folder, index) => (
         <div className="fieldPhotoFolder" key={folder.id}>
           <div className="fieldPhotoFolderHeader">
@@ -6508,11 +6946,13 @@ function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeop
   const [pickerMonth, setPickerMonth] = useState(selectedDate);
   const calendarWrapRef = useRef(null);
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const nowHour = now.getHours() + now.getMinutes() / 60;
+  const today = getWinnipegDateValue(now);
+  const winnipegTime = getWinnipegTimeValue(now);
+  const [winnipegHour, winnipegMinute] = winnipegTime.split(":").map(Number);
+  const nowHour = winnipegHour + winnipegMinute / 60;
   const showNow = selectedDate === today && nowHour >= scheduleStartHour && nowHour <= scheduleEndHour;
   const nowRatio = Math.max(0, Math.min(1, (nowHour - scheduleStartHour) / (scheduleEndHour - scheduleStartHour)));
-  const nowLabel = formatTimeLabel(`${now.getHours()}:${now.getMinutes()}`);
+  const nowLabel = formatTimeLabel(winnipegTime);
   const shiftCurrentView = (amount) => {
     if (scheduleMode === "month") setSelectedDate(shiftMonth(selectedDate, amount));
     else setSelectedDate(shiftDate(selectedDate, scheduleMode === "week" ? amount * 7 : amount));
@@ -6521,7 +6961,7 @@ function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeop
     setSelectedDate(date);
     setScheduleMode("day");
   };
-  const jumpToToday = () => openDay(new Date().toISOString().slice(0, 10));
+  const jumpToToday = () => openDay(getWinnipegDateValue());
   const toggleCalendar = () => {
     setPickerMonth(selectedDate);
     setIsCalendarOpen((value) => !value);
@@ -6783,7 +7223,7 @@ function ProjectsView({ canManage, getProfileName, projects, onDelete, onEdit, o
   );
 }
 
-function FieldReportsView({ emptyText, getProfileName, kind, onDelete, onExport, onOpen, onStatus, projects = [], records = [] }) {
+function FieldReportsView({ emptyText, getProfileName, kind, onDelete, onEmail, onExport, onOpen, onStatus, projects = [], records = [] }) {
   const sortedRecords = [...records].sort((a, b) => {
     const left = kind === "siteVisit" ? `${a.visit_date} ${a.start_time}` : `${a.order_date} ${a.order_time}`;
     const right = kind === "siteVisit" ? `${b.visit_date} ${b.start_time}` : `${b.order_date} ${b.order_time}`;
@@ -6801,6 +7241,7 @@ function FieldReportsView({ emptyText, getProfileName, kind, onDelete, onExport,
             key={record.id}
             kind={kind}
             onDelete={onDelete}
+            onEmail={onEmail}
             onExport={onExport}
             onOpen={onOpen}
             onStatus={onStatus}
@@ -6813,7 +7254,7 @@ function FieldReportsView({ emptyText, getProfileName, kind, onDelete, onExport,
   );
 }
 
-function FieldReportCard({ getProfileName, kind, onDelete, onExport, onOpen, onStatus, project, record }) {
+function FieldReportCard({ getProfileName, kind, onDelete, onEmail, onExport, onOpen, onStatus, project, record }) {
   const isSiteVisit = kind === "siteVisit";
   const title = getFieldReportLabel(kind);
   const date = isSiteVisit ? record.visit_date : record.order_date;
@@ -6828,7 +7269,7 @@ function FieldReportCard({ getProfileName, kind, onDelete, onExport, onOpen, onS
           <small>{title} / {!isSiteVisit && record.order_number ? `${record.order_number} / ` : ""}{formatDateLabel(date)} / {timeText}</small>
           <em>{record.description || "No description yet."}</em>
         </span>
-        <i className={`ticketStatus ${record.status}`}>{normalizeVisitStatus(record.status)}</i>
+        {isSiteVisit && <i className={`ticketStatus ${record.status}`}>{normalizeVisitStatus(record.status)}</i>}
       </button>
       <div className="fieldReportActions">
         <small>Created by {getProfileName(record.created_by, "Unknown")}</small>
@@ -6836,7 +7277,13 @@ function FieldReportCard({ getProfileName, kind, onDelete, onExport, onOpen, onS
           <Download size={16} />
           PDF
         </button>
-        {record.status === "planned" && (
+        {!isSiteVisit && (
+          <button className="outlineButton" type="button" onClick={() => onEmail?.(record)}>
+            <Mail size={16} />
+            Email
+          </button>
+        )}
+        {isSiteVisit && record.status === "planned" && (
           <button className="addButton" type="button" onClick={() => onStatus?.(record, "completed")}>
             <CheckCircle2 size={16} />
             Complete
@@ -7076,7 +7523,7 @@ function PendingPersonRow({ avatarUrl, onApprove, onSelect, person }) {
   );
 }
 
-function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplete, onDateChange, onOpenVisit, profile, projects, selectedDate, today, visits }) {
+function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplete, onDateChange, onOpenNote, onOpenVisit, profile, projects, selectedDate, today, visits }) {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(selectedDate);
   const [weather, setWeather] = useState({ status: "idle", data: null });
@@ -7271,6 +7718,10 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
             )}
             {isToday && visit.status === "on_site" && (
               <div className="visitActions wideActions">
+                <button type="button" onClick={() => onOpenNote?.(visit)}>
+                  <MessageSquarePlus size={18} />
+                  Add Note
+                </button>
                 <button type="button" onClick={() => onComplete(visit)}>
                   <CheckCircle2 size={18} />
                   Complete Work
@@ -8065,6 +8516,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
   const isTightBlock = width < 24;
   const laneCount = Math.max(1, assignment.laneCount ?? 1);
   const laneIndex = Math.min(laneCount - 1, Math.max(0, assignment.laneIndex ?? 0));
+  const typeLabel = assignment.recordType === "siteVisit" ? "Inspection" : "Work Ticket";
   const verticalStyle =
     laneCount > 1
       ? {
@@ -8077,7 +8529,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
 
   return (
     <div
-      className={`scheduleBlock ${assignment.color} ${assignment.status ?? ""} ${dropHint ? "showDropHint" : ""} ${isShortBlock ? "shortBlock" : ""} ${isTightBlock ? "tightBlock" : ""}`}
+      className={`scheduleBlock ${assignment.recordType ?? "visit"} ${assignment.color} ${assignment.status ?? ""} ${dropHint ? "showDropHint" : ""} ${isShortBlock ? "shortBlock" : ""} ${isTightBlock ? "tightBlock" : ""}`}
       draggable={Boolean(assignment.visitId)}
       role="button"
       style={{ left: `${left}%`, width: `${width}%`, ...verticalStyle }}
@@ -8188,7 +8640,8 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
       )}
       <span className="scheduleBlockTop">
         <strong>{assignment.title}</strong>
-        {assignment.status && <em className="scheduleBlockStatus">{normalizeVisitStatus(assignment.status)}</em>}
+        <em className="scheduleBlockType">{typeLabel}</em>
+        {assignment.status && <em className="scheduleBlockStatus">{assignment.recordType === "siteVisit" && assignment.status === "completed" ? "Done" : normalizeVisitStatus(assignment.status)}</em>}
       </span>
       {assignment.timeText && <small className="scheduleBlockTime">{assignment.timeText}</small>}
       {(assignment.people?.length > 0 || assignment.equipment?.length > 0) && (

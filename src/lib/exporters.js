@@ -318,7 +318,7 @@ export async function exportProjectPdf({ project, visits = [], people = [], equi
   downloadBlob(doc.output("blob"), `${cleanFileName(project?.job_number || project?.name)}-project.pdf`);
 }
 
-export async function exportFieldReportPdf({ type, record, project, files = [], creatorName = "" }) {
+export async function exportFieldReportPdf({ type, record, project, files = [], creatorName = "", download = true }) {
   const isSiteVisit = type === "siteVisit";
   const title = isSiteVisit ? "Site Inspection" : "Change Order";
   const orderNumber = record.order_number || (isSiteVisit ? "" : `CO-${project?.job_number || "NO-JOB"}`);
@@ -338,7 +338,7 @@ export async function exportFieldReportPdf({ type, record, project, files = [], 
   doc.setFontSize(21);
   doc.text(`${project?.name || "Project"} ${title}`, 36, 38);
   doc.setFontSize(11);
-  doc.text(`${isSiteVisit ? project?.job_number || "No job number" : orderNumber} / ${record.status || "planned"}`, 36, 62);
+  doc.text(isSiteVisit ? `${project?.job_number || "No job number"} / ${record.status || "planned"}` : orderNumber, 36, 62);
 
   doc.setTextColor(17, 24, 39);
   let y = 124;
@@ -396,5 +396,8 @@ export async function exportFieldReportPdf({ type, record, project, files = [], 
     doc.addImage(letterhead, "PNG", 332, 650, 238, 105);
   }
 
-  downloadBlob(doc.output("blob"), `${cleanFileName(project?.job_number || project?.name)}-${cleanFileName(title)}-${isSiteVisit ? record.visit_date : record.order_date}.pdf`);
+  const fileName = `${cleanFileName(project?.job_number || project?.name)}-${cleanFileName(title)}-${isSiteVisit ? record.visit_date : record.order_date}.pdf`;
+  const blob = doc.output("blob");
+  if (download) downloadBlob(blob, fileName);
+  return { blob, fileName };
 }
