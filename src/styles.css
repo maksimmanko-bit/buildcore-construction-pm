@@ -9373,3 +9373,167 @@ html {
     width: 100%;
   }
 }
+
+/* Mobile attachment viewer: keep the photo first, controls and details below. */
+@media (max-width: 860px) {
+  .attachmentModal {
+    height: calc(100dvh - max(20px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom))) !important;
+    max-height: calc(100dvh - max(20px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom))) !important;
+  }
+
+  .attachmentModal .modalHeader {
+    min-height: 58px;
+    padding: 10px 12px;
+  }
+
+  .attachmentModal .modalHeader h2 {
+    max-width: calc(100vw - 116px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 19px;
+    line-height: 1.12;
+  }
+
+  .attachmentModal .modalBody {
+    display: grid;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .attachmentModal .attachmentViewer {
+    display: block;
+    min-height: 0;
+    height: 100%;
+    overflow-y: auto;
+    border: 0;
+    border-radius: 0 0 24px 24px;
+    background: #070b14;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .attachmentModal .photoViewer {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    width: 100%;
+    gap: 0;
+  }
+
+  .attachmentModal .photoStage {
+    order: 1;
+    height: clamp(360px, 58dvh, 620px);
+    min-height: 360px;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background:
+      radial-gradient(circle at 50% 0, rgba(255, 255, 255, 0.08), transparent 34%),
+      #070b14;
+  }
+
+  .attachmentModal .photoStage img {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  .attachmentModal .photoStageNav {
+    width: 56px;
+    height: 56px;
+  }
+
+  .attachmentModal .photoStageNav.previous {
+    left: 18px;
+  }
+
+  .attachmentModal .photoStageNav.next {
+    right: 18px;
+  }
+
+  .attachmentModal .filmstrip {
+    order: 2;
+    padding: 12px 14px 6px;
+    background: #070b14;
+  }
+
+  .attachmentModal .filmstrip button {
+    flex-basis: 74px;
+    height: 54px;
+    border-radius: 14px;
+  }
+
+  .attachmentModal .viewerTopBar {
+    order: 3;
+    display: grid;
+    width: calc(100% - 20px);
+    margin: 10px 10px max(10px, env(safe-area-inset-bottom)) !important;
+    padding: 14px;
+    gap: 14px;
+    border-radius: 22px;
+  }
+
+  .attachmentModal .viewerTopBar > div:first-child {
+    min-width: 0;
+  }
+
+  .attachmentModal .viewerTopBar strong {
+    font-size: 16px;
+    line-height: 1.18;
+  }
+
+  .attachmentModal .viewerTopBar small {
+    font-size: 12px;
+  }
+
+  .attachmentModal .photoCaptionLine {
+    display: grid;
+    gap: 10px;
+  }
+
+  .attachmentModal .photoCaption {
+    max-width: none;
+    margin-top: 8px;
+    overflow-wrap: anywhere;
+  }
+
+  .attachmentModal .captionEditButton {
+    width: fit-content;
+  }
+
+  .attachmentModal .viewerControls {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .attachmentModal .viewerControls button,
+  .attachmentModal .viewerControls span {
+    width: 100%;
+    min-width: 0;
+    height: 52px;
+    border-radius: 16px;
+  }
+
+  .attachmentModal .viewerControls span {
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.045);
+    color: #334155;
+    font-size: 13px;
+  }
+
+  .attachmentModal .annotationHistory {
+    order: 4;
+    margin: 0 10px 12px;
+    border-radius: 20px;
+  }
+}

@@ -5734,6 +5734,7 @@ export default function App() {
 
         {selectedAttachment && (
           <AppModal
+            className="attachmentModal"
             title={selectedAttachment.file_name || "Attachment"}
             onClose={() => {
               setSelectedAttachment(null);
@@ -8336,7 +8337,7 @@ function ProjectAddressEditor({ addresses = [], onAdd, onRemove, onUpdate }) {
   );
 }
 
-function AppModal({ children, onClose, title, wide = false }) {
+function AppModal({ children, className = "", onClose, title, wide = false }) {
   const backdropPointerDownRef = useRef(false);
 
   function handleBackdropPointerDown(event) {
@@ -8350,7 +8351,7 @@ function AppModal({ children, onClose, title, wide = false }) {
 
   return (
     <div className="modalBackdrop" onPointerDown={handleBackdropPointerDown} onPointerUp={handleBackdropPointerUp}>
-      <div className={wide ? "modal wideModal" : "modal"}>
+      <div className={`${wide ? "modal wideModal" : "modal"} ${className}`.trim()}>
         <div className="modalHeader">
           <h2>{title}</h2>
           <button className="iconButton soft" type="button" onClick={onClose} title="Close">
