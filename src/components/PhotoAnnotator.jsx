@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, Check, Circle, Copy, Minus, Pencil, Plus, Redo2, Square, Trash2, Type, Undo2 } from "lucide-react";
+import { ArrowUpRight, Check, Circle, Copy, Hand, Maximize2, Minus, Pencil, Plus, Redo2, Square, Trash2, Type, Undo2, ZoomIn, ZoomOut } from "lucide-react";
 import { Canvas, Circle as FabricCircle, Group, IText, Line, PencilBrush, Rect, Triangle, util } from "fabric";
 
 const tools = [
@@ -192,6 +192,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
   const undoStackRef = useRef([]);
   const redoStackRef = useRef([]);
   const isRestoringRef = useRef(false);
+  const isPanningRef = useRef(null);
   const panGestureRef = useRef(null);
   const longPressRef = useRef(0);
   const [activeObjectId, setActiveObjectId] = useState("");
@@ -207,6 +208,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
   const [strokeWidth, setStrokeWidth] = useState(5);
   const [textComposer, setTextComposer] = useState(null);
   const [tool, setTool] = useState("draw");
+  const [zoom, setZoom] = useState(1);
 
   const activeSwatch = useMemo(() => swatches.find((item) => item.value === color) || swatches[0], [color]);
 
@@ -272,14 +274,77 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     const canvas = fabricRef.current;
     if (!canvas) return;
     canvas.isDrawingMode = nextTool === "draw";
-    canvas.skipTargetFind = nextTool === "draw";
+    canvas.skipTargetFind = nextTool === "draw" || nextTool === "pan";
     canvas.selection = false;
-    canvas.defaultCursor = nextTool === "draw" ? "crosshair" : "copy";
-    canvas.hoverCursor = nextTool === "draw" ? "crosshair" : "move";
+    canvas.defaultCursor = nextTool === "draw" ? "crosshair" : nextTool === "pan" ? "grab" : "copy";
+    canvas.hoverCursor = nextTool === "draw" ? "crosshair" : nextTool === "pan" ? "grab" : "move";
     if (!canvas.freeDrawingBrush) canvas.freeDrawingBrush = new PencilBrush(canvas);
     canvas.freeDrawingBrush.color = colorRef.current;
     canvas.freeDrawingBrush.width = strokeWidthRef.current;
     requestCanvasRender(canvas);
+  }
+
+  function setCanvasZoom(nextZoom, anchor = null) {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    const safeZoom = Math.min(3, Math.max(0.75, nextZoom));
+    const point = anchor || { x: canvas.width / 2, y: canvas.height / 2 };
+    canvas.zoomToPoint(point, safeZoom);
+    setZoom(safeZoom);
+    requestCanvasRender(canvas);
+  }
+
+  function resetCanvasZoom() {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    setZoom(1);
+    requestCanvasRender(canvas);
+  }
+
+  function startPan(event) {
+    const canvas = fabricRef.current;
+    if (!canvas || toolRef.current !== "pan") return false;
+    const rect = canvas.upperCanvasEl.getBoundingClientRect();
+    isPanningRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      scaleX: canvas.width / rect.width,
+      scaleY: canvas.height / rect.height,
+      transform: [...canvas.viewportTransform],
+    };
+    canvas.upperCanvasEl.setPointerCapture?.(event.pointerId);
+    canvas.defaultCursor = "grabbing";
+    canvas.hoverCursor = "grabbing";
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    return true;
+  }
+
+  function movePan(event) {
+    const canvas = fabricRef.current;
+    const pan = isPanningRef.current;
+    if (!canvas || !pan || pan.pointerId !== event.pointerId) return;
+    const transform = [...pan.transform];
+    transform[4] += (event.clientX - pan.startX) * pan.scaleX;
+    transform[5] += (event.clientY - pan.startY) * pan.scaleY;
+    canvas.setViewportTransform(transform);
+    event.preventDefault?.();
+    requestCanvasRender(canvas);
+  }
+
+  function stopPan(event) {
+    const canvas = fabricRef.current;
+    const pan = isPanningRef.current;
+    if (!canvas || !pan) return;
+    canvas.upperCanvasEl.releasePointerCapture?.(pan.pointerId);
+    isPanningRef.current = null;
+    if (toolRef.current === "pan") {
+      canvas.defaultCursor = "grab";
+      canvas.hoverCursor = "grab";
+    }
+    event?.preventDefault?.();
   }
 
   function addObject(object) {
@@ -301,6 +366,8 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     if (canvas.findTarget(event, false)) return;
 
     event.preventDefault?.();
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
     const point = getCanvasPoint(canvas, event);
     if (activeTool === "text") {
       const rect = canvas.upperCanvasEl.getBoundingClientRect();
@@ -310,14 +377,10 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
         top: ((event.clientY - rect.top) / rect.height) * 100,
         value: "",
       });
-      event.stopPropagation?.();
-      event.stopImmediatePropagation?.();
       return;
     }
 
     addObject(createShape({ color: colorRef.current, fill: fillRef.current, point, strokeWidth: strokeWidthRef.current, tool: activeTool }));
-    event.stopPropagation?.();
-    event.stopImmediatePropagation?.();
   }
 
   function commitTextBubble() {
@@ -441,8 +504,9 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
       panGestureRef.current = { distance, midpoint, zoom: canvas.getZoom(), transform: [...canvas.viewportTransform] };
       return;
     }
-    const nextZoom = Math.min(3, Math.max(0.75, gesture.zoom * (distance / gesture.distance)));
+      const nextZoom = Math.min(3, Math.max(0.75, gesture.zoom * (distance / gesture.distance)));
     const rect = canvas.upperCanvasEl.getBoundingClientRect();
+    setZoom(nextZoom);
     canvas.zoomToPoint(
       {
         x: ((midpoint.x - rect.left) / rect.width) * canvas.width,
@@ -515,7 +579,11 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     selectTool("draw");
 
     const handlePointerDown = (event) => {
-      if (["rect", "circle", "arrow", "text"].includes(toolRef.current)) placeAnnotation(event);
+      if (startPan(event)) return;
+      if (["rect", "circle", "arrow", "text"].includes(toolRef.current)) {
+        placeAnnotation(event);
+        return;
+      }
       const target = canvas.findTarget(event, false);
       if (target?.data?.annotation) {
         clearTimeout(longPressRef.current);
@@ -525,18 +593,23 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
 
     const handlePointerUp = () => {
       clearTimeout(longPressRef.current);
+      stopPan();
       panGestureRef.current = null;
     };
+
+    const handlePointerMove = (event) => movePan(event);
 
     const handleWheel = (event) => {
       event.preventDefault();
       const zoom = canvas.getZoom();
       const nextZoom = Math.min(3, Math.max(0.75, zoom * (0.999 ** event.deltaY)));
       canvas.zoomToPoint(getCanvasPoint(canvas, event), nextZoom);
+      setZoom(nextZoom);
       requestCanvasRender(canvas);
     };
 
     canvas.upperCanvasEl?.addEventListener("pointerdown", handlePointerDown, true);
+    canvas.upperCanvasEl?.addEventListener("pointermove", handlePointerMove, true);
     canvas.upperCanvasEl?.addEventListener("pointerup", handlePointerUp, true);
     canvas.upperCanvasEl?.addEventListener("touchend", handlePointerUp, { passive: false });
     canvas.upperCanvasEl?.addEventListener("touchcancel", handlePointerUp, { passive: false });
@@ -573,8 +646,10 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     return () => {
       cancelled = true;
       clearTimeout(longPressRef.current);
+      stopPan();
       cancelAnimationFrame(rafRef.current);
       canvas.upperCanvasEl?.removeEventListener("pointerdown", handlePointerDown, true);
+      canvas.upperCanvasEl?.removeEventListener("pointermove", handlePointerMove, true);
       canvas.upperCanvasEl?.removeEventListener("pointerup", handlePointerUp, true);
       canvas.upperCanvasEl?.removeEventListener("touchend", handlePointerUp);
       canvas.upperCanvasEl?.removeEventListener("touchcancel", handlePointerUp);
@@ -665,6 +740,21 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
               </button>
             );
           })}
+        </div>
+        <div className="annotatorDesktopNav" aria-label="Desktop image navigation">
+          <button className={tool === "pan" ? "iconButton active" : "iconButton"} type="button" title="Hand tool" aria-label="Hand tool" onClick={() => selectTool("pan")}>
+            <Hand size={18} />
+          </button>
+          <button className="iconButton" type="button" title="Zoom out" aria-label="Zoom out" onClick={() => setCanvasZoom(zoom - 0.18)}>
+            <ZoomOut size={18} />
+          </button>
+          <span className="annotatorZoomValue">{Math.round(zoom * 100)}%</span>
+          <button className="iconButton" type="button" title="Zoom in" aria-label="Zoom in" onClick={() => setCanvasZoom(zoom + 0.18)}>
+            <ZoomIn size={18} />
+          </button>
+          <button className="iconButton" type="button" title="Reset zoom" aria-label="Reset zoom" onClick={resetCanvasZoom}>
+            <Maximize2 size={18} />
+          </button>
         </div>
         <div className="annotatorSwatches" aria-label="Annotation colors">
           {swatches.map((item) => (

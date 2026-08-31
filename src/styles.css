@@ -9509,11 +9509,13 @@ html {
 
   .attachmentModal .viewerControls {
     display: grid;
-    grid-template-columns: repeat(4, minmax(56px, 1fr));
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     align-items: center;
     justify-items: stretch;
     gap: 10px;
     width: 100%;
+    inline-size: 100%;
     max-width: none;
     justify-self: stretch;
     justify-content: stretch;
@@ -9521,9 +9523,12 @@ html {
 
   .attachmentModal .viewerControls button,
   .attachmentModal .viewerControls span {
+    display: grid;
+    place-self: stretch;
     width: 100%;
     min-width: 0;
     height: 52px;
+    place-items: center;
     border-radius: 16px;
   }
 
@@ -9615,7 +9620,7 @@ html {
   z-index: 20;
   bottom: max(12px, env(safe-area-inset-bottom));
   display: grid;
-  grid-template-columns: auto auto auto;
+  grid-template-columns: auto auto auto auto;
   align-items: center;
   justify-content: center;
   gap: 10px;
@@ -9636,6 +9641,7 @@ html {
 }
 
 .annotatorFloatingToolbar .annotatorToolGroup,
+.annotatorDesktopNav,
 .annotatorHistoryActions,
 .annotatorSwatches,
 .miniSwatches {
@@ -9645,6 +9651,7 @@ html {
 }
 
 .annotatorFloatingToolbar .annotatorToolGroup,
+.annotatorDesktopNav,
 .annotatorHistoryActions {
   padding: 4px;
   border-radius: 999px;
@@ -9691,6 +9698,26 @@ html {
   opacity: 0.34;
   transform: none;
   cursor: default;
+}
+
+.annotatorDesktopNav {
+  color: #111827;
+}
+
+.annotatorDesktopNav .iconButton.active {
+  background:
+    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, 0.82), transparent 42%),
+    linear-gradient(135deg, #111827, #2563eb);
+}
+
+.annotatorZoomValue {
+  display: grid;
+  min-width: 54px;
+  height: 42px;
+  place-items: center;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 950;
 }
 
 .annotatorSwatches,
@@ -9854,6 +9881,7 @@ html {
   }
 
   .annotatorFloatingToolbar .annotatorToolGroup,
+  .annotatorDesktopNav,
   .annotatorHistoryActions,
   .annotatorSwatches {
     justify-content: center;
@@ -9932,6 +9960,10 @@ html {
     min-height: 44px;
   }
 
+  .annotatorDesktopNav {
+    display: none;
+  }
+
   .annotatorSwatches button,
   .miniSwatches button {
     width: 24px;
@@ -9953,6 +9985,26 @@ html {
     overflow-x: auto;
     border-radius: 24px;
     transform: translateX(-50%);
+  }
+}
+
+/* Final mobile viewer button distribution guard. */
+@media (max-width: 860px) {
+  .attachmentModal .photoViewer > .viewerTopBar > .viewerControls {
+    grid-column: 1 / -1;
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    width: 100% !important;
+    inline-size: 100% !important;
+    justify-self: stretch !important;
+    place-items: stretch !important;
+  }
+
+  .attachmentModal .photoViewer > .viewerTopBar > .viewerControls > button,
+  .attachmentModal .photoViewer > .viewerTopBar > .viewerControls > span {
+    width: 100% !important;
+    max-width: none !important;
+    justify-self: stretch !important;
   }
 }
 
