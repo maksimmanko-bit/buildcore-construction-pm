@@ -3,6 +3,7 @@ import { FileSpreadsheet, FileText, Image, Upload, X } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
 import { extractSearchText } from "../lib/fileText.js";
 import { createAttachmentUrls, uploadVisitAttachment } from "../lib/storage.js";
+import { VoiceTextArea } from "./VoiceDictation.jsx";
 
 function isPhoto(file) {
   return file?.type?.startsWith("image/");
@@ -63,7 +64,7 @@ function AttachmentThumbnail({ attachment, onOpen }) {
   );
 }
 
-export default function DocumentUploader({ changeOrderId, companyId, projectId, siteVisitId, visitId, profileId, attachments = [], onUploaded, onOpen, showPreview = true }) {
+export default function DocumentUploader({ changeOrderId, companyId, dictation, dictationBusy = false, projectId, siteVisitId, visitId, profileId, attachments = [], onUploaded, onOpen, showPreview = true }) {
   const documentInputRef = useRef(null);
   const photoInputRef = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -123,6 +124,10 @@ export default function DocumentUploader({ changeOrderId, companyId, projectId, 
   }
 
   function savePhotoBatch() {
+    if (dictationBusy) {
+      onUploaded?.("Finish dictation before uploading photos.");
+      return;
+    }
     const entries = photoBatch.map((item) => ({
       caption: item.caption.trim(),
       file: item.file,
@@ -224,11 +229,11 @@ export default function DocumentUploader({ changeOrderId, companyId, projectId, 
         />
         <input ref={photoInputRef} accept="image/jpeg,image/png,image/webp" multiple type="file" onChange={(event) => requestPhotoCaptions(event.target.files)} />
 
-        <button type="button" onClick={() => photoInputRef.current?.click()} disabled={busy}>
+        <button type="button" onClick={() => photoInputRef.current?.click()} disabled={busy || dictationBusy}>
           <Image size={18} />
           Photo
         </button>
-        <button type="button" onClick={() => documentInputRef.current?.click()} disabled={busy}>
+        <button type="button" onClick={() => documentInputRef.current?.click()} disabled={busy || dictationBusy}>
           <Upload size={18} />
           {busy ? "Saving..." : "PDF / Excel"}
         </button>
@@ -277,9 +282,10 @@ export default function DocumentUploader({ changeOrderId, companyId, projectId, 
                 <label className="photoBatchCard" key={item.id}>
                   <img src={item.previewUrl} alt="" />
                   <span title={item.file.name}>{item.file.name}</span>
-                  <textarea
+                  <VoiceTextArea
+                    dictation={dictation}
                     value={item.caption}
-                    onChange={(event) => updateBatchCaption(item.id, event.target.value)}
+                    onChange={(value) => updateBatchCaption(item.id, value)}
                     placeholder="Add photo note..."
                     rows={3}
                   />
@@ -290,7 +296,7 @@ export default function DocumentUploader({ changeOrderId, companyId, projectId, 
               <button className="outlineButton" type="button" onClick={clearPhotoBatch}>
                 Cancel
               </button>
-              <button className="addButton" type="button" onClick={savePhotoBatch} disabled={busy}>
+              <button className="addButton" type="button" onClick={savePhotoBatch} disabled={busy || dictationBusy}>
                 Upload photos
               </button>
             </div>

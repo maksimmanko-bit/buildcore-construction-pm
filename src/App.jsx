@@ -54,6 +54,7 @@ import { createAttachmentUrls, createProfileAvatarUrl, deleteVisitFile, replaceV
 import { localGlobalSearch } from "./lib/search.js";
 import { getGoogleMapsUrl, getWeatherForAddress } from "./lib/weather.js";
 import { readCachedWorkspace, writeCachedWorkspace } from "./lib/localCache.js";
+import { VoiceTextArea, VoiceTextInput } from "./components/VoiceDictation.jsx";
 
 const PhotoAnnotator = lazy(() => import("./components/PhotoAnnotator.jsx"));
 const DocumentUploader = lazy(() => import("./components/DocumentUploader.jsx"));
@@ -1061,6 +1062,7 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [confirmation, setConfirmation] = useState(null);
   const [softPulse, setSoftPulse] = useState(false);
+  const [dictationBusyCount, setDictationBusyCount] = useState(0);
   const [authMode, setAuthMode] = useState("signin");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -1118,6 +1120,22 @@ export default function App() {
     .filter((item) => activeFeatureFlags.siteInspections || item.id !== "siteVisits")
     .filter((item) => activeFeatureFlags.changeOrders || item.id !== "changeOrders");
   const currentUserName = profile?.full_name || session?.user?.email || "James Carter";
+  const dictationBusy = dictationBusyCount > 0;
+  const handleDictationBusyChange = useCallback((isBusy) => {
+    setDictationBusyCount((count) => Math.max(0, count + (isBusy ? 1 : -1)));
+  }, []);
+  const dictation = useMemo(() => ({
+    disabled: !isLive,
+    onBusyChange: handleDictationBusyChange,
+    onNotice: setNotice,
+  }), [handleDictationBusyChange, isLive]);
+
+  function preventSaveDuringDictation(event) {
+    if (!dictationBusy) return false;
+    event?.preventDefault?.();
+    setNotice("Finish dictation before saving.");
+    return true;
+  }
 
   const refreshData = useCallback(async () => {
     if (!supabase || !session) return;
@@ -2030,6 +2048,7 @@ export default function App() {
 
   async function saveProject(event) {
     event.preventDefault();
+    if (preventSaveDuringDictation(event)) return;
     if (!supabase || !profile) return;
 
     setLoading(true);
@@ -2153,6 +2172,7 @@ export default function App() {
 
   async function saveEquipment(event) {
     event.preventDefault();
+    if (preventSaveDuringDictation(event)) return;
     if (!supabase || !profile) return;
 
     setLoading(true);
@@ -2181,6 +2201,7 @@ export default function App() {
 
   async function saveVisit(event) {
     event.preventDefault();
+    if (preventSaveDuringDictation(event)) return;
     if (!supabase || !profile) return;
 
     const requestedWorkDays = editingVisitId ? 1 : parseWorkDayCount(visitForm.duration_days);
@@ -2320,6 +2341,7 @@ export default function App() {
 
   async function saveSiteVisit(event) {
     event.preventDefault();
+    if (preventSaveDuringDictation(event)) return;
     if (!supabase || !profile || !canCreateFieldReports) return;
     if (!activeFeatureFlags.siteInspections) {
       setNotice("Site Inspection is disabled in Developer mode.");
@@ -2391,6 +2413,7 @@ export default function App() {
 
   async function saveChangeOrder(event) {
     event.preventDefault();
+    if (preventSaveDuringDictation(event)) return;
     if (!supabase || !profile || !canCreateFieldReports) return;
     if (!activeFeatureFlags.changeOrders) {
       setNotice("Change Order is disabled in Developer mode.");
@@ -3172,6 +3195,7 @@ export default function App() {
 
   async function saveVisitNote(event) {
     event.preventDefault();
+    if (preventSaveDuringDictation(event)) return;
     const activeVisit = (rowsSource.visits ?? []).find((visit) => visit.id === visitNoteForm.visit_id) ?? workflowVisit ?? currentVisit;
     const activeProject = activeVisit ? rowsSource.projects.find((project) => project.id === activeVisit.project_id) ?? workflowProject ?? selectedProject : workflowProject ?? selectedProject;
     if (!supabase || !profile || !activeVisit || !activeProject) {
@@ -3232,6 +3256,7 @@ export default function App() {
 
   async function saveSafetyForm(event) {
     event.preventDefault();
+    if (preventSaveDuringDictation(event)) return;
     const activeVisit = workflowVisit ?? currentVisit;
     const activeProject = workflowProject ?? selectedProject;
     if (!supabase || !profile || !activeVisit || !activeProject) {
@@ -3375,6 +3400,7 @@ export default function App() {
 
   async function saveBeforePhotos(event) {
     event.preventDefault();
+    if (preventSaveDuringDictation(event)) return;
     const activeVisit = (rowsSource.visits ?? []).find((visit) => visit.id === photoStep.visitId) ?? workflowVisit ?? currentVisit;
     const activeProject = activeVisit ? rowsSource.projects.find((project) => project.id === activeVisit.project_id) ?? workflowProject ?? selectedProject : workflowProject ?? selectedProject;
     if (!supabase || !profile || !activeVisit || !activeProject) {
@@ -3424,6 +3450,7 @@ export default function App() {
 
   async function saveCompletion(event) {
     event.preventDefault();
+    if (preventSaveDuringDictation(event)) return;
     const activeVisit = workflowVisit ?? currentVisit;
     const activeProject = workflowProject ?? selectedProject;
     if (!supabase || !profile || !activeVisit || !activeProject) {
@@ -5133,6 +5160,8 @@ export default function App() {
               <DocumentUploaderShell
                 attachments={projectAttachments}
                 companyId={rowsSource.companyId}
+                dictation={dictation}
+                dictationBusy={dictationBusy}
                 profileId={profile?.id}
                 projectId={selectedProject.id}
                 visitId={null}
@@ -5210,6 +5239,8 @@ export default function App() {
             canManage={canManage}
             companyId={rowsSource.companyId}
             currentVisit={currentVisit}
+            dictation={dictation}
+            dictationBusy={dictationBusy}
             featureFlags={activeFeatureFlags}
             files={projectAttachments}
             getProfileName={getProfileName}
@@ -5250,6 +5281,8 @@ export default function App() {
           <FieldReportDetailOverlay
             canManage={canCreateFieldReports}
             companyId={rowsSource.companyId}
+            dictation={dictation}
+            dictationBusy={dictationBusy}
             files={selectedSiteVisitFiles}
             getProfileName={getProfileName}
             kind="siteVisit"
@@ -5276,6 +5309,8 @@ export default function App() {
           <FieldReportDetailOverlay
             canManage={canCreateFieldReports}
             companyId={rowsSource.companyId}
+            dictation={dictation}
+            dictationBusy={dictationBusy}
             files={selectedChangeOrderFiles}
             getProfileName={getProfileName}
             kind="changeOrder"
@@ -5302,6 +5337,8 @@ export default function App() {
           <VisitDetailOverlay
             canDeleteTickets={canDeleteTickets}
             companyId={rowsSource.companyId}
+            dictation={dictation}
+            dictationBusy={dictationBusy}
             equipment={currentVisitEquipment}
             featureFlags={activeFeatureFlags}
             files={currentVisitFiles}
@@ -5352,7 +5389,7 @@ export default function App() {
                 <input value={companyForm.phone} onChange={(event) => setCompanyForm({ ...companyForm, phone: event.target.value })} />
               </FormField>
               <div className="formActions">
-                <button className="addButton" type="submit" disabled={loading}>
+                <button className="addButton" type="submit" disabled={loading || dictationBusy}>
                   <Save size={18} />
                   Save company
                 </button>
@@ -5393,10 +5430,10 @@ export default function App() {
                 </select>
               </FormField>
               <FormField label="Work description">
-                <textarea value={projectForm.description} onChange={(event) => setProjectForm({ ...projectForm, description: event.target.value })} />
+                <VoiceTextArea dictation={dictation} value={projectForm.description} onChange={(value) => setProjectForm({ ...projectForm, description: value })} />
               </FormField>
               <div className="formActions wide">
-                <button className="addButton" type="submit" disabled={loading}>
+                <button className="addButton" type="submit" disabled={loading || dictationBusy}>
                   <Save size={18} />
                   {editingProjectId ? "Save changes" : "Save project"}
                 </button>
@@ -5438,9 +5475,9 @@ export default function App() {
                 </FormField>
                 <FormField label="Unit number">
                   <input value={equipmentForm.unit_number} onChange={(event) => setEquipmentForm({ ...equipmentForm, unit_number: event.target.value })} />
-                </FormField>
+              </FormField>
               <FormField label="Notes">
-                <textarea value={equipmentForm.notes} onChange={(event) => setEquipmentForm({ ...equipmentForm, notes: event.target.value })} />
+                <VoiceTextArea dictation={dictation} value={equipmentForm.notes} onChange={(value) => setEquipmentForm({ ...equipmentForm, notes: value })} />
               </FormField>
               <div className="formActions">
                 <button className="addButton" type="submit" disabled={loading}>
@@ -5511,7 +5548,7 @@ export default function App() {
                 {visitFormDates.map((date, index) => (
                   <FormField label={visitFormDates.length > 1 ? `Work Scope Day ${index + 1}` : "Work Scope"} key={`${date}-${index}`}>
                     <span className="scopeDatePill">{formatDateLabel(date)}</span>
-                    <textarea required value={visitWorkScopes[index] ?? ""} placeholder={`Describe work for ${formatShortDate(date)}`} onChange={(event) => updateVisitWorkScope(index, event.target.value)} />
+                    <VoiceTextArea dictation={dictation} required value={visitWorkScopes[index] ?? ""} placeholder={`Describe work for ${formatShortDate(date)}`} onChange={(value) => updateVisitWorkScope(index, value)} />
                   </FormField>
                 ))}
               </div>
@@ -5530,7 +5567,7 @@ export default function App() {
               <GroupedPickerList groups={groupedVisitPickerPeople} selected={visitForm.people_ids} onToggle={(id) => toggleVisitArray("people_ids", id)} title="People by Trade" />
               <PickerList title="Equipment" items={visitPickerEquipment} selected={visitForm.equipment_ids} labelKey="name" onToggle={(id) => toggleVisitArray("equipment_ids", id)} />
               <div className="formActions wide">
-                <button className="addButton" type="submit" disabled={loading || !visitForm.project_id}>
+                <button className="addButton" type="submit" disabled={loading || dictationBusy || !visitForm.project_id}>
                   <Save size={18} />
                   {editingVisitId ? "Save changes" : "Save visit"}
                 </button>
@@ -5541,19 +5578,21 @@ export default function App() {
 
         {activeFeatureFlags.siteInspections && modalType === "siteVisit" && (
           <AppModal title={editingSiteVisitId ? "Edit Site Inspection" : "Create Site Inspection"} onClose={() => closeModalWithConfirmation(fieldReportFormHasDraft(siteVisitForm))} wide>
-            <SiteVisitForm form={siteVisitForm} loading={loading} onChange={setSiteVisitForm} onSubmit={saveSiteVisit} projects={rowsSource.projects} />
+            <SiteVisitForm dictation={dictation} dictationBusy={dictationBusy} form={siteVisitForm} loading={loading} onChange={setSiteVisitForm} onSubmit={saveSiteVisit} projects={rowsSource.projects} />
           </AppModal>
         )}
 
         {activeFeatureFlags.changeOrders && modalType === "changeOrder" && (
           <AppModal title="Create Change Order" onClose={() => closeModalWithConfirmation(fieldReportFormHasDraft(changeOrderForm))} wide>
-            <ChangeOrderForm changeOrders={rowsSource.changeOrders ?? []} form={changeOrderForm} loading={loading} onChange={setChangeOrderForm} onSubmit={saveChangeOrder} projects={rowsSource.projects} />
+            <ChangeOrderForm changeOrders={rowsSource.changeOrders ?? []} dictation={dictation} dictationBusy={dictationBusy} form={changeOrderForm} loading={loading} onChange={setChangeOrderForm} onSubmit={saveChangeOrder} projects={rowsSource.projects} />
           </AppModal>
         )}
 
         {modalType === "safety" && workflowVisit && workflowProject && (
           <AppModal confirmOnClose={safetyFormHasDraft} title="Digital Safety Form" onClose={() => closeModalWithConfirmation(safetyFormHasDraft)} wide>
             <SafetyFormModal
+              dictation={dictation}
+              dictationBusy={dictationBusy}
               form={safetyForm}
               hazards={hazardOptions}
               loading={loading}
@@ -5570,6 +5609,8 @@ export default function App() {
           <AppModal confirmOnClose={beforePhotosHaveDraft} title="Before Work Photos" onClose={() => closeModalWithConfirmation(beforePhotosHaveDraft)}>
             <PhotoStepModal
               captions={photoStep.captions}
+              dictation={dictation}
+              dictationBusy={dictationBusy}
               files={photoStep.files}
               label="Upload at least one photo before work starts."
               loading={loading}
@@ -5582,13 +5623,13 @@ export default function App() {
 
         {modalType === "completeVisit" && workflowVisit && workflowProject && (
           <AppModal confirmOnClose={completionHasDraft} title="Complete Work" onClose={() => closeModalWithConfirmation(completionHasDraft)}>
-            <CompleteVisitModal form={completionForm} loading={loading} onChange={setCompletionForm} onSubmit={saveCompletion} requirePhotos={activeFeatureFlags.beforeAfterPhotos} />
+            <CompleteVisitModal dictation={dictation} dictationBusy={dictationBusy} form={completionForm} loading={loading} onChange={setCompletionForm} onSubmit={saveCompletion} requirePhotos={activeFeatureFlags.beforeAfterPhotos} />
           </AppModal>
         )}
 
         {modalType === "visitNote" && workflowVisit && workflowProject && (
           <AppModal title={visitNoteForm.id ? "Edit Ticket Note" : "Add Ticket Note"} onClose={() => closeModalWithConfirmation(Boolean(visitNoteForm.note_text.trim()) || visitNoteForm.files.length > 0)}>
-            <VisitNoteModal form={visitNoteForm} loading={loading} onChange={setVisitNoteForm} onSubmit={saveVisitNote} />
+            <VisitNoteModal dictation={dictation} dictationBusy={dictationBusy} form={visitNoteForm} loading={loading} onChange={setVisitNoteForm} onSubmit={saveVisitNote} />
           </AppModal>
         )}
 
@@ -5666,6 +5707,8 @@ export default function App() {
                   attachment={selectedAttachment}
                   canDelete={!selectedAttachment.localPreview && (canManage || selectedAttachment.uploaded_by === profile?.id)}
                   isAnnotating={isAnnotatingPhoto}
+                  dictation={dictation}
+                  dictationBusy={dictationBusy}
                   items={viewerItems}
                   loading={loading}
                   onAnnotate={() => setIsAnnotatingPhoto(true)}
@@ -5784,7 +5827,7 @@ function DetailOverlayShell({ children, onClose, title }) {
   );
 }
 
-function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, changeOrders = [], companyId, currentVisit, featureFlags = defaultFeatureFlags, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onEmailChangeOrder, onExportChangeOrder, onExportPdf, onExportSiteVisit, onExportTicketsExcel, onOpenAttachment, onOpenChangeOrder, onOpenSiteVisit, onOpenVisit, onRemoveActivity, onRemoveChangeOrder, onRemoveSiteVisit, onRemoveVisit, onUpdateChangeOrderStatus, onUpdateSiteVisitStatus, onUploaded, people, profileId, project, siteVisits = [], visits }) {
+function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, changeOrders = [], companyId, currentVisit, dictation, dictationBusy = false, featureFlags = defaultFeatureFlags, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onEmailChangeOrder, onExportChangeOrder, onExportPdf, onExportSiteVisit, onExportTicketsExcel, onOpenAttachment, onOpenChangeOrder, onOpenSiteVisit, onOpenVisit, onRemoveActivity, onRemoveChangeOrder, onRemoveSiteVisit, onRemoveVisit, onUpdateChangeOrderStatus, onUpdateSiteVisitStatus, onUploaded, people, profileId, project, siteVisits = [], visits }) {
   const addresses = getProjectAddressOptions(project);
   const mainAddress = primaryProjectAddress(project);
   return (
@@ -5902,6 +5945,8 @@ function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, ch
             ? {
                 attachments: files,
                 companyId,
+                dictation,
+                dictationBusy,
                 profileId,
                 projectId: project.id,
                 visitId: null,
@@ -6019,7 +6064,7 @@ function ActivityFeed({ activities = [], canDeleteItems = false, getProfileName,
   );
 }
 
-function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onUploaded, people, profileId, profiles, project, visit }) {
+function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationBusy = false, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onUploaded, people, profileId, profiles, project, visit }) {
   const ticketAddress = getVisitAddress(visit, project);
   return (
     <DetailOverlayShell title={`${project.name} Ticket`} onClose={onClose}>
@@ -6104,6 +6149,8 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, equipment, featureFla
         uploader={{
           attachments: files,
           companyId,
+          dictation,
+          dictationBusy,
           profileId,
           projectId: project.id,
           visitId: visit.id,
@@ -6165,7 +6212,7 @@ function VisitNotesSection({ files = [], getProfileName, notes = [], onEdit, onO
   );
 }
 
-function FieldReportDetailOverlay({ canManage, companyId, files = [], getProfileName, kind, onClose, onDelete, onEdit, onEmail, onExport, onOpenAttachment, onStatus, onUploaded, profileId, project, record, profiles = [] }) {
+function FieldReportDetailOverlay({ canManage, companyId, dictation, dictationBusy = false, files = [], getProfileName, kind, onClose, onDelete, onEdit, onEmail, onExport, onOpenAttachment, onStatus, onUploaded, profileId, project, record, profiles = [] }) {
   const isSiteVisit = kind === "siteVisit";
   const title = getFieldReportLabel(kind);
   const date = isSiteVisit ? record.visit_date : record.order_date;
@@ -6250,6 +6297,8 @@ function FieldReportDetailOverlay({ canManage, companyId, files = [], getProfile
             attachments={files}
             changeOrderId={isSiteVisit ? null : record.id}
             companyId={companyId}
+            dictation={dictation}
+            dictationBusy={dictationBusy}
             profileId={profileId}
             projectId={project.id}
             siteVisitId={isSiteVisit ? record.id : null}
@@ -6484,7 +6533,7 @@ function FieldReportFiles({ files = [], onOpen, profiles = [] }) {
   );
 }
 
-function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, team, visit }) {
+function SafetyFormModal({ dictation, dictationBusy = false, form, hazards, loading, onChange, onSubmit, project, team, visit }) {
   const presentIds = form.presentIds?.length ? form.presentIds : team.map((person) => person.id);
   const presentTeam = team.filter((person) => presentIds.includes(person.id));
   const absentTeam = team.filter((person) => !presentIds.includes(person.id));
@@ -6550,7 +6599,7 @@ function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, 
       </fieldset>
 
       <FormField label="Safety notes">
-        <textarea value={form.notes} onChange={(event) => onChange({ ...form, notes: event.target.value })} />
+        <VoiceTextArea dictation={dictation} value={form.notes} onChange={(value) => onChange({ ...form, notes: value })} />
       </FormField>
 
       <div className="signatureStack">
@@ -6577,7 +6626,7 @@ function SafetyFormModal({ form, hazards, loading, onChange, onSubmit, project, 
       </div>
 
       <div className="formActions wide">
-        <button className="addButton" type="submit" disabled={loading || !canSubmit}>
+        <button className="addButton" type="submit" disabled={loading || dictationBusy || !canSubmit}>
           <Save size={18} />
           Save Safety PDF
         </button>
@@ -6660,7 +6709,7 @@ function SignaturePad({ label, onChange, value }) {
   );
 }
 
-function PhotoStepModal({ captions = {}, files = [], label, loading, onCaption, onFiles, onSubmit }) {
+function PhotoStepModal({ captions = {}, dictation, dictationBusy = false, files = [], label, loading, onCaption, onFiles, onSubmit }) {
   const selectedFiles = Array.isArray(files) ? files : typeof files?.[Symbol.iterator] === "function" ? [...files] : [];
 
   return (
@@ -6679,12 +6728,12 @@ function PhotoStepModal({ captions = {}, files = [], label, loading, onCaption, 
         {selectedFiles.map((file) => {
           const key = fileInputKey(file);
           return (
-            <SelectedPhotoCaptionCard caption={captions[key] || ""} file={file} key={key} onCaption={(value) => onCaption?.(key, value)} />
+            <SelectedPhotoCaptionCard caption={captions[key] || ""} dictation={dictation} file={file} key={key} onCaption={(value) => onCaption?.(key, value)} />
           );
         })}
       </div>
       <div className="formActions wide">
-        <button className="addButton" type="submit" disabled={loading || selectedFiles.length === 0}>
+        <button className="addButton" type="submit" disabled={loading || dictationBusy || selectedFiles.length === 0}>
           <Upload size={18} />
           Save Photos
         </button>
@@ -6693,13 +6742,13 @@ function PhotoStepModal({ captions = {}, files = [], label, loading, onCaption, 
   );
 }
 
-function CompleteVisitModal({ form, loading, onChange, onSubmit, requirePhotos = true }) {
+function CompleteVisitModal({ dictation, dictationBusy = false, form, loading, onChange, onSubmit, requirePhotos = true }) {
   const selectedFiles = Array.isArray(form.files) ? form.files : [];
 
   return (
     <form className="workflowForm" onSubmit={onSubmit}>
       <FormField label="Completion comments">
-        <textarea placeholder="Describe completed work, issues, materials, office notes..." value={form.notes} onChange={(event) => onChange({ ...form, notes: event.target.value })} />
+        <VoiceTextArea dictation={dictation} placeholder="Describe completed work, issues, materials, office notes..." value={form.notes} onChange={(value) => onChange({ ...form, notes: value })} />
       </FormField>
       {requirePhotos && (
         <>
@@ -6719,6 +6768,7 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit, requirePhotos =
               return (
                 <SelectedPhotoCaptionCard
                   caption={form.captions?.[key] || ""}
+                  dictation={dictation}
                   file={file}
                   key={key}
                   onCaption={(value) => onChange({ ...form, captions: { ...form.captions, [key]: value } })}
@@ -6729,7 +6779,7 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit, requirePhotos =
         </>
       )}
       <div className="formActions wide">
-        <button className="addButton" type="submit" disabled={loading || (requirePhotos && form.files.length === 0)}>
+        <button className="addButton" type="submit" disabled={loading || dictationBusy || (requirePhotos && form.files.length === 0)}>
           <CheckCircle2 size={18} />
           Finish Work
         </button>
@@ -6738,13 +6788,13 @@ function CompleteVisitModal({ form, loading, onChange, onSubmit, requirePhotos =
   );
 }
 
-function VisitNoteModal({ form, loading, onChange, onSubmit }) {
+function VisitNoteModal({ dictation, dictationBusy = false, form, loading, onChange, onSubmit }) {
   const selectedFiles = Array.isArray(form.files) ? form.files : [];
 
   return (
     <form className="workflowForm" onSubmit={onSubmit}>
       <FormField label="Note">
-        <textarea placeholder="Add a quick note about the active ticket..." value={form.note_text} onChange={(event) => onChange({ ...form, note_text: event.target.value })} />
+        <VoiceTextArea dictation={dictation} placeholder="Add a quick note about the active ticket..." value={form.note_text} onChange={(value) => onChange({ ...form, note_text: value })} />
       </FormField>
       <label className="fileDropControl">
         <Upload size={22} />
@@ -6758,6 +6808,7 @@ function VisitNoteModal({ form, loading, onChange, onSubmit }) {
           return (
             <SelectedPhotoCaptionCard
               caption={form.captions?.[key] || ""}
+              dictation={dictation}
               file={file}
               key={key}
               onCaption={(value) => onChange({ ...form, captions: { ...(form.captions ?? {}), [key]: value } })}
@@ -6766,7 +6817,7 @@ function VisitNoteModal({ form, loading, onChange, onSubmit }) {
         })}
       </div>
       <div className="formActions wide">
-        <button className="addButton" type="submit" disabled={loading || (!form.note_text.trim() && selectedFiles.length === 0)}>
+        <button className="addButton" type="submit" disabled={loading || dictationBusy || (!form.note_text.trim() && selectedFiles.length === 0)}>
           <Save size={18} />
           Save Note
         </button>
@@ -6775,7 +6826,7 @@ function VisitNoteModal({ form, loading, onChange, onSubmit }) {
   );
 }
 
-function SiteVisitForm({ form, loading, onChange, onSubmit, projects = [] }) {
+function SiteVisitForm({ dictation, dictationBusy = false, form, loading, onChange, onSubmit, projects = [] }) {
   return (
     <form className="stackForm twoColumns fieldReportForm" onSubmit={onSubmit}>
       <FormField label="Project">
@@ -6818,11 +6869,11 @@ function SiteVisitForm({ form, loading, onChange, onSubmit, projects = [] }) {
         </>
       )}
       <FormField label="Inspection description">
-        <textarea value={form.description} onChange={(event) => onChange({ ...form, description: event.target.value })} />
+        <VoiceTextArea dictation={dictation} value={form.description} onChange={(value) => onChange({ ...form, description: value })} />
       </FormField>
-      <FieldPhotoFoldersEditor form={form} onChange={onChange} />
+      <FieldPhotoFoldersEditor dictation={dictation} form={form} onChange={onChange} />
       <div className="formActions wide">
-        <button className="addButton" type="submit" disabled={loading || !form.project_id}>
+        <button className="addButton" type="submit" disabled={loading || dictationBusy || !form.project_id}>
           <Save size={18} />
           Save Site Inspection
         </button>
@@ -6831,7 +6882,7 @@ function SiteVisitForm({ form, loading, onChange, onSubmit, projects = [] }) {
   );
 }
 
-function ChangeOrderForm({ changeOrders = [], form, loading, onChange, onSubmit, projects = [] }) {
+function ChangeOrderForm({ changeOrders = [], dictation, dictationBusy = false, form, loading, onChange, onSubmit, projects = [] }) {
   const selectedProject = projects.find((project) => project.id === form.project_id);
   const previewNumber = form.order_number || nextChangeOrderNumber(selectedProject, changeOrders);
   const nowLabel = `${formatDateLabel(getWinnipegDateValue())} / ${formatTimeLabel(getWinnipegTimeValue())}`;
@@ -6854,9 +6905,9 @@ function ChangeOrderForm({ changeOrders = [], form, loading, onChange, onSubmit,
         <input readOnly value={nowLabel} />
       </FormField>
       <FormField label="Change description">
-        <textarea value={form.description} onChange={(event) => onChange({ ...form, description: event.target.value })} />
+        <VoiceTextArea dictation={dictation} value={form.description} onChange={(value) => onChange({ ...form, description: value })} />
       </FormField>
-      <FieldPhotoFoldersEditor form={form} onChange={onChange} />
+      <FieldPhotoFoldersEditor dictation={dictation} form={form} onChange={onChange} />
       <FormField label="Approved by">
         <input required value={form.approved_by} onChange={(event) => onChange({ ...form, approved_by: event.target.value })} />
       </FormField>
@@ -6864,7 +6915,7 @@ function ChangeOrderForm({ changeOrders = [], form, loading, onChange, onSubmit,
         <SignaturePad label="Approval digital signature" value={form.approval_signature} onChange={(dataUrl) => onChange({ ...form, approval_signature: dataUrl })} />
       </div>
       <div className="formActions wide">
-        <button className="addButton" type="submit" disabled={loading || !form.project_id || !form.approval_signature}>
+        <button className="addButton" type="submit" disabled={loading || dictationBusy || !form.project_id || !form.approval_signature}>
           <Save size={18} />
           Save Change Order
         </button>
@@ -6873,7 +6924,7 @@ function ChangeOrderForm({ changeOrders = [], form, loading, onChange, onSubmit,
   );
 }
 
-function FieldPhotoFoldersEditor({ form, onChange }) {
+function FieldPhotoFoldersEditor({ dictation, form, onChange }) {
   const folders = form.folders ?? [];
   const selectedFiles = form.files ?? [];
 
@@ -6918,6 +6969,7 @@ function FieldPhotoFoldersEditor({ form, onChange }) {
             return (
               <SelectedPhotoCaptionCard
                 caption={form.captions?.[key] || ""}
+                dictation={dictation}
                 file={file}
                 key={key}
                 onCaption={(value) => onChange({ ...form, captions: { ...(form.captions ?? {}), [key]: value } })}
@@ -6941,7 +6993,7 @@ function FieldPhotoFoldersEditor({ form, onChange }) {
               <input placeholder="Optional" value={folder.name} onChange={(event) => updateFolder(folder.id, { name: event.target.value })} />
             </FormField>
             <FormField label="Folder description">
-              <input placeholder="Optional" value={folder.description} onChange={(event) => updateFolder(folder.id, { description: event.target.value })} />
+              <VoiceTextInput dictation={dictation} placeholder="Optional" value={folder.description} onChange={(value) => updateFolder(folder.id, { description: value })} />
             </FormField>
           </div>
           <label className="fileDropControl">
@@ -6961,6 +7013,7 @@ function FieldPhotoFoldersEditor({ form, onChange }) {
               return (
                 <SelectedPhotoCaptionCard
                   caption={folder.captions?.[key] || ""}
+                  dictation={dictation}
                   file={file}
                   key={key}
                   onCaption={(value) => updateFolder(folder.id, { captions: { ...(folder.captions ?? {}), [key]: value } })}
@@ -6974,7 +7027,7 @@ function FieldPhotoFoldersEditor({ form, onChange }) {
   );
 }
 
-function SelectedPhotoCaptionCard({ caption, file, onCaption }) {
+function SelectedPhotoCaptionCard({ caption, dictation, file, onCaption }) {
   const [previewUrl, setPreviewUrl] = useState("");
 
   useEffect(() => {
@@ -6988,7 +7041,7 @@ function SelectedPhotoCaptionCard({ caption, file, onCaption }) {
     <label className="selectedFileWithCaption photoFileWithCaption">
       {previewUrl && <img src={previewUrl} alt="" />}
       <span>{file.name}</span>
-      <input placeholder="Photo note..." value={caption} onChange={(event) => onCaption?.(event.target.value)} />
+      <VoiceTextInput dictation={dictation} placeholder="Photo note..." value={caption} onChange={onCaption} />
     </label>
   );
 }
@@ -8827,7 +8880,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
   );
 }
 
-function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading, onAnnotate, onCancelAnnotate, onDelete, onDownload, onSaveAnnotation, onSaveCaption, onSelect, onZoom, profiles = [], zoom }) {
+function PhotoViewer({ attachment, canDelete, dictation, dictationBusy = false, isAnnotating, items = [], loading, onAnnotate, onCancelAnnotate, onDelete, onDownload, onSaveAnnotation, onSaveCaption, onSelect, onZoom, profiles = [], zoom }) {
   const [captionDraft, setCaptionDraft] = useState(attachment.photo_caption || "");
   const [isEditingCaption, setIsEditingCaption] = useState(false);
   const uploader = profiles.find((person) => person.id === attachment.uploaded_by);
@@ -8870,7 +8923,7 @@ function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading,
           <small>{formatDateTimeLabel(attachment.created_at)}</small>
           {isEditingCaption ? (
             <div className="photoCaptionEditor">
-              <textarea value={captionDraft} onChange={(event) => setCaptionDraft(event.target.value)} placeholder="Add a clear note for this photo..." rows={3} />
+              <VoiceTextArea dictation={dictation} value={captionDraft} onChange={setCaptionDraft} placeholder="Add a clear note for this photo..." rows={3} />
               <span>
                 <button className="outlineButton" type="button" onClick={() => setIsEditingCaption(false)}>
                   Cancel
@@ -8878,7 +8931,7 @@ function PhotoViewer({ attachment, canDelete, isAnnotating, items = [], loading,
                 <button
                   className="addButton"
                   type="button"
-                  disabled={loading}
+                  disabled={loading || dictationBusy}
                   onClick={async () => {
                     await onSaveCaption?.(attachment, captionDraft);
                     setIsEditingCaption(false);
