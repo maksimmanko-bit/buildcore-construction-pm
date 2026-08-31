@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, Check, Circle, Copy, Hand, Maximize2, Minus, Pencil, Plus, Redo2, Square, Trash2, Type, Undo2, ZoomIn, ZoomOut } from "lucide-react";
-import { Canvas, Circle as FabricCircle, Group, IText, Line, PencilBrush, Rect, Triangle, util } from "fabric";
+import { Canvas, Circle as FabricCircle, FabricImage, Group, IText, Line, PencilBrush, Rect, Triangle, util } from "fabric";
 
 const tools = [
   { id: "draw", label: "Pen", icon: Pencil },
@@ -20,12 +20,23 @@ const swatches = [
 ];
 
 function getCanvasPoint(canvas, event) {
+  try {
+    const pointer = canvas.getPointer(event, false);
+    if (Number.isFinite(pointer?.x) && Number.isFinite(pointer?.y)) return pointer;
+  } catch {
+    // Fall back to manual pointer math for browser events Fabric cannot normalize.
+  }
   const rect = canvas.upperCanvasEl.getBoundingClientRect();
   const pointer = event.touches?.[0] || event.changedTouches?.[0] || event;
   return {
     x: ((pointer.clientX - rect.left) / rect.width) * canvas.width,
     y: ((pointer.clientY - rect.top) / rect.height) * canvas.height,
   };
+}
+
+function getEventClientPoint(event) {
+  const pointer = event.touches?.[0] || event.changedTouches?.[0] || event;
+  return { x: pointer.clientX || 0, y: pointer.clientY || 0 };
 }
 
 function imageToDataUrl(url) {
@@ -174,10 +185,12 @@ function getAnnotationObjectJson(canvas) {
 
 function fitCanvasSize(image) {
   const maxSide = 1600;
-  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = image.naturalWidth || image.width || 1;
+  const height = image.naturalHeight || image.height || 1;
+  const scale = Math.min(1, maxSide / Math.max(width, height));
   return {
-    width: Math.max(1, Math.round(image.naturalWidth * scale)),
-    height: Math.max(1, Math.round(image.naturalHeight * scale)),
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
   };
 }
 
@@ -239,9 +252,23 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     if (!canvas || !source) return;
     const image = await loadHtmlImage(source);
     const size = fitCanvasSize(image);
+    const imageWidth = image.naturalWidth || image.width || size.width;
+    const imageHeight = image.naturalHeight || image.height || size.height;
     setCanvasSize(size);
     canvas.setDimensions(size);
+    const fabricImage = new FabricImage(image, {
+      left: 0,
+      top: 0,
+      originX: "left",
+      originY: "top",
+      scaleX: size.width / imageWidth,
+      scaleY: size.height / imageHeight,
+      selectable: false,
+      evented: false,
+    });
+    canvas.set("backgroundImage", fabricImage);
     canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    canvas.backgroundVpt = true;
     canvas.calcOffset();
     requestCanvasRender(canvas);
   }
@@ -307,14 +334,14 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     if (!canvas || toolRef.current !== "pan") return false;
     const rect = canvas.upperCanvasEl.getBoundingClientRect();
     isPanningRef.current = {
-      pointerId: event.pointerId,
+      pointerId: event.pointerId ?? "mouse",
       startX: event.clientX,
       startY: event.clientY,
       scaleX: canvas.width / rect.width,
       scaleY: canvas.height / rect.height,
       transform: [...canvas.viewportTransform],
     };
-    canvas.upperCanvasEl.setPointerCapture?.(event.pointerId);
+    if (event.pointerId != null) canvas.upperCanvasEl.setPointerCapture?.(event.pointerId);
     canvas.defaultCursor = "grabbing";
     canvas.hoverCursor = "grabbing";
     event.preventDefault?.();
@@ -325,7 +352,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
   function movePan(event) {
     const canvas = fabricRef.current;
     const pan = isPanningRef.current;
-    if (!canvas || !pan || pan.pointerId !== event.pointerId) return;
+    if (!canvas || !pan || pan.pointerId !== (event.pointerId ?? "mouse")) return;
     const transform = [...pan.transform];
     transform[4] += (event.clientX - pan.startX) * pan.scaleX;
     transform[5] += (event.clientY - pan.startY) * pan.scaleY;
@@ -338,7 +365,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     const canvas = fabricRef.current;
     const pan = isPanningRef.current;
     if (!canvas || !pan) return;
-    canvas.upperCanvasEl.releasePointerCapture?.(pan.pointerId);
+    if (typeof pan.pointerId === "number") canvas.upperCanvasEl.releasePointerCapture?.(pan.pointerId);
     isPanningRef.current = null;
     if (toolRef.current === "pan") {
       canvas.defaultCursor = "grab";
@@ -362,8 +389,6 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     const canvas = fabricRef.current;
     const activeTool = toolRef.current;
     if (!canvas || !["rect", "circle", "arrow", "text"].includes(activeTool)) return;
-    if (event.target !== canvas.upperCanvasEl && event.currentTarget !== canvas.upperCanvasEl) return;
-    if (canvas.findTarget(event, false)) return;
 
     event.preventDefault?.();
     event.stopPropagation?.();
@@ -371,10 +396,11 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     const point = getCanvasPoint(canvas, event);
     if (activeTool === "text") {
       const rect = canvas.upperCanvasEl.getBoundingClientRect();
+      const clientPoint = getEventClientPoint(event);
       setTextComposer({
         canvasPoint: point,
-        left: ((event.clientX - rect.left) / rect.width) * 100,
-        top: ((event.clientY - rect.top) / rect.height) * 100,
+        left: ((clientPoint.x - rect.left) / rect.width) * 100,
+        top: ((clientPoint.y - rect.top) / rect.height) * 100,
         value: "",
       });
       return;
@@ -531,22 +557,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
       canvas.discardActiveObject();
       canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
       canvas.renderAll();
-      const output = document.createElement("canvas");
-      output.width = canvas.width;
-      output.height = canvas.height;
-      const context = output.getContext("2d");
-
-      if (baseImageSrc) {
-        const image = await loadHtmlImage(baseImageSrc);
-        context.drawImage(image, 0, 0, output.width, output.height);
-      } else {
-        context.fillStyle = "#090e18";
-        context.fillRect(0, 0, output.width, output.height);
-      }
-
-      const annotationCanvas = canvas.toCanvasElement(1);
-      context.drawImage(annotationCanvas, 0, 0);
-      const dataUrl = output.toDataURL("image/jpeg", 0.9);
+      const dataUrl = canvas.toDataURL({ format: "jpeg", quality: 0.9, multiplier: 1 });
       await onSave?.({ dataUrl, annotationJson: { objects: getAnnotationObjectJson(canvas), version: "ios-markup-v1" } });
       setTimeout(() => setSaveFlash(false), 700);
     } finally {
@@ -580,15 +591,6 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
 
     const handlePointerDown = (event) => {
       if (startPan(event)) return;
-      if (["rect", "circle", "arrow", "text"].includes(toolRef.current)) {
-        placeAnnotation(event);
-        return;
-      }
-      const target = canvas.findTarget(event, false);
-      if (target?.data?.annotation) {
-        clearTimeout(longPressRef.current);
-        longPressRef.current = setTimeout(() => updatePropertyPanel(canvas), 420);
-      }
     };
 
     const handlePointerUp = () => {
@@ -615,6 +617,21 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     canvas.upperCanvasEl?.addEventListener("touchcancel", handlePointerUp, { passive: false });
     canvas.upperCanvasEl?.addEventListener("touchmove", handleTouchGesture, { passive: false });
     canvas.upperCanvasEl?.addEventListener("wheel", handleWheel, { passive: false });
+    canvas.on("mouse:down", (event) => {
+      const activeTool = toolRef.current;
+      if (activeTool === "pan") {
+        startPan(event.e);
+        return;
+      }
+      if (["rect", "circle", "arrow", "text"].includes(activeTool)) {
+        if (!event.target || !event.target.data?.annotation) placeAnnotation(event.e);
+        return;
+      }
+      if (event.target?.data?.annotation) {
+        clearTimeout(longPressRef.current);
+        longPressRef.current = setTimeout(() => updatePropertyPanel(canvas), 420);
+      }
+    });
     canvas.on("path:created", (event) => {
       annotationControlDefaults(event.path);
       event.path.__annotationId = makeAnnotationId();
@@ -673,7 +690,6 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
   return (
     <section className={`annotator ${saveFlash ? "saved" : ""}`}>
       <div className="canvasShell" style={{ "--annotation-aspect": canvasSize.width / canvasSize.height, aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}>
-        <img className="annotationBaseImage" src={baseImageSrc || imageUrl} alt="" />
         <canvas ref={canvasElement} />
         {textComposer && (
           <form

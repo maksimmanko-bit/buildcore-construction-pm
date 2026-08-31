@@ -10071,3 +10071,56 @@ html {
   padding-inline: 6px;
   font-size: 9px;
 }
+
+/* Viewer and annotator hard guards: keep mobile controls full-width and annotation canvas aligned. */
+.viewerControls.viewerControlGrid {
+  min-width: 0;
+}
+
+.annotator .canvasShell {
+  display: grid !important;
+  place-items: stretch !important;
+}
+
+.annotator .canvasShell .canvas-container {
+  inset: 0;
+  margin: 0 !important;
+}
+
+.annotator .canvasShell canvas {
+  display: block !important;
+}
+
+@media (max-width: 860px) {
+  .attachmentModal .photoViewer > .viewerTopBar {
+    display: flex !important;
+    width: 100% !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+  }
+
+  .attachmentModal .photoViewer > .viewerTopBar > div:first-child {
+    width: 100% !important;
+  }
+
+  .attachmentModal .photoViewer > .viewerTopBar > .viewerControls.viewerControlGrid {
+    display: grid !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: none !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+    justify-content: stretch !important;
+    justify-items: stretch !important;
+    align-items: stretch !important;
+  }
+
+  .attachmentModal .photoViewer > .viewerTopBar > .viewerControls.viewerControlGrid > button,
+  .attachmentModal .photoViewer > .viewerTopBar > .viewerControls.viewerControlGrid > span {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    justify-self: stretch !important;
+  }
+}

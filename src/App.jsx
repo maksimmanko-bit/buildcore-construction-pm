@@ -9108,7 +9108,7 @@ function PhotoViewer({ attachment, canDelete, dictation, dictationBusy = false, 
             </div>
           )}
         </div>
-        <div className="viewerControls">
+        <div className="viewerControls viewerControlGrid">
           <button type="button" title="Previous photo" disabled={!previousPhoto} onClick={() => previousPhoto && onSelect(previousPhoto)}>
             <ChevronLeft size={17} />
           </button>
@@ -9186,7 +9186,7 @@ function DocumentFileViewer({ attachment, canDelete, children, loading, onDelete
           <strong>{attachment.visit_id ? "Ticket file" : "Project file"}</strong>
           <small>{formatDateTimeLabel(attachment.created_at)}</small>
         </div>
-        <div className="viewerControls">
+        <div className="viewerControls viewerControlGrid">
           <button type="button" title="Download" onClick={onDownload}>
             <Download size={17} />
           </button>
