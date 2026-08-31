@@ -4037,7 +4037,7 @@ export default function App() {
     }
   }
 
-  async function openVisitModal(projectId = selectedProject?.id) {
+  async function openVisitModal(projectId = selectedProject?.id, defaults = {}) {
     if (!canManage) {
       setNotice("Only Owner, PM, or Office Manager can schedule visits.");
       return;
@@ -4051,10 +4051,77 @@ export default function App() {
       visit_date: selectedDate,
       project_id: projectId ?? "",
       address: primaryProjectAddress(project),
+      ...defaults,
+      people_ids: defaults.people_ids ?? [],
+      equipment_ids: defaults.equipment_ids ?? [],
+      work_scopes: defaults.work_scopes ?? [defaults.work_scope ?? ""],
     };
     setVisitForm(nextVisitForm);
     editorInitialSnapshotRef.current.visit = serializeVisitEditorForm(nextVisitForm);
     setModalType("visit");
+  }
+
+  function getDropTimeRange(clientX, trackElement) {
+    if (!trackElement) return { start_time: "07:00", end_time: "17:00" };
+    const rect = trackElement.getBoundingClientRect();
+    const percent = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+    const rawStart = scheduleStartHour + percent * (scheduleEndHour - scheduleStartHour);
+    const startHour = Math.max(scheduleStartHour, Math.min(scheduleEndHour - 1, Math.round(rawStart * 2) / 2));
+    const endHour = Math.min(scheduleEndHour, Math.max(startHour + 1, startHour + 10));
+    return { start_time: toTimeValue(startHour), end_time: toTimeValue(endHour) };
+  }
+
+  async function openVisitModalFromScheduleDrop({ clientX, personId, projectId, trackElement }) {
+    if (!personId) return;
+    const person = rowsSource.people.find((item) => item.id === personId);
+    const project = rowsSource.projects.find((item) => item.id === projectId);
+    if (!person || !project) return;
+    if (person.availability_status === "not_available") {
+      setNotice(`${profileDisplayName(person)} is marked Not Available.`);
+      return;
+    }
+    const timeDefaults = getDropTimeRange(clientX, trackElement);
+    await openVisitModal(project.id, {
+      ...timeDefaults,
+      visit_date: selectedDate,
+      project_id: project.id,
+      address: primaryProjectAddress(project),
+      people_ids: [person.id],
+    });
+    setNotice(`${profileDisplayName(person)} selected for the new ticket.`);
+  }
+
+  function openChangeOrderForVisit(visit = currentVisit) {
+    if (!visit?.id) {
+      setNotice("Select an active ticket first.");
+      return;
+    }
+    if (visit.status !== "on_site") {
+      setNotice("Change Order from Overview is available only for an Active ticket.");
+      return;
+    }
+    if (!activeFeatureFlags.changeOrders) {
+      setNotice("Change Order is disabled in Developer mode.");
+      return;
+    }
+    const project = rowsSource.projects.find((item) => item.id === visit.project_id);
+    if (!project) {
+      setNotice("Project not found for this ticket.");
+      return;
+    }
+    setSelectedProjectId(project.id);
+    setSelectedVisitId(visit.id);
+    setChangeOrderForm({
+      ...emptyChangeOrderForm,
+      project_id: project.id,
+      order_date: getWinnipegDateValue(),
+      order_time: getWinnipegTimeValue(),
+      description: visit.work_scope ? `Change Order for: ${visit.work_scope}` : "",
+      files: [],
+      captions: {},
+      folders: [],
+    });
+    setModalType("changeOrder");
   }
 
   function editEquipment(item) {
@@ -4769,7 +4836,7 @@ export default function App() {
       return <SafetyReportsView files={rowsSource.files ?? []} onOpen={openAttachment} profiles={rowsSource.people} projects={rowsSource.projects} />;
     }
     if (activeNav === "overview") {
-      return <OverviewView data={rowsSource} getProfileName={getProfileName} getVisitFiles={getVisitFiles} onArrive={startArrivalWorkflow} onComplete={startCompletionWorkflow} onDateChange={setOverviewDate} onOpenNote={openVisitNoteModal} onOpenVisit={openVisitOverlay} profile={profile} projects={rowsSource.projects} selectedDate={overviewDate} today={todayValue} visits={overviewVisits} />;
+      return <OverviewView data={rowsSource} getProfileName={getProfileName} getVisitFiles={getVisitFiles} onArrive={startArrivalWorkflow} onComplete={startCompletionWorkflow} onCreateChangeOrder={openChangeOrderForVisit} onDateChange={setOverviewDate} onOpenNote={openVisitNoteModal} onOpenVisit={openVisitOverlay} profile={profile} projects={rowsSource.projects} selectedDate={overviewDate} today={todayValue} visits={overviewVisits} />;
     }
     return (
       <ScheduleView
@@ -4791,6 +4858,7 @@ export default function App() {
         onAssignEquipment={assignEquipmentToVisit}
         onAssignPerson={assignPersonToVisit}
         onAssignPeopleGroup={assignPeopleGroupToVisit}
+        onCreateVisitFromDrop={openVisitModalFromScheduleDrop}
         onDropAssignment={moveVisitAssignment}
         onOpenPerson={openPersonOverlay}
         onOpenProject={selectProject}
@@ -6939,7 +7007,7 @@ function SelectedPhotoCaptionCard({ caption, file, onCaption }) {
   );
 }
 
-function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeople = [], avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projectRows = [], projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onDropAssignment, onOpenPerson, onOpenProject, onRemoveEquipmentFromVisit, onRemovePersonFromVisit, onRemoveVisit, onSelect }) {
+function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeople = [], avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projectRows = [], projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onCreateVisitFromDrop, onDropAssignment, onOpenPerson, onOpenProject, onRemoveEquipmentFromVisit, onRemovePersonFromVisit, onRemoveVisit, onSelect }) {
   const [dragPreview, setDragPreview] = useState(null);
   const [peopleGroupDrag, setPeopleGroupDrag] = useState(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -7046,7 +7114,7 @@ function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeop
           )}
           {projectRows.length === 0 && <div className="emptyTimeline">No project visits scheduled for this day.</div>}
 
-          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} peopleGroupDrag={peopleGroupDrag} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignEquipment={onAssignEquipment} onAssignPerson={onAssignPerson} onAssignPeopleGroup={onAssignPeopleGroup} onDropAssignment={onDropAssignment} onOpenPerson={onOpenPerson} onOpenProject={onOpenProject} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
+          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} peopleGroupDrag={peopleGroupDrag} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignEquipment={onAssignEquipment} onAssignPerson={onAssignPerson} onAssignPeopleGroup={onAssignPeopleGroup} onCreateVisitFromDrop={onCreateVisitFromDrop} onDropAssignment={onDropAssignment} onOpenPerson={onOpenPerson} onOpenProject={onOpenProject} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
         </div>
       ) : (
         <CalendarTileGrid equipment={equipmentRows} mode={scheduleMode} people={peopleRows} projects={projects} selectedDate={selectedDate} today={today} visits={visits} onSelectDay={openDay} />
@@ -7523,7 +7591,7 @@ function PendingPersonRow({ avatarUrl, onApprove, onSelect, person }) {
   );
 }
 
-function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplete, onDateChange, onOpenNote, onOpenVisit, profile, projects, selectedDate, today, visits }) {
+function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplete, onCreateChangeOrder, onDateChange, onOpenNote, onOpenVisit, profile, projects, selectedDate, today, visits }) {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(selectedDate);
   const [weather, setWeather] = useState({ status: "idle", data: null });
@@ -7721,6 +7789,10 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                 <button type="button" onClick={() => onOpenNote?.(visit)}>
                   <MessageSquarePlus size={18} />
                   Add Note
+                </button>
+                <button type="button" onClick={() => onCreateChangeOrder?.(visit)}>
+                  <FileBarChart2 size={18} />
+                  Create Change Order
                 </button>
                 <button type="button" onClick={() => onComplete(visit)}>
                   <CheckCircle2 size={18} />
@@ -8278,7 +8350,7 @@ function AuthGate({
   );
 }
 
-function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleGroupDrag, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onDropAssignment, onOpenPerson, onOpenProject, onRemoveVisit, onSelect }) {
+function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleGroupDrag, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onCreateVisitFromDrop, onDropAssignment, onOpenPerson, onOpenProject, onRemoveVisit, onSelect }) {
   return (
     <div className="resourceGroup">
       <div className="groupLabel">
@@ -8328,11 +8400,12 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleG
             onDragOver={(event) => {
               event.preventDefault();
               const raw = event.dataTransfer.getData("application/json");
-              if (!raw) return;
-              const assignment = JSON.parse(raw);
+              const personId = event.dataTransfer.getData("application/x-buildcore-person");
+              if (!raw && !(personId && row.kind === "project")) return;
               const rect = event.currentTarget.getBoundingClientRect();
               const percent = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-              const duration = Math.max(0.25, assignment.end - assignment.start);
+              const assignment = raw ? JSON.parse(raw) : null;
+              const duration = Math.max(1, assignment ? assignment.end - assignment.start : 10);
               const rawStart = scheduleStartHour + percent * (scheduleEndHour - scheduleStartHour);
               const start = Math.min(scheduleEndHour - duration, Math.max(scheduleStartHour, Math.round(rawStart * 4) / 4));
               const end = start + duration;
@@ -8340,14 +8413,19 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleG
                 rowId: row.id,
                 left: ((start - scheduleStartHour) / (scheduleEndHour - scheduleStartHour)) * 100,
                 width: ((end - start) / (scheduleEndHour - scheduleStartHour)) * 100,
-                label: formatTimeRange(toTimeValue(start), toTimeValue(end)),
+                label: personId && !assignment ? `New ticket ${formatTimeRange(toTimeValue(start), toTimeValue(end))}` : formatTimeRange(toTimeValue(start), toTimeValue(end)),
               });
             }}
             onDrop={(event) => {
               event.preventDefault();
               const raw = event.dataTransfer.getData("application/json");
-              if (!raw) return;
+              const personId = event.dataTransfer.getData("application/x-buildcore-person");
+              if (!raw && !(personId && row.kind === "project")) return;
               setDragPreview?.(null);
+              if (personId && row.kind === "project") {
+                onCreateVisitFromDrop?.({ clientX: event.clientX, personId, projectId: row.id, trackElement: event.currentTarget });
+                return;
+              }
               onDropAssignment?.({ assignment: JSON.parse(raw), row, clientX: event.clientX, trackElement: event.currentTarget });
             }}
           >
