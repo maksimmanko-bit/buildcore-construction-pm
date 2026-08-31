@@ -4309,6 +4309,23 @@ h1 {
   font-weight: 800;
 }
 
+.visitActions button.completeWorkButton,
+.addButton.completeWorkButton,
+.completeWorkButton {
+  border-color: rgba(5, 150, 105, 0.24);
+  background: linear-gradient(135deg, #059669, #22c55e);
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(5, 150, 105, 0.26);
+}
+
+.visitActions button.completeWorkButton:hover,
+.addButton.completeWorkButton:hover,
+.completeWorkButton:hover {
+  border-color: rgba(5, 150, 105, 0.32);
+  background: linear-gradient(135deg, #047857, #16a34a);
+  box-shadow: 0 16px 34px rgba(5, 150, 105, 0.32);
+}
+
 .sessionButton {
   gap: 8px;
   white-space: nowrap;
@@ -4860,6 +4877,13 @@ canvas {
   min-width: 0;
 }
 
+.voiceTextControl .dictateButton,
+.voiceTextControl .dictateButton * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .voiceTextControl textarea,
 .voiceTextControl input {
   padding-right: 150px;
@@ -4890,6 +4914,7 @@ canvas {
   font-weight: 950;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+  -webkit-tap-highlight-color: transparent;
   touch-action: none;
   transition:
     background 0.18s cubic-bezier(0.16, 1, 0.3, 1),
@@ -6049,6 +6074,15 @@ textarea:focus-visible {
 .visitActions button {
   background: color-mix(in srgb, var(--surface) 90%, transparent);
   border-color: var(--line);
+}
+
+.visitActions button.completeWorkButton,
+.addButton.completeWorkButton,
+.completeWorkButton {
+  border-color: rgba(5, 150, 105, 0.24);
+  background: linear-gradient(135deg, #059669, #22c55e);
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(5, 150, 105, 0.26);
 }
 
 .attachmentCard:hover {

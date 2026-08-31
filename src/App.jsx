@@ -5185,7 +5185,7 @@ export default function App() {
                 <ClipboardCheck size={18} />
                 Arrived
               </button>
-              <button type="button" disabled={!currentVisit?.id} onClick={() => updateVisitStatus("completed")}>
+              <button className="completeWorkButton" type="button" disabled={!currentVisit?.id} onClick={() => updateVisitStatus("completed")}>
                 <CheckCircle2 size={18} />
                 Complete
               </button>
@@ -6164,7 +6164,7 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
             </button>
           )}
           {visit.status === "on_site" && (
-            <button type="button" onClick={onComplete}>
+            <button className="completeWorkButton" type="button" onClick={onComplete}>
               <CheckCircle2 size={18} />
               Complete
             </button>
@@ -6820,7 +6820,7 @@ function CompleteVisitModal({ dictation, dictationBusy = false, form, loading, o
         </>
       )}
       <div className="formActions wide">
-        <button className="addButton" type="submit" disabled={loading || dictationBusy || (requirePhotos && form.files.length === 0)}>
+        <button className="addButton completeWorkButton" type="submit" disabled={loading || dictationBusy || (requirePhotos && form.files.length === 0)}>
           <CheckCircle2 size={18} />
           Finish Work
         </button>
@@ -7976,7 +7976,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                   <FileBarChart2 size={18} />
                   Create Change Order
                 </button>
-                <button type="button" onClick={() => onComplete(visit)}>
+                <button className="completeWorkButton" type="button" onClick={() => onComplete(visit)}>
                   <CheckCircle2 size={18} />
                   Complete Work
                 </button>
