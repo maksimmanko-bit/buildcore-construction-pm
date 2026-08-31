@@ -4851,6 +4851,101 @@ canvas {
   font-weight: 760;
 }
 
+.groupedPickerList {
+  grid-template-columns: 1fr;
+}
+
+.pickerTradeGroup {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.pickerTradeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #111827;
+  font-weight: 950;
+}
+
+.pickerTradeHeader em {
+  min-width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(220, 38, 38, 0.1);
+  color: var(--brand-red);
+  font-style: normal;
+}
+
+.pickerTradeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.projectAddressEditor {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(248, 250, 252, 0.6)),
+    rgba(255, 255, 255, 0.64);
+}
+
+.projectAddressEditor legend {
+  padding: 0 8px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.projectAddressRow {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.42fr) minmax(220px, 1fr) 44px;
+  align-items: end;
+  gap: 10px;
+}
+
+.addAddressButton {
+  justify-self: start;
+}
+
+.passwordHeroBlock .fieldReportIcon {
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(220, 38, 38, 0.14), rgba(37, 99, 235, 0.1));
+  color: var(--brand-red);
+}
+
+.availableAvatarCard {
+  position: relative;
+}
+
+.availableAvatarCard .availableTooltip {
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translate(-50%, 8px) scale(0.96);
+  pointer-events: none;
+}
+
+.availableAvatarCard:hover .availableTooltip,
+.availableAvatarCard:focus-visible .availableTooltip {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
 .safetySwitchList {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
@@ -8751,6 +8846,16 @@ html {
 }
 
 @media (max-width: 760px) {
+  .projectAddressRow,
+  .pickerTradeGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .projectAddressEditor {
+    padding: 12px;
+    border-radius: 20px;
+  }
+
   .fieldReportMain {
     grid-template-columns: 46px minmax(0, 1fr);
   }

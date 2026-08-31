@@ -19,6 +19,7 @@ create table if not exists public.change_orders (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies(id) on delete cascade,
   project_id uuid not null references public.projects(id) on delete cascade,
+  order_number text,
   order_date date not null default current_date,
   order_time time not null default current_time,
   status text not null default 'planned',
@@ -38,10 +39,34 @@ alter table public.visit_files
   add column if not exists folder_name text,
   add column if not exists folder_description text;
 
+alter table public.projects
+  add column if not exists addresses jsonb not null default '[]'::jsonb;
+
+alter table public.visits
+  add column if not exists address text;
+
+alter table public.change_orders
+  add column if not exists order_number text;
+
+with numbered as (
+  select
+    co.id,
+    'CO-' || coalesce(nullif(p.job_number, ''), 'NO-JOB') || '-' ||
+      row_number() over (partition by co.project_id order by co.created_at, co.id) as next_order_number
+  from public.change_orders co
+  join public.projects p on p.id = co.project_id
+  where co.order_number is null
+)
+update public.change_orders co
+set order_number = numbered.next_order_number
+from numbered
+where co.id = numbered.id;
+
 create index if not exists site_visits_company_date_idx on public.site_visits(company_id, visit_date);
 create index if not exists site_visits_project_date_idx on public.site_visits(project_id, visit_date);
 create index if not exists change_orders_company_date_idx on public.change_orders(company_id, order_date);
 create index if not exists change_orders_project_date_idx on public.change_orders(project_id, order_date);
+create unique index if not exists change_orders_project_order_number_idx on public.change_orders(project_id, order_number) where order_number is not null;
 create index if not exists visit_files_site_visit_idx on public.visit_files(site_visit_id);
 create index if not exists visit_files_change_order_idx on public.visit_files(change_order_id);
 
@@ -165,7 +190,7 @@ as $$
 
   union all
 
-  select concat('siteVisit-', sv.id), 'siteVisit', p.name, 'Site Visit / ' || sv.visit_date::text,
+  select concat('siteVisit-', sv.id), 'siteVisit', p.name, 'Site Inspection / ' || sv.visit_date::text,
     left(coalesce(sv.description, '') || ' ' || coalesce(p.address, ''), 220), null::text
   from public.site_visits sv
   join public.projects p on p.id = sv.project_id
@@ -176,13 +201,14 @@ as $$
 
   union all
 
-  select concat('changeOrder-', co.id), 'changeOrder', p.name, 'Change Order / ' || co.order_date::text,
-    left(coalesce(co.description, '') || ' ' || coalesce(co.approved_by, '') || ' ' || coalesce(p.address, ''), 220), null::text
+  select concat('changeOrder-', co.id), 'changeOrder', p.name, coalesce(co.order_number, 'Change Order') || ' / ' || co.order_date::text,
+    left(coalesce(co.description, '') || ' ' || coalesce(co.approved_by, '') || ' ' || coalesce(co.order_number, '') || ' ' || coalesce(p.address, ''), 220), null::text
   from public.change_orders co
   join public.projects p on p.id = co.project_id
   where co.company_id = public.current_company_id()
     and (co.description ilike '%' || search_query || '%'
       or co.approved_by ilike '%' || search_query || '%'
+      or co.order_number ilike '%' || search_query || '%'
       or p.name ilike '%' || search_query || '%'
       or p.address ilike '%' || search_query || '%')
 

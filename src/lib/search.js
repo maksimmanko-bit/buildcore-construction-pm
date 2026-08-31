@@ -4,7 +4,7 @@ const searchableFields = {
   equipment: ["name", "type", "unit_number", "status"],
   visit: ["visit_date", "start_time", "end_time", "work_scope", "office_notes", "status"],
   siteVisit: ["visit_date", "start_time", "end_time", "description", "status"],
-  changeOrder: ["order_date", "order_time", "description", "approved_by", "status"],
+  changeOrder: ["order_number", "order_date", "order_time", "description", "approved_by", "status"],
   file: ["file_name", "photo_caption", "search_text", "project_name"],
 };
 

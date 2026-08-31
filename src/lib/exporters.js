@@ -32,6 +32,20 @@ function timeRange(start, end) {
   return `${time(start)} - ${time(end)}`;
 }
 
+async function loadPublicAssetDataUrl(path) {
+  const base = import.meta.env?.BASE_URL || "/";
+  const normalizedBase = base.endsWith("/") ? base : `${base}/`;
+  const response = await fetch(`${normalizedBase}${path.replace(/^\/+/, "")}`);
+  if (!response.ok) throw new Error(`Unable to load ${path}`);
+  const blob = await response.blob();
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
 function dateTimeLabel(value) {
   if (!value) return "";
   return new Intl.DateTimeFormat("en-US", {
@@ -306,8 +320,17 @@ export async function exportProjectPdf({ project, visits = [], people = [], equi
 
 export async function exportFieldReportPdf({ type, record, project, files = [], creatorName = "" }) {
   const isSiteVisit = type === "siteVisit";
-  const title = isSiteVisit ? "Site Visit" : "Change Order";
+  const title = isSiteVisit ? "Site Inspection" : "Change Order";
+  const orderNumber = record.order_number || (isSiteVisit ? "" : `CO-${project?.job_number || "NO-JOB"}`);
   const doc = new jsPDF({ unit: "pt", format: "letter" });
+  let letterhead = null;
+  if (!isSiteVisit) {
+    try {
+      letterhead = await loadPublicAssetDataUrl("samsom-industries-letterhead.png");
+    } catch {
+      letterhead = null;
+    }
+  }
   doc.setFillColor(17, 24, 39);
   doc.rect(0, 0, 612, 88, "F");
   doc.setTextColor(255, 255, 255);
@@ -315,13 +338,14 @@ export async function exportFieldReportPdf({ type, record, project, files = [], 
   doc.setFontSize(21);
   doc.text(`${project?.name || "Project"} ${title}`, 36, 38);
   doc.setFontSize(11);
-  doc.text(`${project?.job_number || "No job number"} / ${record.status || "planned"}`, 36, 62);
+  doc.text(`${isSiteVisit ? project?.job_number || "No job number" : orderNumber} / ${record.status || "planned"}`, 36, 62);
 
   doc.setTextColor(17, 24, 39);
   let y = 124;
   y = addSection(doc, `${title} Details`, y);
   y = addWrapped(doc, `Project: ${project?.name || "-"}`, 50, y, 500);
   y = addWrapped(doc, `Address: ${project?.address || "-"}`, 50, y + 4, 500);
+  if (!isSiteVisit) y = addWrapped(doc, `Change Order Number: ${orderNumber}`, 50, y + 4, 500);
   y = addWrapped(doc, `Date: ${dateLabel(isSiteVisit ? record.visit_date : record.order_date)}`, 50, y + 4, 500);
   y = addWrapped(doc, `Time: ${isSiteVisit ? timeRange(record.start_time, record.end_time) : time(record.order_time)}`, 50, y + 4, 500);
   y = addWrapped(doc, `Created by: ${creatorName || "-"}`, 50, y + 4, 500);
@@ -364,6 +388,12 @@ export async function exportFieldReportPdf({ type, record, project, files = [], 
       y = addWrapped(doc, `${file.file_name}${file.photo_caption ? ` / ${file.photo_caption}` : ""}`, 50, y + 4, 500);
       y = await maybeAddPhoto(doc, file, y + 6);
     }
+  }
+
+  if (letterhead) {
+    const pageCount = doc.getNumberOfPages();
+    doc.setPage(pageCount);
+    doc.addImage(letterhead, "PNG", 332, 650, 238, 105);
   }
 
   downloadBlob(doc.output("blob"), `${cleanFileName(project?.job_number || project?.name)}-${cleanFileName(title)}-${isSiteVisit ? record.visit_date : record.order_date}.pdf`);
