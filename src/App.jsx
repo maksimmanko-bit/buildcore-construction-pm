@@ -55,6 +55,7 @@ import { createAttachmentUrls, createProfileAvatarUrl, deleteVisitFile, replaceV
 import { localGlobalSearch } from "./lib/search.js";
 import { getGoogleMapsUrl, getWeatherForAddress } from "./lib/weather.js";
 import { readCachedWorkspace, writeCachedWorkspace } from "./lib/localCache.js";
+import { loadPdfDocumentFromUrl } from "./lib/fileText.js";
 import { VoiceTextArea, VoiceTextInput } from "./components/VoiceDictation.jsx";
 
 const PhotoAnnotator = lazy(() => import("./components/PhotoAnnotator.jsx"));
@@ -469,6 +470,28 @@ function nextChangeOrderNumber(project, changeOrders = []) {
     .filter(Number.isFinite)
     .reduce((max, value) => Math.max(max, value), 0);
   return `${prefix}${maxExisting + 1}`;
+}
+
+function normalizeJobNumber(value = "") {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function projectJobNumberExists(projects = [], jobNumber = "", ignoreProjectId = "") {
+  const normalized = normalizeJobNumber(jobNumber);
+  if (!normalized) return false;
+  return projects.some((project) => project.id !== ignoreProjectId && normalizeJobNumber(project.job_number) === normalized);
+}
+
+function nextSequentialJobNumber(projects = []) {
+  const used = new Set(projects.map((project) => String(project.job_number || "").trim()).filter(Boolean));
+  let max = 0;
+  projects.forEach((project) => {
+    const value = String(project.job_number || "").trim();
+    if (/^\d{6}$/.test(value)) max = Math.max(max, Number.parseInt(value, 10));
+  });
+  let next = max + 1;
+  while (used.has(String(next).padStart(6, "0"))) next += 1;
+  return String(next).padStart(6, "0");
 }
 const emptyChangeOrderForm = {
   project_id: "",
@@ -1268,9 +1291,17 @@ export default function App() {
       setAuthReady(true);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setProfile(null);
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession((currentSession) => {
+        const currentUserId = currentSession?.user?.id || "";
+        const nextUserId = nextSession?.user?.id || "";
+        if (!nextSession || event === "SIGNED_OUT") {
+          setProfile(null);
+        } else if (currentUserId && nextUserId && currentUserId !== nextUserId) {
+          setProfile(null);
+        }
+        return nextSession;
+      });
       setAuthReady(true);
     });
 
@@ -2086,11 +2117,20 @@ export default function App() {
     event.preventDefault();
     if (preventSaveDuringDictation(event)) return;
     if (!supabase || !profile) return;
+    const jobNumber = String(projectForm.job_number || "").trim();
+    if (!jobNumber) {
+      setNotice("Enter a job number before saving.");
+      return;
+    }
+    if (projectJobNumberExists(rowsSource.projects, jobNumber, editingProjectId)) {
+      setNotice(`Project number ${jobNumber} already exists. Choose another number.`);
+      return;
+    }
 
     setLoading(true);
 
     const payload = {
-      job_number: projectForm.job_number,
+      job_number: jobNumber,
       name: projectForm.name,
       address: primaryProjectAddress(projectForm),
       addresses: normalizeProjectAddresses(projectForm).map((item) => ({ label: item.label, address: item.address })),
@@ -2119,7 +2159,7 @@ export default function App() {
     setLoading(false);
 
     if (error) {
-      setNotice(error.message);
+      setNotice(error.code === "23505" ? `Project number ${jobNumber} already exists. Choose another number.` : error.message);
       return;
     }
 
@@ -5484,7 +5524,21 @@ export default function App() {
           <AppModal title={editingProjectId ? "Edit project" : "Add project"} onClose={closeEditorModal}>
             <form className="stackForm twoColumns" onSubmit={saveProject}>
               <FormField label="Job number">
-                <input required value={projectForm.job_number} onChange={(event) => setProjectForm({ ...projectForm, job_number: event.target.value })} />
+                <div className="jobNumberInputGroup">
+                  <input required value={projectForm.job_number} onChange={(event) => setProjectForm({ ...projectForm, job_number: event.target.value })} />
+                  <button
+                    className="outlineButton"
+                    type="button"
+                    onClick={() => {
+                      const nextJobNumber = nextSequentialJobNumber(rowsSource.projects);
+                      setProjectForm({ ...projectForm, job_number: nextJobNumber });
+                      setNotice(`Project number ${nextJobNumber} generated.`);
+                    }}
+                  >
+                    <Plus size={16} />
+                    Generate
+                  </button>
+                </div>
               </FormField>
               <FormField label="Project name">
                 <input required value={projectForm.name} onChange={(event) => setProjectForm({ ...projectForm, name: event.target.value })} />
@@ -5807,7 +5861,7 @@ export default function App() {
                 />
               ) : selectedAttachment.file_kind === "pdf" || selectedAttachment.mime_type === "application/pdf" ? (
                 <DocumentFileViewer attachment={selectedAttachment} canDelete={!selectedAttachment.localPreview && (canManage || selectedAttachment.uploaded_by === profile?.id)} loading={loading} onDelete={removeSelectedAttachment} onDownload={() => downloadAttachment(selectedAttachment)}>
-                  <iframe title={selectedAttachment.file_name || "PDF"} src={selectedAttachment.viewUrl} />
+                  <PdfCanvasViewer fileName={selectedAttachment.file_name || "PDF"} url={selectedAttachment.viewUrl} />
                 </DocumentFileViewer>
               ) : (
                 <DocumentFileViewer attachment={selectedAttachment} canDelete={!selectedAttachment.localPreview && (canManage || selectedAttachment.uploaded_by === profile?.id)} loading={loading} onDelete={removeSelectedAttachment} onDownload={() => downloadAttachment(selectedAttachment)}>
@@ -6793,6 +6847,7 @@ function SignaturePad({ label, onChange, value }) {
 }
 
 function PhotoStepModal({ captions = {}, dictation, dictationBusy = false, files = [], label, loading, onCaption, onFiles, onSubmit }) {
+  const inputRef = useRef(null);
   const selectedFiles = Array.isArray(files) ? files : typeof files?.[Symbol.iterator] === "function" ? [...files] : [];
 
   return (
@@ -6801,12 +6856,12 @@ function PhotoStepModal({ captions = {}, dictation, dictationBusy = false, files
         <ImagePlus size={22} />
         <span>{label}</span>
       </div>
-      <label className="fileDropControl">
+      <button className="fileDropControl" type="button" onClick={() => inputRef.current?.click()}>
         <Upload size={22} />
         <strong>Select photos</strong>
         <span>{selectedFiles.length ? `${selectedFiles.length} photo${selectedFiles.length === 1 ? "" : "s"} selected` : "JPG, PNG, or WebP"}</span>
-        <input accept="image/jpeg,image/png,image/webp" multiple required type="file" onChange={(event) => onFiles([...event.target.files])} />
-      </label>
+      </button>
+      <input ref={inputRef} className="hiddenFileInput" accept="image/jpeg,image/png,image/webp" multiple type="file" onChange={(event) => onFiles([...event.target.files])} />
       <div className="selectedFiles">
         {selectedFiles.map((file) => {
           const key = fileInputKey(file);
@@ -6826,6 +6881,7 @@ function PhotoStepModal({ captions = {}, dictation, dictationBusy = false, files
 }
 
 function CompleteVisitModal({ dictation, dictationBusy = false, form, loading, onChange, onSubmit, requirePhotos = true }) {
+  const inputRef = useRef(null);
   const selectedFiles = Array.isArray(form.files) ? form.files : [];
 
   return (
@@ -6839,12 +6895,12 @@ function CompleteVisitModal({ dictation, dictationBusy = false, form, loading, o
             <ImagePlus size={22} />
             <span>Upload at least one after photo before completing the ticket.</span>
           </div>
-          <label className="fileDropControl">
+          <button className="fileDropControl" type="button" onClick={() => inputRef.current?.click()}>
             <Upload size={22} />
             <strong>Select after photos</strong>
             <span>{selectedFiles.length ? `${selectedFiles.length} photo${selectedFiles.length === 1 ? "" : "s"} selected` : "JPG, PNG, or WebP"}</span>
-            <input accept="image/jpeg,image/png,image/webp" multiple required type="file" onChange={(event) => onChange({ ...form, files: [...event.target.files] })} />
-          </label>
+          </button>
+          <input ref={inputRef} className="hiddenFileInput" accept="image/jpeg,image/png,image/webp" multiple type="file" onChange={(event) => onChange({ ...form, files: [...event.target.files] })} />
           <div className="selectedFiles">
             {selectedFiles.map((file) => {
               const key = fileInputKey(file);
@@ -9227,6 +9283,104 @@ function DocumentFileViewer({ attachment, canDelete, children, loading, onDelete
       </div>
       {children}
     </section>
+  );
+}
+
+function PdfCanvasViewer({ fileName, url }) {
+  const [error, setError] = useState("");
+  const [pageNumbers, setPageNumbers] = useState([]);
+  const [pdf, setPdf] = useState(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    let alive = true;
+    setError("");
+    setPdf(null);
+    setPageNumbers([]);
+
+    loadPdfDocumentFromUrl(url)
+      .then((document) => {
+        if (!alive) return;
+        setPdf(document);
+        setPageNumbers(Array.from({ length: document.numPages }, (_, index) => index + 1));
+      })
+      .catch((loadError) => {
+        if (alive) setError(loadError.message || "PDF could not be opened.");
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [url]);
+
+  function preventPageZoom(event) {
+    if (event.touches?.length > 1) event.preventDefault();
+  }
+
+  return (
+    <div className="pdfCanvasViewer" onTouchStart={preventPageZoom} onTouchMove={preventPageZoom}>
+      <div className="pdfCanvasControls">
+        <span>{pageNumbers.length ? `${pageNumbers.length} page${pageNumbers.length === 1 ? "" : "s"}` : "Loading PDF..."}</span>
+        <div>
+          <button type="button" title="Zoom out" onClick={() => setScale((value) => Math.max(0.7, value - 0.12))}>
+            <ZoomOut size={16} />
+          </button>
+          <strong>{Math.round(scale * 100)}%</strong>
+          <button type="button" title="Zoom in" onClick={() => setScale((value) => Math.min(1.8, value + 0.12))}>
+            <ZoomIn size={16} />
+          </button>
+        </div>
+      </div>
+      {error ? (
+        <div className="emptyPanelState">{error}</div>
+      ) : pdf ? (
+        <div className="pdfPageStack" aria-label={fileName}>
+          {pageNumbers.map((pageNumber) => (
+            <PdfPageCanvas key={pageNumber} pageNumber={pageNumber} pdf={pdf} scale={scale} />
+          ))}
+        </div>
+      ) : (
+        <div className="pdfPageSkeleton" />
+      )}
+    </div>
+  );
+}
+
+function PdfPageCanvas({ pageNumber, pdf, scale }) {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let renderTask = null;
+
+    async function renderPage() {
+      const page = await pdf.getPage(pageNumber);
+      if (cancelled || !canvasRef.current) return;
+      const viewport = page.getViewport({ scale: Math.max(0.7, scale) * Math.min(1.5, window.devicePixelRatio || 1) });
+      const canvas = canvasRef.current;
+      const context = canvas.getContext("2d");
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      canvas.style.aspectRatio = `${viewport.width} / ${viewport.height}`;
+      renderTask = page.render({ canvasContext: context, viewport });
+      await renderTask.promise;
+    }
+
+    renderPage().catch(() => {
+      if (!cancelled && canvasRef.current) canvasRef.current.dataset.error = "true";
+    });
+
+    return () => {
+      cancelled = true;
+      renderTask?.cancel?.();
+    };
+  }, [pageNumber, pdf, scale]);
+
+  return (
+    <figure className="pdfPageCanvasWrap">
+      <canvas ref={canvasRef} />
+      <figcaption>Page {pageNumber}</figcaption>
+    </figure>
   );
 }
 

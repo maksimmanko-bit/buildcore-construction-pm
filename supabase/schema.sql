@@ -169,6 +169,9 @@ alter table public.visit_files
   add column if not exists note_id uuid references public.visit_notes(id) on delete cascade;
 
 create index if not exists projects_company_idx on public.projects(company_id);
+create unique index if not exists projects_company_job_number_unique_idx
+  on public.projects (company_id, lower(trim(job_number)))
+  where nullif(trim(job_number), '') is not null;
 create index if not exists equipment_company_idx on public.equipment(company_id);
 create index if not exists profiles_company_bot_idx on public.profiles(company_id, is_bot);
 create index if not exists visits_company_date_idx on public.visits(company_id, visit_date);

@@ -1,12 +1,31 @@
-import * as pdfjs from "pdfjs-dist";
 import { unzipSync } from "fflate";
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.mjs",
-  import.meta.url,
-).toString();
+let pdfjsPromise = null;
+
+function ensurePromiseWithResolvers() {
+  if (typeof Promise.withResolvers === "function") return;
+  Promise.withResolvers = function withResolvers() {
+    let resolve;
+    let reject;
+    const promise = new Promise((nextResolve, nextReject) => {
+      resolve = nextResolve;
+      reject = nextReject;
+    });
+    return { promise, resolve, reject };
+  };
+}
+
+async function getPdfjs() {
+  ensurePromiseWithResolvers();
+  pdfjsPromise ??= import("pdfjs-dist").then((pdfjs) => {
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
+    return pdfjs;
+  });
+  return pdfjsPromise;
+}
 
 export async function extractTextFromPdf(file) {
+  const pdfjs = await getPdfjs();
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data: buffer }).promise;
   const pages = [];
@@ -18,6 +37,14 @@ export async function extractTextFromPdf(file) {
   }
 
   return pages.join("\n\n");
+}
+
+export async function loadPdfDocumentFromUrl(url) {
+  const pdfjs = await getPdfjs();
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("PDF could not be loaded.");
+  const data = await response.arrayBuffer();
+  return pdfjs.getDocument({ data }).promise;
 }
 
 export async function extractTextFromExcel(file) {
