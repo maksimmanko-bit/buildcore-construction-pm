@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, Check, Circle, Copy, Minus, Pencil, Plus, Redo2, Square, Trash2, Type, Undo2 } from "lucide-react";
-import { Canvas, Circle as FabricCircle, FabricImage, Group, IText, Line, PencilBrush, Rect, Triangle, util } from "fabric";
+import { Canvas, Circle as FabricCircle, Group, IText, Line, PencilBrush, Rect, Triangle, util } from "fabric";
 
 const tools = [
   { id: "draw", label: "Pen", icon: Pencil },
@@ -172,6 +172,15 @@ function getAnnotationObjectJson(canvas) {
   return canvas.getObjects().filter((object) => object.data?.annotation).map((object) => object.toObject(["data"]));
 }
 
+function fitCanvasSize(image) {
+  const maxSide = 1600;
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+  return {
+    width: Math.max(1, Math.round(image.naturalWidth * scale)),
+    height: Math.max(1, Math.round(image.naturalHeight * scale)),
+  };
+}
+
 export default function PhotoAnnotator({ imageUrl, onSave }) {
   const canvasElement = useRef(null);
   const fabricRef = useRef(null);
@@ -189,6 +198,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
   const [baseImageSrc, setBaseImageSrc] = useState("");
   const [canRedo, setCanRedo] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
+  const [canvasSize, setCanvasSize] = useState({ width: 1040, height: 700 });
   const [color, setColor] = useState(swatches[0].value);
   const [fill, setFill] = useState(swatches[0].fill);
   const [isSaving, setIsSaving] = useState(false);
@@ -223,19 +233,14 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     refreshHistoryState();
   }
 
-  async function setCanvasBackground(source, canvas = fabricRef.current) {
+  async function prepareBaseImage(source, canvas = fabricRef.current) {
     if (!canvas || !source) return;
-    const image = await FabricImage.fromURL(source);
-    const scale = Math.min(canvas.width / image.width, canvas.height / image.height);
-    image.set({
-      left: (canvas.width - image.width * scale) / 2,
-      top: (canvas.height - image.height * scale) / 2,
-      scaleX: scale,
-      scaleY: scale,
-      selectable: false,
-      evented: false,
-    });
-    canvas.backgroundImage = image;
+    const image = await loadHtmlImage(source);
+    const size = fitCanvasSize(image);
+    setCanvasSize(size);
+    canvas.setDimensions(size);
+    canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    canvas.calcOffset();
     requestCanvasRender(canvas);
   }
 
@@ -268,7 +273,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     if (!canvas) return;
     canvas.isDrawingMode = nextTool === "draw";
     canvas.skipTargetFind = nextTool === "draw";
-    canvas.selection = nextTool !== "draw";
+    canvas.selection = false;
     canvas.defaultCursor = nextTool === "draw" ? "crosshair" : "copy";
     canvas.hoverCursor = nextTool === "draw" ? "crosshair" : "move";
     if (!canvas.freeDrawingBrush) canvas.freeDrawingBrush = new PencilBrush(canvas);
@@ -305,10 +310,14 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
         top: ((event.clientY - rect.top) / rect.height) * 100,
         value: "",
       });
+      event.stopPropagation?.();
+      event.stopImmediatePropagation?.();
       return;
     }
 
     addObject(createShape({ color: colorRef.current, fill: fillRef.current, point, strokeWidth: strokeWidthRef.current, tool: activeTool }));
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
   }
 
   function commitTextBubble() {
@@ -465,17 +474,13 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
 
       if (baseImageSrc) {
         const image = await loadHtmlImage(baseImageSrc);
-        const scale = Math.min(output.width / image.naturalWidth, output.height / image.naturalHeight);
-        const width = image.naturalWidth * scale;
-        const height = image.naturalHeight * scale;
-        context.drawImage(image, (output.width - width) / 2, (output.height - height) / 2, width, height);
+        context.drawImage(image, 0, 0, output.width, output.height);
       } else {
         context.fillStyle = "#090e18";
         context.fillRect(0, 0, output.width, output.height);
       }
 
       const annotationCanvas = canvas.toCanvasElement(1);
-      context.clearRect(0, 0, output.width, output.height);
       context.drawImage(annotationCanvas, 0, 0);
       const dataUrl = output.toDataURL("image/jpeg", 0.9);
       await onSave?.({ dataUrl, annotationJson: { objects: getAnnotationObjectJson(canvas), version: "ios-markup-v1" } });
@@ -491,12 +496,13 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
     if (!canvasElement.current) return undefined;
 
     const canvas = new Canvas(canvasElement.current, {
-      width: 1040,
-      height: 700,
+      width: canvasSize.width,
+      height: canvasSize.height,
       backgroundColor: "rgba(0,0,0,0)",
       enableRetinaScaling: true,
       preserveObjectStacking: true,
       renderOnAddRemove: false,
+      selection: false,
       selectionColor: "rgba(37, 99, 235, 0.08)",
       selectionBorderColor: "#2563eb",
       stopContextMenu: true,
@@ -560,7 +566,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
       .then((source) => {
         if (cancelled) return;
         setBaseImageSrc(source);
-        setCanvasBackground(source, canvas);
+        prepareBaseImage(source, canvas);
       })
       .catch((error) => console.error(error));
 
@@ -591,8 +597,8 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
 
   return (
     <section className={`annotator ${saveFlash ? "saved" : ""}`}>
-      <div className="canvasShell">
-        {!baseImageSrc && <img className="annotationBaseImage" src={imageUrl} alt="" />}
+      <div className="canvasShell" style={{ "--annotation-aspect": canvasSize.width / canvasSize.height, aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}>
+        <img className="annotationBaseImage" src={baseImageSrc || imageUrl} alt="" />
         <canvas ref={canvasElement} />
         {textComposer && (
           <form

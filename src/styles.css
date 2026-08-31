@@ -9755,9 +9755,11 @@ html {
 
 .annotator .canvasShell {
   position: relative;
-  aspect-ratio: 1040 / 700;
+  width: min(100%, calc(min(74vh, 820px) * var(--annotation-aspect, 1.4857)));
+  aspect-ratio: var(--annotation-aspect, 1.4857);
   min-height: 0;
   max-height: min(74vh, 820px);
+  margin-inline: auto;
   overflow: hidden;
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -9773,26 +9775,21 @@ html {
 
 .annotator .canvasShell .annotationBaseImage {
   position: absolute;
-  inset: auto;
-  top: 50%;
-  left: 50%;
+  inset: 0;
   z-index: 1;
-  width: min(100%, 1040px);
-  height: auto;
-  max-height: 100%;
-  aspect-ratio: 1040 / 700;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
   object-position: center;
   pointer-events: none;
-  transform: translate(-50%, -50%);
 }
 
 .annotator .canvasShell .canvas-container {
   position: relative !important;
   z-index: 2;
-  width: min(100%, 1040px) !important;
-  height: auto !important;
-  aspect-ratio: 1040 / 700;
+  width: 100% !important;
+  height: 100% !important;
+  aspect-ratio: var(--annotation-aspect, 1.4857);
 }
 
 .annotator .canvasShell canvas {
@@ -9912,7 +9909,8 @@ html {
   }
 
   .annotator .canvasShell {
-    height: calc(100dvh - max(78px, env(safe-area-inset-top)) - max(156px, env(safe-area-inset-bottom)));
+    width: min(100%, calc((100dvh - max(78px, env(safe-area-inset-top)) - max(156px, env(safe-area-inset-bottom))) * var(--annotation-aspect, 1.4857)));
+    height: auto;
     max-height: none;
     border: 0;
     border-radius: 0;
