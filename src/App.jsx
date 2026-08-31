@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Activity,
   Bell,
@@ -7425,22 +7426,72 @@ function ProjectsView({ canManage, getProfileName, onDelete, onEdit, onSelect, o
 
 function ProjectStatusControl({ canManage, onStatusChange, project }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState({});
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
   const wrapRef = useRef(null);
   const statusClass = projectStatusClass(project.status);
 
   useEffect(() => {
     if (!isOpen) return undefined;
+    function updateMenuPosition() {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const menuWidth = 196;
+      const estimatedHeight = 238;
+      const gap = 8;
+      const top = rect.bottom + gap + estimatedHeight > window.innerHeight
+        ? Math.max(10, rect.top - estimatedHeight - gap)
+        : rect.bottom + gap;
+      setMenuStyle({
+        left: Math.max(10, Math.min(window.innerWidth - menuWidth - 10, rect.right - menuWidth)),
+        top,
+        width: menuWidth,
+      });
+    }
     function handlePointerDown(event) {
       if (wrapRef.current?.contains(event.target)) return;
+      if (menuRef.current?.contains(event.target)) return;
       setIsOpen(false);
     }
+    updateMenuPosition();
     document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
   }, [isOpen]);
+
+  const menu =
+    isOpen && canManage
+      ? createPortal(
+          <div className="projectStatusMenu floatingProjectStatusMenu" ref={menuRef} style={menuStyle}>
+            {Object.entries(projectStatusMap).map(([status, label]) => (
+              <button
+                className={status === project.status ? "active" : ""}
+                key={status}
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  onStatusChange?.(project, status);
+                }}
+              >
+                <i className={`projectStatusDot ${projectStatusClass(status)}`} />
+                {label}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <div className="projectStatusControl" ref={wrapRef}>
       <button
+        ref={buttonRef}
         className={`projectStatusChip ${statusClass}`}
         type="button"
         disabled={!canManage}
@@ -7451,24 +7502,7 @@ function ProjectStatusControl({ canManage, onStatusChange, project }) {
         {normalizeStatus(project.status)}
         {canManage && <ChevronDown size={13} />}
       </button>
-      {isOpen && canManage && (
-        <div className="projectStatusMenu">
-          {Object.entries(projectStatusMap).map(([status, label]) => (
-            <button
-              className={status === project.status ? "active" : ""}
-              key={status}
-              type="button"
-              onClick={() => {
-                setIsOpen(false);
-                onStatusChange?.(project, status);
-              }}
-            >
-              <i className={`projectStatusDot ${projectStatusClass(status)}`} />
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+      {menu}
     </div>
   );
 }

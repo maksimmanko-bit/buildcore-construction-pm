@@ -38,6 +38,7 @@
 body {
   margin: 0;
   min-width: 320px;
+  overscroll-behavior-y: none;
   background: radial-gradient(circle at 70% -10%, rgba(23, 105, 255, 0.08), transparent 34%), var(--bg);
 }
 
@@ -4742,6 +4743,13 @@ canvas {
   animation: statusMenuIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.floatingProjectStatusMenu {
+  position: fixed;
+  right: auto;
+  z-index: 10000;
+  isolation: isolate;
+}
+
 .projectStatusMenu button {
   display: flex;
   width: 100%;
@@ -5479,6 +5487,13 @@ canvas {
 }
 
 @media (max-width: 860px) {
+  html,
+  body,
+  .dashboardShell,
+  .mainWorkspace {
+    overscroll-behavior-y: none;
+  }
+
   .voiceTextControl textarea,
   .voiceTextControl input {
     padding-right: 76px;
@@ -5626,7 +5641,7 @@ canvas {
   }
 
   .mainWorkspace {
-    padding: 14px 14px max(26px, env(safe-area-inset-bottom));
+    padding: 14px 14px max(44px, calc(env(safe-area-inset-bottom) + 28px));
   }
 
   .mobileTopBar {
@@ -5835,6 +5850,13 @@ canvas {
     left: 0;
     right: auto;
     width: min(100%, 260px);
+  }
+
+  .floatingProjectStatusMenu {
+    position: fixed;
+    left: var(--floating-left, auto);
+    right: auto;
+    width: 196px;
   }
 
   .listRow em,
@@ -8899,6 +8921,7 @@ body.overlayLocked {
 /* Mobile form and schedule stability */
 html {
   -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: none;
   text-size-adjust: 100%;
 }
 
