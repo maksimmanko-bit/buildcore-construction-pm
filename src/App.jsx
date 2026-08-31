@@ -4075,16 +4075,16 @@ export default function App() {
     if (!personId) return;
     const person = rowsSource.people.find((item) => item.id === personId);
     const project = rowsSource.projects.find((item) => item.id === projectId);
-    if (!person || !project) return;
+    if (!person) return;
     if (person.availability_status === "not_available") {
       setNotice(`${profileDisplayName(person)} is marked Not Available.`);
       return;
     }
     const timeDefaults = getDropTimeRange(clientX, trackElement);
-    await openVisitModal(project.id, {
+    await openVisitModal(project?.id, {
       ...timeDefaults,
       visit_date: selectedDate,
-      project_id: project.id,
+      project_id: project?.id ?? "",
       address: primaryProjectAddress(project),
       people_ids: [person.id],
     });
@@ -4459,30 +4459,16 @@ export default function App() {
     try {
       const { exportFieldReportPdf } = await import("./lib/exporters.js");
       const files = await hydrateExportFiles(getChangeOrderFiles(item));
-      const { blob, fileName } = await exportFieldReportPdf({
+      await exportFieldReportPdf({
         type: "changeOrder",
         record: item,
         project,
         files,
         creatorName: getProfileName(item.created_by, currentUserName),
-        download: false,
+        download: true,
       });
-      const pdfFile = new File([blob], fileName, { type: "application/pdf" });
-      if (navigator.canShare?.({ files: [pdfFile] }) && navigator.share) {
-        await navigator.share({ files: [pdfFile], title: subject, text: body });
-        setNotice("Change Order email package ready.");
-      } else {
-        const { exportFieldReportPdf: exportForDownload } = await import("./lib/exporters.js");
-        await exportForDownload({
-          type: "changeOrder",
-          record: item,
-          project,
-          files,
-          creatorName: getProfileName(item.created_by, currentUserName),
-        });
-        window.location.href = `mailto:${encodeURIComponent(clientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        setNotice("PDF downloaded. Email draft opened.");
-      }
+      window.location.href = `mailto:${encodeURIComponent(clientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      setNotice("PDF downloaded. Email draft opened.");
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -7112,7 +7098,13 @@ function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeop
               <div className="nowPill">{nowLabel}</div>
             </>
           )}
-          {projectRows.length === 0 && <div className="emptyTimeline">No project visits scheduled for this day.</div>}
+          {projectRows.length === 0 && (
+            <EmptyScheduleDropZone
+              dragPreview={dragPreview}
+              onCreateVisitFromDrop={onCreateVisitFromDrop}
+              setDragPreview={setDragPreview}
+            />
+          )}
 
           <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} peopleGroupDrag={peopleGroupDrag} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignEquipment={onAssignEquipment} onAssignPerson={onAssignPerson} onAssignPeopleGroup={onAssignPeopleGroup} onCreateVisitFromDrop={onCreateVisitFromDrop} onDropAssignment={onDropAssignment} onOpenPerson={onOpenPerson} onOpenProject={onOpenProject} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
         </div>
@@ -7127,6 +7119,50 @@ function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeop
         </div>
       )}
     </>
+  );
+}
+
+function EmptyScheduleDropZone({ dragPreview, onCreateVisitFromDrop, setDragPreview }) {
+  const acceptsAvailablePerson = (event) => event.dataTransfer.types.includes("application/x-buildcore-person");
+  const updatePreview = (event) => {
+    if (!acceptsAvailablePerson(event)) return;
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const percent = Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width)));
+    const duration = 10;
+    const rawStart = scheduleStartHour + percent * (scheduleEndHour - scheduleStartHour);
+    const start = Math.min(scheduleEndHour - duration, Math.max(scheduleStartHour, Math.round(rawStart * 4) / 4));
+    const end = start + duration;
+    setDragPreview?.({
+      rowId: "__empty__",
+      left: ((start - scheduleStartHour) / (scheduleEndHour - scheduleStartHour)) * 100,
+      width: ((end - start) / (scheduleEndHour - scheduleStartHour)) * 100,
+      label: `New ticket ${formatTimeRange(toTimeValue(start), toTimeValue(end))}`,
+    });
+  };
+
+  return (
+    <div className="emptyScheduleDropZone">
+      <div className="emptyScheduleResource">
+        <FolderKanban size={18} />
+        <span>Projects</span>
+      </div>
+      <div
+        className="emptyScheduleTrack"
+        onDragLeave={() => setDragPreview?.(null)}
+        onDragOver={updatePreview}
+        onDrop={(event) => {
+          if (!acceptsAvailablePerson(event)) return;
+          event.preventDefault();
+          const personId = event.dataTransfer.getData("application/x-buildcore-person");
+          setDragPreview?.(null);
+          onCreateVisitFromDrop?.({ clientX: event.clientX, personId, trackElement: event.currentTarget });
+        }}
+      >
+        {dragPreview?.rowId === "__empty__" && <div className="dragPreview" style={{ left: `${dragPreview.left}%`, width: `${dragPreview.width}%` }}>{dragPreview.label}</div>}
+        <div className="emptyTimeline">Drag an available person here to create a ticket.</div>
+      </div>
+    </div>
   );
 }
 
