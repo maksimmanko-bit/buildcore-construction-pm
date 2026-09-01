@@ -6344,7 +6344,7 @@ function DocumentUploaderShell(props) {
 }
 
 function ConfirmationSheet({ confirmation, onResolve }) {
-  return (
+  return createPortal(
     <div className="confirmOverlay" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
       <div className="confirmBackdrop" onClick={() => onResolve(false)} />
       <section className="confirmSheet">
@@ -6365,7 +6365,8 @@ function ConfirmationSheet({ confirmation, onResolve }) {
           </button>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

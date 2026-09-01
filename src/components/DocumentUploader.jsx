@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FileSpreadsheet, FileText, Image, Upload, X } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
 import { extractSearchText } from "../lib/fileText.js";
@@ -131,7 +132,9 @@ export default function DocumentUploader({ changeOrderId, compact = false, compa
     setPhotoBatch((items) => items.map((item) => (item.id === id ? { ...item, caption } : item)));
   }
 
-  function savePhotoBatch() {
+  function savePhotoBatch(event) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     if (dictationBusy) {
       onUploaded?.("Finish dictation before uploading photos.");
       return;
@@ -226,6 +229,46 @@ export default function DocumentUploader({ changeOrderId, compact = false, compa
     }
   }
 
+  const photoBatchSheet =
+    photoBatch.length > 0
+      ? createPortal(
+          <div className="captionSheetOverlay" role="dialog" aria-modal="true" aria-label="Photo notes">
+            <div className="captionSheetBackdrop" />
+            <section className="captionSheet photoBatchSheet">
+              <button className="captionClose" type="button" onClick={clearPhotoBatch} aria-label="Close">
+                <X size={18} />
+              </button>
+              <h3>Photo notes</h3>
+              <p>{photoBatch.length} photo{photoBatch.length === 1 ? "" : "s"} selected. Notes are optional and can be added later.</p>
+              <div className="photoBatchGrid">
+                {photoBatch.map((item) => (
+                  <label className="photoBatchCard" key={item.id}>
+                    <img src={item.previewUrl} alt="" />
+                    <span title={item.file.name}>{item.file.name}</span>
+                    <VoiceTextArea
+                      dictation={dictation}
+                      value={item.caption}
+                      onChange={(value) => updateBatchCaption(item.id, value)}
+                      placeholder="Add photo note..."
+                      rows={3}
+                    />
+                  </label>
+                ))}
+              </div>
+              <div className="captionActions">
+                <button className="outlineButton" type="button" onClick={clearPhotoBatch}>
+                  Cancel
+                </button>
+                <button className="addButton" type="button" onClick={savePhotoBatch} disabled={busy || dictationBusy}>
+                  Upload photos
+                </button>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
     <div className={compact ? "attachmentManager compactUploader" : "attachmentManager"}>
       <div className="uploadControls">
@@ -288,41 +331,7 @@ export default function DocumentUploader({ changeOrderId, compact = false, compa
 
       {progressLabel && <div className="uploadProgressPill">{progressLabel}</div>}
 
-      {photoBatch.length > 0 && (
-        <div className="captionSheetOverlay" role="dialog" aria-modal="true" aria-label="Photo notes">
-          <div className="captionSheetBackdrop" />
-          <section className="captionSheet photoBatchSheet">
-            <button className="captionClose" type="button" onClick={clearPhotoBatch} aria-label="Close">
-              <X size={18} />
-            </button>
-            <h3>Photo notes</h3>
-            <p>{photoBatch.length} photo{photoBatch.length === 1 ? "" : "s"} selected. Notes are optional and can be added later.</p>
-            <div className="photoBatchGrid">
-              {photoBatch.map((item) => (
-                <label className="photoBatchCard" key={item.id}>
-                  <img src={item.previewUrl} alt="" />
-                  <span title={item.file.name}>{item.file.name}</span>
-                  <VoiceTextArea
-                    dictation={dictation}
-                    value={item.caption}
-                    onChange={(value) => updateBatchCaption(item.id, value)}
-                    placeholder="Add photo note..."
-                    rows={3}
-                  />
-                </label>
-              ))}
-            </div>
-            <div className="captionActions">
-              <button className="outlineButton" type="button" onClick={clearPhotoBatch}>
-                Cancel
-              </button>
-              <button className="addButton" type="button" onClick={savePhotoBatch} disabled={busy || dictationBusy}>
-                Upload photos
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
+      {photoBatchSheet}
     </div>
   );
 }
