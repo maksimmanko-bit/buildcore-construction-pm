@@ -1153,11 +1153,13 @@ export default function App() {
   const canDeleteTickets = Boolean(profile?.is_active && profile?.role !== "builder");
   const activeFeatureFlags = normalizeFeatureFlags(featureFlags);
   const canUseDeveloperMode = Boolean(profile?.is_active && profile?.role !== "builder");
-  const canCreateFieldReports = Boolean(profile?.is_active && profile?.role !== "builder");
+  const canCreateSiteInspections = Boolean(profile?.is_active && profile?.role !== "builder");
+  const canCreateChangeOrders = Boolean(profile?.is_active);
   const visibleNavItems = navItems
     .filter((item) => !settingsNavIds.includes(item.id))
     .filter((item) => canManage || !["people", "equipment"].includes(item.id))
-    .filter((item) => canCreateFieldReports || !["siteVisits", "changeOrders"].includes(item.id))
+    .filter((item) => item.id !== "siteVisits" || canCreateSiteInspections)
+    .filter((item) => item.id !== "changeOrders" || canCreateChangeOrders)
     .filter((item) => activeFeatureFlags.safetyForm || item.id !== "safetyReports")
     .filter((item) => activeFeatureFlags.siteInspections || item.id !== "siteVisits")
     .filter((item) => activeFeatureFlags.changeOrders || item.id !== "changeOrders");
@@ -1333,9 +1335,9 @@ export default function App() {
   useEffect(() => {
     if ((activeNav === "people" || activeNav === "equipment") && !canManage) setActiveNav("overview");
     if (activeNav === "safetyReports" && !activeFeatureFlags.safetyForm) setActiveNav("overview");
-    if (activeNav === "siteVisits" && (!activeFeatureFlags.siteInspections || !canCreateFieldReports)) setActiveNav("overview");
-    if (activeNav === "changeOrders" && (!activeFeatureFlags.changeOrders || !canCreateFieldReports)) setActiveNav("overview");
-  }, [activeFeatureFlags.changeOrders, activeFeatureFlags.safetyForm, activeFeatureFlags.siteInspections, activeNav, canCreateFieldReports, canManage]);
+    if (activeNav === "siteVisits" && (!activeFeatureFlags.siteInspections || !canCreateSiteInspections)) setActiveNav("overview");
+    if (activeNav === "changeOrders" && (!activeFeatureFlags.changeOrders || !canCreateChangeOrders)) setActiveNav("overview");
+  }, [activeFeatureFlags.changeOrders, activeFeatureFlags.safetyForm, activeFeatureFlags.siteInspections, activeNav, canCreateChangeOrders, canCreateSiteInspections, canManage]);
 
   useEffect(() => {
     if (!activeFeatureFlags.siteInspections && (modalType === "siteVisit" || detailOverlay === "siteVisit")) {
@@ -2559,7 +2561,7 @@ export default function App() {
   async function saveSiteVisit(event) {
     event.preventDefault();
     if (preventSaveDuringDictation(event)) return;
-    if (!supabase || !profile || !canCreateFieldReports) return;
+    if (!supabase || !profile || !canCreateSiteInspections) return;
     if (!activeFeatureFlags.siteInspections) {
       setNotice("Site Inspection is disabled in Developer mode.");
       return;
@@ -2631,7 +2633,7 @@ export default function App() {
   async function saveChangeOrder(event) {
     event.preventDefault();
     if (preventSaveDuringDictation(event)) return;
-    if (!supabase || !profile || !canCreateFieldReports) return;
+    if (!supabase || !profile || !canCreateChangeOrders) return;
     if (!activeFeatureFlags.changeOrders) {
       setNotice("Change Order is disabled in Developer mode.");
       return;
@@ -2723,7 +2725,7 @@ export default function App() {
   }
 
   async function updateSiteVisitStatus(item, status) {
-    if (!supabase || !item?.id || !canCreateFieldReports) return;
+    if (!supabase || !item?.id || !canCreateSiteInspections) return;
     const completedNow = new Date();
     const completedTime = getWinnipegTimeValue(completedNow);
     const patch =
@@ -2749,7 +2751,7 @@ export default function App() {
   }
 
   async function updateChangeOrderStatus(item, status) {
-    if (!supabase || !item?.id || !canCreateFieldReports) return;
+    if (!supabase || !item?.id || !canCreateChangeOrders) return;
     if (status === "approved" && (!item.approved_by || !item.approval_signature)) {
       setNotice("Open Change Order and add Approved by plus digital signature before approving.");
       return;
@@ -2766,7 +2768,7 @@ export default function App() {
   }
 
   async function deleteSiteVisit(item) {
-    if (!supabase || !item?.id || !canCreateFieldReports) return;
+    if (!supabase || !item?.id || !canCreateSiteInspections) return;
     const confirmed = await confirmAction({
       title: "Delete Site Inspection?",
       message: "This removes the Site Inspection and its saved photos from the project view.",
@@ -2793,7 +2795,7 @@ export default function App() {
   }
 
   async function deleteChangeOrder(item) {
-    if (!supabase || !item?.id || !canCreateFieldReports) return;
+    if (!supabase || !item?.id || !canDeleteTickets) return;
     const confirmed = await confirmAction({
       title: "Delete Change Order?",
       message: "This removes the Change Order and its saved photos from the project view.",
@@ -3063,6 +3065,28 @@ export default function App() {
     return (rowsSource.files ?? []).filter((file) => visit?.id && file.visit_id === visit.id);
   }
 
+  function getSafetyIdentityTokens(person) {
+    return [person?.id, person?.full_name, person?.email, profileDisplayName(person, "")]
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean);
+  }
+
+  function profileHasSafetyForVisit(visit, person = profile) {
+    if (!activeFeatureFlags.safetyForm) return true;
+    if (!visit?.people_ids?.includes(person?.id)) return true;
+    const safetyFiles = getVisitFiles(visit).filter((file) => file.file_type === "safety_form");
+    if (safetyFiles.length === 0) return false;
+    const tokens = getSafetyIdentityTokens(person);
+    return safetyFiles.some((file) => {
+      const haystack = `${file.file_name || ""} ${file.search_text || ""}`.toLowerCase();
+      return tokens.some((token) => haystack.includes(token));
+    });
+  }
+
+  function visitActionsBlockedBySafety(visit) {
+    return Boolean(activeFeatureFlags.safetyForm && visit?.status === "on_site" && visit?.people_ids?.includes(profile?.id) && !profileHasSafetyForVisit(visit, profile));
+  }
+
   function getVisitNotes(visit) {
     return (rowsSource.visitNotes ?? []).filter((note) => visit?.id && note.visit_id === visit.id);
   }
@@ -3282,7 +3306,7 @@ export default function App() {
   }
 
   function editSiteVisit(item) {
-    if (!item || !canCreateFieldReports) return;
+    if (!item || !canCreateSiteInspections) return;
     setSelectedProjectId(item.project_id);
     setSelectedSiteVisitId(item.id);
     setEditingSiteVisitId(item.id);
@@ -3302,7 +3326,7 @@ export default function App() {
   }
 
   function editChangeOrder(item) {
-    if (!item || !canCreateFieldReports) return;
+    if (!item || !canCreateChangeOrders) return;
     setSelectedProjectId(item.project_id);
     setSelectedChangeOrderId(item.id);
     setEditingChangeOrderId(item.id);
@@ -3389,11 +3413,7 @@ export default function App() {
 
     const files = getVisitFiles(visit);
     const safetyFiles = files.filter((file) => file.file_type === "safety_form");
-    const currentProfileName = profileDisplayName(profile, "").toLowerCase();
-    const currentProfileSignedSafety =
-      !visit.people_ids?.includes(profile?.id) ||
-      safetyFiles.some((file) => `${file.file_name || ""} ${file.search_text || ""}`.toLowerCase().includes(currentProfileName));
-    const hasSafety = safetyFiles.length > 0 && currentProfileSignedSafety;
+    const hasSafety = profileHasSafetyForVisit(visit, profile);
     const hasBefore = files.some((file) => file.file_type === "before_photo");
 
     setWorkflowVisitId(visit.id);
@@ -3434,6 +3454,11 @@ export default function App() {
       setNotice("Select an active visit first.");
       return;
     }
+    if (visitActionsBlockedBySafety(visit)) {
+      setNotice("Complete your Safety Form before continuing.");
+      startArrivalWorkflow(visit);
+      return;
+    }
 
     setSelectedProjectId(visit.project_id);
     setSelectedVisitId(visit.id);
@@ -3445,6 +3470,11 @@ export default function App() {
   function openVisitNoteModal(visit = currentVisit, note = null) {
     if (!visit?.id || visit.status !== "on_site") {
       setNotice("Ticket notes are available only while the ticket is Active.");
+      return;
+    }
+    if (visitActionsBlockedBySafety(visit)) {
+      setNotice("Complete your Safety Form before adding notes.");
+      startArrivalWorkflow(visit);
       return;
     }
     setSelectedProjectId(visit.project_id);
@@ -3625,6 +3655,7 @@ export default function App() {
         formatDateTimeLabel(signedAt),
         safetyForm.hazards.join(", "),
         safetyForm.notes,
+        ...team.flatMap((person) => getSafetyIdentityTokens(person)),
         ...names,
         ...absentTeam.map((person) => person.full_name || person.email || "Team member"),
       ].join(" ");
@@ -3646,17 +3677,19 @@ export default function App() {
         absentTeam: absentTeam.map((person) => person.full_name || person.email || "Team member"),
       });
 
-      if (!activeFeatureFlags.beforeAfterPhotos) {
+      const alreadyHasBeforePhotos = getVisitFiles(activeVisit).some((file) => file.file_type === "before_photo");
+      if (!activeFeatureFlags.beforeAfterPhotos || alreadyHasBeforePhotos) {
         await updateVisitStatusById(activeVisit.id, "on_site");
         await logVisitActivity(activeVisit, "arrived", `${currentUserName} arrived and started work.`, {
           arrivedAt: new Date().toISOString(),
-          skippedBeforePhotos: true,
+          skippedBeforePhotos: !activeFeatureFlags.beforeAfterPhotos,
+          joinedAfterBeforePhotos: alreadyHasBeforePhotos,
         });
         setModalType(null);
         setWorkflowVisitId("");
         setSafetyForm({ hazards: [], notes: "", signatures: {}, presentIds: [] });
         triggerSoftPulse();
-        setNotice("Safety form saved. Work started.");
+        setNotice(alreadyHasBeforePhotos ? "Safety form saved. Your ticket actions are unlocked." : "Safety form saved. Work started.");
         loadVisits();
         loadActivities();
         loadFiles();
@@ -4271,7 +4304,7 @@ export default function App() {
       setModalType("onboarding");
       return;
     }
-    if (!canManage) {
+    if (!canManage && activeNav !== "changeOrders") {
       setNotice("Only Owner, PM, or Office Manager can add records.");
       return;
     }
@@ -4449,6 +4482,11 @@ export default function App() {
     }
     if (visit.status !== "on_site") {
       setNotice("Change Order from Overview is available only for an Active ticket.");
+      return;
+    }
+    if (visitActionsBlockedBySafety(visit)) {
+      setNotice("Complete your Safety Form before creating a Change Order.");
+      startArrivalWorkflow(visit);
       return;
     }
     if (!activeFeatureFlags.changeOrders) {
@@ -5119,7 +5157,7 @@ export default function App() {
       if (!activeFeatureFlags.siteInspections) {
         return <InfoView icon={ClipboardCheck} title="Site Inspection hidden" text="Site Inspection is disabled in Developer mode. Existing records stay saved in Supabase." />;
       }
-      if (!canCreateFieldReports) {
+      if (!canCreateSiteInspections) {
         return <InfoView icon={ClipboardCheck} title="Site Inspection access locked" text="Site Inspections are available to every active non-Builder role." />;
       }
       return (
@@ -5129,7 +5167,7 @@ export default function App() {
             emptyText="No Site Inspections saved yet."
             getProfileName={getProfileName}
             kind="siteVisit"
-            onDelete={deleteSiteVisit}
+            onDelete={canDeleteTickets ? deleteSiteVisit : null}
             onExport={exportSiteVisitPdf}
             onOpen={openSiteVisitOverlay}
             onStatus={updateSiteVisitStatus}
@@ -5143,8 +5181,8 @@ export default function App() {
       if (!activeFeatureFlags.changeOrders) {
         return <InfoView icon={FileBarChart2} title="Change Order hidden" text="Change Order is disabled in Developer mode. Existing records stay saved in Supabase." />;
       }
-      if (!canCreateFieldReports) {
-        return <InfoView icon={FileBarChart2} title="Change Order access locked" text="Change Orders are available to Owner, Project Manager, and Office Manager roles." />;
+      if (!canCreateChangeOrders) {
+        return <InfoView icon={FileBarChart2} title="Change Order access locked" text="Change Orders are available after your account is approved." />;
       }
       return (
         <>
@@ -5153,7 +5191,7 @@ export default function App() {
             emptyText="No Change Orders saved yet."
             getProfileName={getProfileName}
             kind="changeOrder"
-            onDelete={deleteChangeOrder}
+            onDelete={canDeleteTickets ? deleteChangeOrder : null}
             onEmail={emailChangeOrderReport}
             onExport={exportChangeOrderPdf}
             onOpen={openChangeOrderOverlay}
@@ -5597,7 +5635,8 @@ export default function App() {
 
         {activeFeatureFlags.siteInspections && detailOverlay === "siteVisit" && selectedProject && selectedSiteVisit && (
           <FieldReportDetailOverlay
-            canManage={canCreateFieldReports}
+            canDelete={canDeleteTickets}
+            canManage={canCreateSiteInspections}
             companyId={rowsSource.companyId}
             dictation={dictation}
             dictationBusy={dictationBusy}
@@ -5625,7 +5664,8 @@ export default function App() {
 
         {activeFeatureFlags.changeOrders && detailOverlay === "changeOrder" && selectedProject && selectedChangeOrder && (
           <FieldReportDetailOverlay
-            canManage={canCreateFieldReports}
+            canDelete={canDeleteTickets}
+            canManage={canCreateChangeOrders}
             companyId={rowsSource.companyId}
             dictation={dictation}
             dictationBusy={dictationBusy}
@@ -5679,6 +5719,7 @@ export default function App() {
             profiles={rowsSource.people}
             project={selectedProject}
             notes={currentVisitNotes}
+            safetyLocked={visitActionsBlockedBySafety(currentVisit)}
             visit={currentVisit}
           />
         )}
@@ -6291,7 +6332,7 @@ function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, ch
         <ProjectFieldReportSection
           getProfileName={getProfileName}
           kind="siteVisit"
-          onDelete={onRemoveSiteVisit}
+          onDelete={canDeleteTickets ? onRemoveSiteVisit : null}
           onExport={onExportSiteVisit}
           onOpen={onOpenSiteVisit}
           onStatus={onUpdateSiteVisitStatus}
@@ -6303,7 +6344,7 @@ function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, ch
         <ProjectFieldReportSection
           getProfileName={getProfileName}
           kind="changeOrder"
-          onDelete={onRemoveChangeOrder}
+          onDelete={canDeleteTickets ? onRemoveChangeOrder : null}
           onEmail={onEmailChangeOrder}
           onExport={onExportChangeOrder}
           onOpen={onOpenChangeOrder}
@@ -6441,7 +6482,7 @@ function ActivityFeed({ activities = [], canDeleteItems = false, getProfileName,
   );
 }
 
-function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationBusy = false, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onUploaded, people, profileId, profiles, project, visit }) {
+function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationBusy = false, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onUploaded, people, profileId, profiles, project, safetyLocked = false, visit }) {
   const ticketAddress = getVisitAddress(visit, project);
   return (
     <DetailOverlayShell title={`${project.name} Ticket`} onClose={onClose}>
@@ -6499,19 +6540,27 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
               Arrived
             </button>
           )}
-          {visit.status === "on_site" && (
+          {visit.status === "on_site" && safetyLocked && (
+            <button type="button" onClick={onArrive}>
+              <ClipboardCheck size={18} />
+              Complete Safety Form
+            </button>
+          )}
+          {visit.status === "on_site" && !safetyLocked && (
             <button className="completeWorkButton" type="button" onClick={onComplete}>
               <CheckCircle2 size={18} />
               Complete
             </button>
           )}
-          {visit.status === "on_site" && (
+          {visit.status === "on_site" && !safetyLocked && (
             <button type="button" onClick={() => onOpenNote?.(visit)}>
               <MessageSquarePlus size={18} />
               Add Note
             </button>
           )}
         </div>
+      ) : safetyLocked ? (
+        <div className="thanksBox muted">Complete your Safety Form before ticket actions unlock.</div>
       ) : (
         <div className="thanksBox">Thank you. This ticket is Done.</div>
       )}
@@ -6589,7 +6638,7 @@ function VisitNotesSection({ files = [], getProfileName, notes = [], onEdit, onO
   );
 }
 
-function FieldReportDetailOverlay({ canManage, companyId, dictation, dictationBusy = false, files = [], getProfileName, kind, onClose, onDelete, onEdit, onEmail, onExport, onOpenAttachment, onStatus, onUploaded, profileId, project, record, profiles = [] }) {
+function FieldReportDetailOverlay({ canDelete = false, canManage, companyId, dictation, dictationBusy = false, files = [], getProfileName, kind, onClose, onDelete, onEdit, onEmail, onExport, onOpenAttachment, onStatus, onUploaded, profileId, project, record, profiles = [] }) {
   const isSiteVisit = kind === "siteVisit";
   const title = getFieldReportLabel(kind);
   const date = isSiteVisit ? record.visit_date : record.order_date;
@@ -6628,7 +6677,7 @@ function FieldReportDetailOverlay({ canManage, companyId, dictation, dictationBu
               Complete
             </button>
           )}
-          {canManage && (
+          {canDelete && (
             <button className="dangerAction" type="button" onClick={() => onDelete?.(record)}>
               <Trash2 size={17} />
               Remove
@@ -6843,35 +6892,41 @@ function DocumentListRow({ file, onOpen, profiles = [], project }) {
 }
 
 function AttachmentSections({ featureFlags = defaultFeatureFlags, files, onOpen, profiles = [], uploader = null }) {
+  const [openUploaderId, setOpenUploaderId] = useState("");
   const flags = normalizeFeatureFlags(featureFlags);
   const groups = [
-    flags.safetyForm ? { id: "safety", label: "Safety Forms", icon: FileText, items: files.filter((file) => file.file_type === "safety_form") } : null,
-    { id: "projectPhotos", label: "Project Photos", icon: Camera, items: files.filter((file) => file.file_kind === "photo" && !file.visit_id && !file.site_visit_id && !file.change_order_id) },
-    flags.beforeAfterPhotos ? { id: "before", label: "Before Photos", icon: Camera, items: files.filter((file) => file.file_type === "before_photo" && file.visit_id) } : null,
-    flags.beforeAfterPhotos ? { id: "after", label: "After Photos", icon: Camera, items: files.filter((file) => file.file_type === "completion_photo" && file.visit_id) } : null,
-    { id: "pdf", label: "PDFs", icon: FileText, items: files.filter((file) => file.file_kind === "pdf" && file.file_type !== "safety_form") },
-    { id: "excel", label: "Excel", icon: FileSpreadsheet, items: files.filter((file) => file.file_kind === "excel") },
+    flags.safetyForm ? { id: "safety", label: "Safety Forms", icon: FileText, uploadMode: "pdf", fileType: "safety_form", items: files.filter((file) => file.file_type === "safety_form") } : null,
+    { id: "projectPhotos", label: "Project Photos", icon: Camera, uploadMode: "photo", fileType: "project_document", items: files.filter((file) => file.file_kind === "photo" && !file.visit_id && !file.site_visit_id && !file.change_order_id) },
+    flags.beforeAfterPhotos ? { id: "before", label: "Before Photos", icon: Camera, uploadMode: "photo", fileType: "before_photo", items: files.filter((file) => file.file_type === "before_photo" && file.visit_id) } : null,
+    flags.beforeAfterPhotos ? { id: "after", label: "After Photos", icon: Camera, uploadMode: "photo", fileType: "completion_photo", items: files.filter((file) => file.file_type === "completion_photo" && file.visit_id) } : null,
+    { id: "pdf", label: "PDFs", icon: FileText, uploadMode: "pdf", fileType: "project_document", items: files.filter((file) => file.file_kind === "pdf" && file.file_type !== "safety_form") },
+    { id: "excel", label: "Excel", icon: FileSpreadsheet, uploadMode: "excel", fileType: "project_document", items: files.filter((file) => file.file_kind === "excel") },
   ].filter(Boolean);
 
   return (
     <div className="attachmentSections">
-      {uploader && (
-        <section className="attachmentUploadSection">
-          <div className="panelSectionHeader">
-            <h3>Add files</h3>
-          </div>
-          <DocumentUploaderShell {...uploader} showPreview={false} />
-        </section>
-      )}
       {groups.map((group) => {
         const Icon = group.icon;
+        const canUploadGroup = Boolean(uploader && (uploader.visitId || !["before", "after"].includes(group.id)));
         return (
           <section className={`attachmentSection ${group.id}`} key={group.id}>
-            <h3>
-              <Icon size={17} />
-              {group.label}
-              <span>{group.items.length}</span>
-            </h3>
+            <div className="attachmentSectionHeader">
+              <h3>
+                <Icon size={17} />
+                {group.label}
+                <span>{group.items.length}</span>
+              </h3>
+              {canUploadGroup && (
+                <button className="sectionAddButton" type="button" title={`Add ${group.label}`} onClick={() => setOpenUploaderId((value) => (value === group.id ? "" : group.id))}>
+                  <Plus size={18} />
+                </button>
+              )}
+            </div>
+            {canUploadGroup && openUploaderId === group.id && (
+              <div className="sectionUploader">
+                <DocumentUploaderShell {...uploader} compact fileType={group.fileType} uploadMode={group.uploadMode} showPreview={false} />
+              </div>
+            )}
             {group.items.length === 0 ? (
               <div className="emptyPanelState">No files yet</div>
             ) : (
@@ -7950,10 +8005,12 @@ function FieldReportCard({ getProfileName, kind, onDelete, onEmail, onExport, on
             Complete
           </button>
         )}
-        <button className="dangerAction" type="button" onClick={() => onDelete?.(record)}>
-          <Trash2 size={16} />
-          Remove
-        </button>
+        {onDelete && (
+          <button className="dangerAction" type="button" onClick={() => onDelete?.(record)}>
+            <Trash2 size={16} />
+            Remove
+          </button>
+        )}
       </div>
     </article>
   );
@@ -8195,6 +8252,20 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
   const firstAddress = getVisitAddress(firstVisit, firstProject);
   const isToday = selectedDate === today;
   const setOverviewDate = (date) => onDateChange?.(date);
+  const flags = normalizeFeatureFlags(data.featureFlags);
+
+  function currentUserHasSafety(files, visit) {
+    if (!flags.safetyForm) return true;
+    if (!visit?.people_ids?.includes(profile?.id)) return true;
+    const tokens = [profile?.id, profile?.full_name, profile?.email, profileDisplayName(profile, "")]
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean);
+    const safetyFiles = files.filter((file) => file.file_type === "safety_form");
+    return safetyFiles.some((file) => {
+      const haystack = `${file.file_name || ""} ${file.search_text || ""}`.toLowerCase();
+      return tokens.some((token) => haystack.includes(token));
+    });
+  }
 
   useEffect(() => {
     let alive = true;
@@ -8274,7 +8345,8 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
       {assignedVisits.map((visit) => {
         const project = projects.find((item) => item.id === visit.project_id);
         const files = getVisitFiles(visit);
-        const hasSafety = files.some((file) => file.file_type === "safety_form");
+        const hasCurrentUserSafety = currentUserHasSafety(files, visit);
+        const safetyLocked = isToday && visit.status === "on_site" && !hasCurrentUserSafety;
         const hasBefore = files.some((file) => file.file_type === "before_photo");
         const hasAfter = files.some((file) => file.file_type === "completion_photo");
         const sitePhone = project?.contact_phone || "";
@@ -8339,7 +8411,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                 }
               />
               <ProjectFact icon={ClipboardCheck} label="Assigned by" value={getProfileName(visit.assigned_by ?? visit.created_by)} />
-              <ProjectFact icon={ClipboardCheck} label="Checklist" value={`Safety ${hasSafety ? "done" : "needed"} · Before ${hasBefore ? "done" : "needed"} · After ${hasAfter ? "done" : "needed"}`} />
+              <ProjectFact icon={ClipboardCheck} label="Checklist" value={`Safety ${hasCurrentUserSafety ? "done" : "needed"} / Before ${hasBefore ? "done" : "needed"} / After ${hasAfter ? "done" : "needed"}`} />
             </dl>
 
             <div className="overviewAssignmentGrid">
@@ -8377,7 +8449,16 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                 </button>
               </div>
             )}
-            {isToday && visit.status === "on_site" && (
+            {safetyLocked && (
+              <div className="visitActions wideActions">
+                <button type="button" onClick={() => onArrive(visit)}>
+                  <ClipboardCheck size={18} />
+                  Complete Safety Form
+                </button>
+                <span className="workflowHint">You need your own Safety Form before ticket actions unlock.</span>
+              </div>
+            )}
+            {isToday && visit.status === "on_site" && !safetyLocked && (
               <div className="visitActions wideActions">
                 <button type="button" onClick={() => onOpenNote?.(visit)}>
                   <MessageSquarePlus size={18} />

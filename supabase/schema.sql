@@ -1068,10 +1068,11 @@ for select to authenticated
 using (company_id = public.current_company_id());
 
 drop policy if exists "non builders write change orders" on public.change_orders;
-create policy "non builders write change orders" on public.change_orders
+drop policy if exists "active members write change orders" on public.change_orders;
+create policy "active members write change orders" on public.change_orders
 for all to authenticated
-using (company_id = public.current_company_id() and public.current_role() <> 'builder')
-with check (company_id = public.current_company_id() and public.current_role() <> 'builder');
+using (company_id = public.current_company_id())
+with check (company_id = public.current_company_id());
 
 drop policy if exists "users read own notifications" on public.notifications;
 create policy "users read own notifications" on public.notifications

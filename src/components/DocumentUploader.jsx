@@ -9,6 +9,14 @@ function isPhoto(file) {
   return file?.type?.startsWith("image/");
 }
 
+function isPdf(file) {
+  return file?.type === "application/pdf" || /\.pdf$/i.test(file?.name || "");
+}
+
+function isExcel(file) {
+  return /spreadsheet|excel/i.test(file?.type || "") || /\.(xls|xlsx)$/i.test(file?.name || "");
+}
+
 function isAttachmentPhoto(attachment) {
   return attachment.file_kind === "photo" || attachment.mime_type?.startsWith("image/");
 }
@@ -64,7 +72,7 @@ function AttachmentThumbnail({ attachment, onOpen }) {
   );
 }
 
-export default function DocumentUploader({ changeOrderId, companyId, dictation, dictationBusy = false, projectId, siteVisitId, visitId, profileId, attachments = [], onUploaded, onOpen, showPreview = true }) {
+export default function DocumentUploader({ changeOrderId, compact = false, companyId, dictation, dictationBusy = false, fileType = "project_document", projectId, siteVisitId, uploadMode = "all", visitId, profileId, attachments = [], onUploaded, onOpen, showPreview = true }) {
   const documentInputRef = useRef(null);
   const photoInputRef = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -186,6 +194,7 @@ export default function DocumentUploader({ changeOrderId, companyId, dictation, 
         const row = await uploadVisitAttachment({
           companyId,
           changeOrderId,
+          fileType,
           projectId,
           siteVisitId,
           visitId,
@@ -218,25 +227,36 @@ export default function DocumentUploader({ changeOrderId, companyId, dictation, 
   }
 
   return (
-    <div className="attachmentManager">
+    <div className={compact ? "attachmentManager compactUploader" : "attachmentManager"}>
       <div className="uploadControls">
         <input
           ref={documentInputRef}
-          accept=".pdf,.xls,.xlsx,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          accept={uploadMode === "pdf" ? ".pdf,application/pdf" : uploadMode === "excel" ? ".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : ".pdf,.xls,.xlsx,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
           multiple
           type="file"
-          onChange={(event) => uploadEntries(Array.from(event.target.files ?? []).map((file) => ({ file })))}
+          onChange={(event) => {
+            const selectedFiles = Array.from(event.target.files ?? []).filter((file) => {
+              if (uploadMode === "pdf") return isPdf(file);
+              if (uploadMode === "excel") return isExcel(file);
+              return true;
+            });
+            uploadEntries(selectedFiles.map((file) => ({ file })));
+          }}
         />
         <input ref={photoInputRef} accept="image/jpeg,image/png,image/webp" multiple type="file" onChange={(event) => requestPhotoCaptions(event.target.files)} />
 
-        <button type="button" onClick={() => photoInputRef.current?.click()} disabled={busy || dictationBusy}>
-          <Image size={18} />
-          Photo
-        </button>
-        <button type="button" onClick={() => documentInputRef.current?.click()} disabled={busy || dictationBusy}>
-          <Upload size={18} />
-          {busy ? "Saving..." : "PDF / Excel"}
-        </button>
+        {(uploadMode === "all" || uploadMode === "photo") && (
+          <button type="button" onClick={() => photoInputRef.current?.click()} disabled={busy || dictationBusy}>
+            <Image size={18} />
+            Photo
+          </button>
+        )}
+        {(uploadMode === "all" || uploadMode === "pdf" || uploadMode === "excel") && (
+          <button type="button" onClick={() => documentInputRef.current?.click()} disabled={busy || dictationBusy}>
+            <Upload size={18} />
+            {busy ? "Saving..." : uploadMode === "pdf" ? "PDF" : uploadMode === "excel" ? "Excel" : "PDF / Excel"}
+          </button>
+        )}
       </div>
 
       {showPreview && (
