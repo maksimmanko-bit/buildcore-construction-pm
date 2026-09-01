@@ -1122,6 +1122,10 @@ export default function App() {
   const [authPhone, setAuthPhone] = useState("");
   const [authAvatarFile, setAuthAvatarFile] = useState(null);
   const [authAvatarEmoji, setAuthAvatarEmoji] = useState("");
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotStep, setForgotStep] = useState("form");
+  const [recoveryForm, setRecoveryForm] = useState({ password: "", confirm: "" });
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [selectedAttachment, setSelectedAttachment] = useState(null);
   const [viewerItems, setViewerItems] = useState([]);
@@ -1323,6 +1327,12 @@ export default function App() {
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setIsPasswordRecovery(true);
+        setRecoveryForm({ password: "", confirm: "" });
+        setModalType("passwordRecovery");
+        setNotice("Create a new password to continue.");
+      }
       setSession((currentSession) => {
         const currentUserId = currentSession?.user?.id || "";
         const nextUserId = nextSession?.user?.id || "";
@@ -2186,6 +2196,63 @@ export default function App() {
     }
 
     setNotice(authMode === "signup" ? "Account created. Check your email to verify it, then return here and sign in." : "");
+  }
+
+  async function sendPasswordReset(event) {
+    event.preventDefault();
+    if (!supabase) return;
+    const normalizedEmail = forgotEmail.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setNotice("Enter your email first.");
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo: getAuthRedirectUrl(),
+    });
+    setLoading(false);
+
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+
+    setForgotStep("sent");
+    setNotice("If this email exists, reset instructions were sent.");
+  }
+
+  async function saveRecoveredPassword(event) {
+    event.preventDefault();
+    if (!supabase) return;
+    const password = recoveryForm.password.trim();
+    const confirm = recoveryForm.confirm.trim();
+    if (password.length < 8) {
+      setNotice("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirm) {
+      setNotice("Passwords do not match.");
+      return;
+    }
+
+    setLoading(true);
+    setNotice("Updating password...");
+    const { error } = await supabase.auth.updateUser({ password });
+    setLoading(false);
+
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+
+    setRecoveryForm({ password: "", confirm: "" });
+    setIsPasswordRecovery(false);
+    setModalType(null);
+    setAuthMode("signin");
+    setAuthPassword("");
+    setNotice("Password updated.");
+    refreshData();
   }
 
   async function signOut() {
@@ -5134,6 +5201,18 @@ export default function App() {
       return <AuthGate notice="Supabase environment variables are missing. Add them before signing in." />;
     }
 
+    if (isPasswordRecovery) {
+      return (
+        <PasswordRecoveryScreen
+          form={recoveryForm}
+          loading={loading}
+          notice={notice}
+          onChange={setRecoveryForm}
+          onSubmit={saveRecoveredPassword}
+        />
+      );
+    }
+
     if (session && profile && !profile.is_active) {
       return <PendingAccessScreen notice={notice} onSignOut={signOut} profile={profile} />;
     }
@@ -5151,7 +5230,10 @@ export default function App() {
         authPassword={authPassword}
         authPhone={authPhone}
         authAvatarEmoji={authAvatarEmoji}
+        forgotEmail={forgotEmail}
+        forgotStep={forgotStep}
         loading={loading}
+        modalType={modalType}
         notice={notice}
         onAvatarChange={(file) => {
           setAuthAvatarFile(file);
@@ -5167,6 +5249,18 @@ export default function App() {
         onModeChange={setAuthMode}
         onPasswordChange={setAuthPassword}
         onPhoneChange={setAuthPhone}
+        onForgotPassword={() => {
+          setForgotEmail(authEmail.trim().toLowerCase());
+          setForgotStep("form");
+          setModalType("forgotPassword");
+        }}
+        onForgotEmailChange={setForgotEmail}
+        onForgotClose={() => setModalType(null)}
+        onForgotSubmit={sendPasswordReset}
+        onForgotBackToSignIn={() => {
+          setModalType(null);
+          setAuthMode("signin");
+        }}
         onSubmit={signIn}
       />
     );
@@ -8716,7 +8810,7 @@ function ProfileEditForm({ avatarUrl, form, loading, onChange, onSubmit, profile
   );
 }
 
-function PasswordChangeForm({ form, loading, onChange, onSubmit }) {
+function PasswordChangeForm({ form, loading, onChange, onSubmit, submitLabel = "Save password" }) {
   return (
     <form className="settingsProfileForm" onSubmit={onSubmit}>
       <div className="settingsAvatarBlock passwordHeroBlock">
@@ -8737,7 +8831,7 @@ function PasswordChangeForm({ form, loading, onChange, onSubmit }) {
       <div className="formActions">
         <button className="addButton" type="submit" disabled={loading}>
           <Save size={18} />
-          Save password
+          {submitLabel}
         </button>
       </div>
     </form>
@@ -9023,6 +9117,75 @@ function PendingAccessScreen({ notice, onSignOut, profile }) {
   );
 }
 
+function PasswordRecoveryScreen({ form, loading = false, notice = "", onChange, onSubmit }) {
+  return (
+    <main className="authGate passwordRecoveryGate">
+      <section className="authVisual" aria-hidden="true">
+        <div className="authBrandCard">
+          <div className="brandMark">B</div>
+          <span>BuildCore Construction</span>
+        </div>
+        <div className="authPreview passwordResetPreview">
+          <strong>Secure reset</strong>
+          <p>Create a new password for your verified Supabase account.</p>
+        </div>
+      </section>
+
+      <section className="authPanel" aria-label="Set new password">
+        <div className="authCard passwordRecoveryCard">
+          <div className="authLogo">
+            <div className="brandMark">B</div>
+            <div>
+              <strong>BuildCore</strong>
+              <span>Password recovery</span>
+            </div>
+          </div>
+          <div className="authCopy">
+            <h1>Set new password</h1>
+            <p>Use a new password with at least 8 characters. After saving, your workspace will open automatically.</p>
+          </div>
+          {notice && <div className="authNotice">{notice}</div>}
+          <PasswordChangeForm form={form} loading={loading} onChange={onChange} onSubmit={onSubmit} submitLabel="Save new password" />
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ForgotPasswordForm({ email = "", loading = false, onBack, onChange, onSubmit, step = "form" }) {
+  if (step === "sent") {
+    return (
+      <div className="passwordResetPanel">
+        <div className="passwordResetIcon">
+          <Mail size={24} />
+        </div>
+        <h3>Check your email</h3>
+        <p>If this email exists, reset instructions were sent. Open the link from the email, then create a new password.</p>
+        <button className="outlineButton fullWidth" type="button" onClick={onBack}>
+          Back to sign in
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form className="stackForm passwordResetPanel" onSubmit={onSubmit}>
+      <div className="passwordResetIcon">
+        <KeyRound size={24} />
+      </div>
+      <h3>Reset your password</h3>
+      <p>Enter the email for your BuildCore account. For privacy, the app will not reveal whether this email exists.</p>
+      <FormField label="Email">
+        <input autoComplete="email" required type="email" value={email} onChange={(event) => onChange?.(event.target.value)} />
+      </FormField>
+      <button className="addButton fullWidth" type="submit" disabled={loading}>
+        <Mail size={17} />
+        {loading ? "Sending..." : "Send reset link"}
+      </button>
+    </form>
+  );
+}
+
 function AuthGate({
   authEmail = "",
   authAvatarEmoji = "",
@@ -9031,12 +9194,20 @@ function AuthGate({
   authMode = "signin",
   authPassword = "",
   authPhone = "",
+  forgotEmail = "",
+  forgotStep = "form",
   loading = false,
+  modalType = "",
   notice = "",
   onAvatarChange,
   onAvatarEmojiChange,
   onEmailChange,
   onFirstNameChange,
+  onForgotBackToSignIn,
+  onForgotClose,
+  onForgotEmailChange,
+  onForgotPassword,
+  onForgotSubmit,
   onLastNameChange,
   onModeChange,
   onPasswordChange,
@@ -9047,8 +9218,9 @@ function AuthGate({
   const isChecking = loading && !canSubmit;
 
   return (
-    <main className="authGate">
-      <section className="authVisual" aria-hidden="true">
+    <>
+      <main className="authGate">
+        <section className="authVisual" aria-hidden="true">
         <div className="authBrandCard">
           <div className="brandMark">B</div>
           <span>BuildCore Construction</span>
@@ -9068,9 +9240,9 @@ function AuthGate({
             <i />
           </div>
         </div>
-      </section>
+        </section>
 
-      <section className="authPanel" aria-label="Account access">
+        <section className="authPanel" aria-label="Account access">
         <div className="authCard">
           <div className="authLogo">
             <div className="brandMark">B</div>
@@ -9132,6 +9304,11 @@ function AuthGate({
                   onChange={(event) => onPasswordChange?.(event.target.value)}
                 />
               </FormField>
+              {authMode === "signin" && (
+                <button className="forgotPasswordButton" type="button" onClick={onForgotPassword}>
+                  Forgot password?
+                </button>
+              )}
               <div className="authActions">
                 <button className="outlineButton" type="button" onClick={() => onModeChange?.(authMode === "signup" ? "signin" : "signup")}>
                   {authMode === "signup" ? "I have account" : "Create account"}
@@ -9144,8 +9321,14 @@ function AuthGate({
             </form>
           )}
         </div>
-      </section>
-    </main>
+        </section>
+      </main>
+      {modalType === "forgotPassword" && (
+        <AppModal title={forgotStep === "sent" ? "Check your email" : "Reset password"} onClose={onForgotClose}>
+          <ForgotPasswordForm email={forgotEmail} loading={loading} onBack={onForgotBackToSignIn} onChange={onForgotEmailChange} onSubmit={onForgotSubmit} step={forgotStep} />
+        </AppModal>
+      )}
+    </>
   );
 }
 
