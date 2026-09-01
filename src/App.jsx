@@ -9130,6 +9130,11 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleG
             className="rowTrack"
             onDragLeave={() => setDragPreview?.(null)}
             onDragOver={(event) => {
+              const scheduleBlockTarget = event.target instanceof Element ? event.target.closest(".scheduleBlock") : null;
+              if (scheduleBlockTarget && event.currentTarget.contains(scheduleBlockTarget)) {
+                setDragPreview?.(null);
+                return;
+              }
               event.preventDefault();
               const raw = event.dataTransfer.getData("application/json");
               const personId = event.dataTransfer.getData("application/x-buildcore-person");
@@ -9150,6 +9155,11 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleG
               });
             }}
             onDrop={(event) => {
+              const scheduleBlockTarget = event.target instanceof Element ? event.target.closest(".scheduleBlock") : null;
+              if (scheduleBlockTarget && event.currentTarget.contains(scheduleBlockTarget)) {
+                setDragPreview?.(null);
+                return;
+              }
               event.preventDefault();
               const raw = event.dataTransfer.getData("application/json");
               const personId = event.dataTransfer.getData("application/x-buildcore-person");
@@ -9375,6 +9385,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
           event.dataTransfer.types.includes("application/x-buildcore-assigned-equipment")
         ) {
           event.preventDefault();
+          event.stopPropagation();
           event.dataTransfer.dropEffect = "copy";
           const isGroupDrag = event.dataTransfer.types.includes("application/x-buildcore-person-group");
           const groupRaw = event.dataTransfer.getData("application/x-buildcore-person-group");
