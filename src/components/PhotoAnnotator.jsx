@@ -71,7 +71,7 @@ function annotationControlDefaults(object) {
     borderColor: "#0a84ff",
     cornerColor: "#ffffff",
     cornerStrokeColor: "#0a84ff",
-    cornerSize: 14,
+    cornerSize: 11,
     cornerStyle: "circle",
     padding: 4,
     transparentCorners: false,
@@ -82,8 +82,8 @@ function annotationControlDefaults(object) {
 }
 
 function createArrow({ color, point, strokeWidth }) {
-  const width = 180;
-  const line = new Line([0, 0, 186, 0], {
+  const width = 112;
+  const line = new Line([0, 0, 118, 0], {
     stroke: color,
     strokeWidth,
     strokeLineCap: "round",
@@ -94,10 +94,10 @@ function createArrow({ color, point, strokeWidth }) {
     shadow: markupShadow,
   });
   const head = new Triangle({
-    left: 186,
+    left: 118,
     top: 0,
-    width: Math.max(24, strokeWidth * 5),
-    height: Math.max(28, strokeWidth * 5.6),
+    width: Math.max(18, strokeWidth * 4),
+    height: Math.max(22, strokeWidth * 4.8),
     angle: 90,
     fill: color,
     originX: "center",
@@ -121,10 +121,10 @@ function createShape({ color, fill, point, strokeWidth, tool }) {
   if (tool === "rect") {
     return annotationControlDefaults(
       new Rect({
-        left: point.x - 105,
-        top: point.y - 59,
-        width: 210,
-        height: 118,
+        left: point.x - 58,
+        top: point.y - 34,
+        width: 116,
+        height: 68,
         fill,
         stroke: color,
         strokeWidth,
@@ -141,9 +141,9 @@ function createShape({ color, fill, point, strokeWidth, tool }) {
   if (tool === "circle") {
     return annotationControlDefaults(
       new FabricCircle({
-        left: point.x - 64,
-        top: point.y - 64,
-        radius: 64,
+        left: point.x - 38,
+        top: point.y - 38,
+        radius: 38,
         fill,
         stroke: color,
         strokeWidth,
@@ -167,7 +167,7 @@ function createTextBubble({ color, point, text }) {
       left: point.x,
       top: point.y,
       fill: color === "#ffffff" ? "#111827" : color,
-      fontSize: 34,
+      fontSize: 28,
       fontFamily: "Inter, system-ui, sans-serif",
       fontWeight: 850,
       backgroundColor: "rgba(255,255,255,0.88)",
@@ -222,7 +222,7 @@ export default function PhotoAnnotator({ imageUrl, onSave }) {
   const [fill, setFill] = useState(swatches[0].fill);
   const [isSaving, setIsSaving] = useState(false);
   const [saveFlash, setSaveFlash] = useState(false);
-  const [strokeWidth, setStrokeWidth] = useState(5);
+  const [strokeWidth, setStrokeWidth] = useState(4);
   const [textComposer, setTextComposer] = useState(null);
   const [tool, setTool] = useState("draw");
   const [zoom, setZoom] = useState(1);

@@ -9985,11 +9985,15 @@ html {
 
 .photoAnnotatorPanel {
   width: min(1180px, 100%);
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 .photoAnnotatorPanel .viewerTopBar {
   display: flex;
   justify-content: flex-end;
+  width: 100%;
+  max-width: 100%;
   min-height: 0;
   padding: 8px;
   border: 0;
@@ -10001,7 +10005,9 @@ html {
 }
 
 .photoAnnotatorPanel .viewerTopBar .outlineButton {
+  flex: 0 0 auto;
   min-height: 34px;
+  max-width: calc(100% - 16px);
   padding: 0 12px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.86);
@@ -10014,6 +10020,8 @@ html {
   position: relative;
   display: grid;
   gap: 12px;
+  max-width: 100%;
+  overflow-x: clip;
   padding: 0 0 12px;
 }
 
@@ -10028,17 +10036,19 @@ html {
   position: sticky;
   z-index: 20;
   bottom: max(12px, env(safe-area-inset-bottom));
-  display: grid;
-  grid-template-columns: auto auto auto auto auto;
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
+  align-content: center;
   justify-content: center;
-  gap: 10px;
-  width: fit-content;
+  gap: 8px;
+  width: min(calc(100% - 20px), 920px);
   max-width: calc(100% - 20px);
   margin: -78px auto 0;
   padding: 9px;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: 999px;
+  border-radius: 28px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(241, 245, 249, 0.58)),
     rgba(248, 250, 252, 0.62);
@@ -10064,6 +10074,8 @@ html {
 .annotatorDesktopNav,
 .annotatorHistoryActions,
 .annotatorSelectionActions {
+  flex: 0 1 auto;
+  max-width: 100%;
   padding: 4px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.54);
@@ -10072,9 +10084,9 @@ html {
 .annotatorFloatingToolbar .iconButton,
 .annotationPropertyPopover > button {
   display: grid;
-  width: 42px;
-  height: 42px;
-  min-height: 42px;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
   place-items: center;
   border: 1px solid transparent;
   border-radius: 999px;
@@ -10117,8 +10129,9 @@ html {
 
 .annotatorTextInputBar {
   display: flex;
-  width: min(420px, 42vw);
-  min-width: 280px;
+  flex: 1 1 min(380px, 100%);
+  width: min(420px, 100%);
+  min-width: min(280px, 100%);
   align-items: center;
   gap: 8px;
   padding: 4px;
@@ -10130,7 +10143,7 @@ html {
 .annotatorTextInputBar input {
   min-width: 0;
   flex: 1 1 auto;
-  height: 42px;
+  height: 32px;
   padding: 0 16px;
   border: 0;
   border-radius: 999px;
@@ -10145,7 +10158,7 @@ html {
 .annotatorTextInputBar button {
   display: grid;
   min-width: 64px;
-  height: 42px;
+  height: 32px;
   place-items: center;
   border: 0;
   border-radius: 999px;
@@ -10167,8 +10180,8 @@ html {
 
 .annotatorZoomValue {
   display: grid;
-  min-width: 54px;
-  height: 42px;
+  min-width: 44px;
+  height: 32px;
   place-items: center;
   color: #334155;
   font-size: 12px;
@@ -10184,9 +10197,9 @@ html {
 
 .annotatorSwatches button,
 .miniSwatches button {
-  width: 26px;
-  height: 26px;
-  min-height: 26px;
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
   padding: 0;
   border: 2px solid rgba(255, 255, 255, 0.92);
   border-radius: 999px;
@@ -10208,11 +10221,12 @@ html {
 .annotatorFloatingToolbar .saveButton {
   display: inline-flex;
   width: auto;
-  min-height: 42px;
+  max-width: 100%;
+  min-height: 32px;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  padding: 0 16px;
+  padding: 0 14px;
   border: 0;
   border-radius: 999px;
   background:
@@ -10330,6 +10344,7 @@ html {
 
 @media (max-width: 980px) {
   .annotatorFloatingToolbar {
+    display: grid;
     grid-template-columns: 1fr;
     width: min(520px, calc(100% - 20px));
     border-radius: 28px;
