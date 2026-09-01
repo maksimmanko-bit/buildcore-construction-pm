@@ -9396,6 +9396,14 @@ html {
   margin: 0;
 }
 
+.attachmentSectionActions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.sectionArchiveButton,
 .sectionAddButton {
   display: grid;
   flex: 0 0 38px;
@@ -9410,9 +9418,19 @@ html {
   transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease, background 0.18s ease;
 }
 
+.sectionArchiveButton {
+  border-color: rgba(37, 99, 235, 0.14);
+  color: #2563eb;
+}
+
+.sectionArchiveButton:hover,
 .sectionAddButton:hover {
   transform: translateY(-2px) scale(1.03);
   box-shadow: 0 18px 34px rgba(207, 46, 46, 0.16);
+}
+
+.sectionArchiveButton:hover {
+  box-shadow: 0 18px 34px rgba(37, 99, 235, 0.14);
 }
 
 .sectionUploader {
@@ -9756,6 +9774,13 @@ html {
 .modalBackdrop .wideModal {
   overflow: hidden !important;
   padding: 0 !important;
+}
+
+@media (min-width: 861px) {
+  .modalBackdrop .wideModal {
+    width: min(1320px, calc(100vw - 64px)) !important;
+    max-height: min(90vh, 980px);
+  }
 }
 
 .modalBackdrop .modalHeader {
@@ -10758,35 +10783,32 @@ html {
 
 @media (max-width: 860px) {
   .pdfCanvasControls {
-    flex-direction: row !important;
+    display: grid !important;
+    grid-template-columns: minmax(64px, 1fr) 48px minmax(58px, auto) 48px;
     align-items: center !important;
-    justify-content: space-between !important;
     gap: 10px !important;
-    min-height: 68px;
+    box-sizing: border-box;
+    width: min(100%, calc(100dvw - 52px)) !important;
+    max-width: 100%;
+    min-height: 0;
+    overflow: hidden;
     padding: 10px 12px !important;
     border-radius: 22px;
   }
 
   .pdfCanvasControls > span {
-    flex: 1 1 auto;
-    min-width: 72px;
-    max-width: 34%;
+    min-width: 0;
+    max-width: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .pdfCanvasControls > div {
-    display: grid !important;
-    flex: 0 0 auto;
-    grid-template-columns: 48px minmax(58px, auto) 48px;
-    align-items: center;
-    justify-content: end !important;
-    gap: 8px;
   }
 
   .pdfCanvasControls button {
     width: 48px;
     height: 48px;
     border-radius: 16px;
+    justify-self: center;
   }
 
   .pdfCanvasControls strong {

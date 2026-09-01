@@ -893,6 +893,17 @@ function cleanSearchText(value) {
     .trim();
 }
 
+function cleanDownloadFileName(value, fallback = "buildcore-files") {
+  return (
+    String(value || fallback)
+      .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 120) || fallback
+  );
+}
+
 function highlightText(value, query) {
   const raw = cleanSearchText(value);
   const terms = String(query ?? "")
@@ -4729,6 +4740,51 @@ export default function App() {
     }
   }
 
+  async function downloadAttachmentArchive(files = [], label = "Attachments") {
+    const archiveFiles = files.filter((file) => !file.localPreview);
+    if (archiveFiles.length === 0) {
+      setNotice("No files in this block to download.");
+      return;
+    }
+
+    setLoading(true);
+    setNotice(`Preparing ${label} archive...`);
+    try {
+      const { zipSync } = await import("fflate");
+      const zipEntries = {};
+      const usedNames = new Map();
+
+      for (const [index, file] of archiveFiles.entries()) {
+        const urls = file.viewUrl ? file : await createAttachmentUrls(file);
+        if (!urls.viewUrl) throw new Error(`Download link is not available for ${file.file_name || "file"}.`);
+        setNotice(`Adding ${index + 1} of ${archiveFiles.length} to archive...`);
+        const response = await fetch(urls.viewUrl);
+        if (!response.ok) throw new Error(`Could not download ${file.file_name || "file"}.`);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const baseName = cleanDownloadFileName(file.file_name || `attachment-${index + 1}`);
+        const seenCount = usedNames.get(baseName) ?? 0;
+        usedNames.set(baseName, seenCount + 1);
+        const archiveName = seenCount ? `${seenCount + 1}-${baseName}` : baseName;
+        zipEntries[archiveName] = bytes;
+      }
+
+      const zipBlob = new Blob([zipSync(zipEntries)], { type: "application/zip" });
+      const zipUrl = URL.createObjectURL(zipBlob);
+      const link = document.createElement("a");
+      link.href = zipUrl;
+      link.download = `${cleanDownloadFileName(label)}.zip`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(zipUrl), 2500);
+      setNotice(`${label} archive downloaded.`);
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function hydrateExportFiles(files = []) {
     return Promise.all(
       files.map(async (file) => {
@@ -5604,6 +5660,7 @@ export default function App() {
             onClose={closeDetailOverlay}
             onEditProject={() => editProject(selectedProject)}
             onEditVisit={editVisit}
+            onDownloadArchive={downloadAttachmentArchive}
             onEmailChangeOrder={emailChangeOrderReport}
             onExportPdf={() => exportCurrentProjectPdf(selectedProject)}
             onExportTicketsExcel={() => exportProjectTicketsToExcel(selectedProject)}
@@ -5705,6 +5762,7 @@ export default function App() {
             onArrive={() => startArrivalWorkflow(currentVisit)}
             onClose={closeDetailOverlay}
             onComplete={() => startCompletionWorkflow(currentVisit)}
+            onDownloadArchive={downloadAttachmentArchive}
             onEdit={() => editVisit(currentVisit)}
             onExportPdf={() => exportCurrentVisitPdf(currentVisit)}
             onOpenAttachment={openAttachment}
@@ -5802,7 +5860,7 @@ export default function App() {
         )}
 
         {modalType === "project" && (
-          <AppModal title={editingProjectId ? "Edit project" : "Add project"} onClose={closeEditorModal}>
+          <AppModal title={editingProjectId ? "Edit project" : "Add project"} onClose={closeEditorModal} wide>
             <form className="stackForm twoColumns" onSubmit={saveProject}>
               <FormField label="Job number">
                 <div className="jobNumberInputGroup">
@@ -5907,7 +5965,7 @@ export default function App() {
         )}
 
         {modalType === "visit" && (
-          <AppModal title={editingVisitId ? "Edit visit" : "Schedule visit"} onClose={closeEditorModal}>
+          <AppModal title={editingVisitId ? "Edit visit" : "Schedule visit"} onClose={closeEditorModal} wide>
             <form className="stackForm twoColumns" onSubmit={saveVisit}>
               <FormField label="Project">
                 <select required value={visitForm.project_id} onChange={(event) => updateVisitProject(event.target.value)}>
@@ -6245,7 +6303,7 @@ function DetailOverlayShell({ children, onClose, title }) {
   );
 }
 
-function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, changeOrders = [], companyId, currentVisit, dictation, dictationBusy = false, featureFlags = defaultFeatureFlags, files, getProfileName, onAddVisit, onClose, onEditProject, onEditVisit, onEmailChangeOrder, onExportChangeOrder, onExportPdf, onExportSiteVisit, onExportTicketsExcel, onOpenAttachment, onOpenChangeOrder, onOpenSiteVisit, onOpenVisit, onRemoveActivity, onRemoveChangeOrder, onRemoveSiteVisit, onRemoveVisit, onUpdateChangeOrderStatus, onUpdateSiteVisitStatus, onUploaded, people, profileId, project, siteVisits = [], visits }) {
+function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, changeOrders = [], companyId, currentVisit, dictation, dictationBusy = false, featureFlags = defaultFeatureFlags, files, getProfileName, onAddVisit, onClose, onDownloadArchive, onEditProject, onEditVisit, onEmailChangeOrder, onExportChangeOrder, onExportPdf, onExportSiteVisit, onExportTicketsExcel, onOpenAttachment, onOpenChangeOrder, onOpenSiteVisit, onOpenVisit, onRemoveActivity, onRemoveChangeOrder, onRemoveSiteVisit, onRemoveVisit, onUpdateChangeOrderStatus, onUpdateSiteVisitStatus, onUploaded, people, profileId, project, siteVisits = [], visits }) {
   const addresses = getProjectAddressOptions(project);
   const mainAddress = primaryProjectAddress(project);
   return (
@@ -6356,6 +6414,7 @@ function ProjectDetailOverlay({ activities = [], canDeleteTickets, canManage, ch
       <AttachmentSections
         featureFlags={featureFlags}
         files={files}
+        onDownloadArchive={onDownloadArchive}
         onOpen={onOpenAttachment}
         profiles={people}
         uploader={
@@ -6482,7 +6541,7 @@ function ActivityFeed({ activities = [], canDeleteItems = false, getProfileName,
   );
 }
 
-function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationBusy = false, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onUploaded, people, profileId, profiles, project, safetyLocked = false, visit }) {
+function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationBusy = false, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onDownloadArchive, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onUploaded, people, profileId, profiles, project, safetyLocked = false, visit }) {
   const ticketAddress = getVisitAddress(visit, project);
   return (
     <DetailOverlayShell title={`${project.name} Ticket`} onClose={onClose}>
@@ -6570,6 +6629,7 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
       <AttachmentSections
         featureFlags={featureFlags}
         files={files}
+        onDownloadArchive={onDownloadArchive}
         onOpen={onOpenAttachment}
         profiles={profiles}
         uploader={{
@@ -6891,7 +6951,7 @@ function DocumentListRow({ file, onOpen, profiles = [], project }) {
   );
 }
 
-function AttachmentSections({ featureFlags = defaultFeatureFlags, files, onOpen, profiles = [], uploader = null }) {
+function AttachmentSections({ featureFlags = defaultFeatureFlags, files, onDownloadArchive, onOpen, profiles = [], uploader = null }) {
   const [openUploaderId, setOpenUploaderId] = useState("");
   const flags = normalizeFeatureFlags(featureFlags);
   const groups = [
@@ -6916,11 +6976,18 @@ function AttachmentSections({ featureFlags = defaultFeatureFlags, files, onOpen,
                 {group.label}
                 <span>{group.items.length}</span>
               </h3>
-              {canUploadGroup && (
-                <button className="sectionAddButton" type="button" title={`Add ${group.label}`} onClick={() => setOpenUploaderId((value) => (value === group.id ? "" : group.id))}>
-                  <Plus size={18} />
-                </button>
-              )}
+              <div className="attachmentSectionActions">
+                {group.items.length > 0 && (
+                  <button className="sectionArchiveButton" type="button" title={`Download ${group.label} archive`} onClick={() => onDownloadArchive?.(group.items, group.label)}>
+                    <Download size={17} />
+                  </button>
+                )}
+                {canUploadGroup && (
+                  <button className="sectionAddButton" type="button" title={`Add ${group.label}`} onClick={() => setOpenUploaderId((value) => (value === group.id ? "" : group.id))}>
+                    <Plus size={18} />
+                  </button>
+                )}
+              </div>
             </div>
             {canUploadGroup && openUploaderId === group.id && (
               <div className="sectionUploader">
@@ -9747,15 +9814,13 @@ function PdfCanvasViewer({ fileName, url }) {
     <div className="pdfCanvasViewer" onTouchStart={preventPageZoom} onTouchMove={preventPageZoom}>
       <div className="pdfCanvasControls">
         <span>{pageNumbers.length ? `${pageNumbers.length} page${pageNumbers.length === 1 ? "" : "s"}` : "Loading PDF..."}</span>
-        <div>
-          <button type="button" title="Zoom out" onPointerDown={(event) => event.stopPropagation()} onClick={() => changeScale(-0.15)}>
-            <ZoomOut size={16} />
-          </button>
-          <strong>{Math.round(scale * 100)}%</strong>
-          <button type="button" title="Zoom in" onPointerDown={(event) => event.stopPropagation()} onClick={() => changeScale(0.15)}>
-            <ZoomIn size={16} />
-          </button>
-        </div>
+        <button type="button" title="Zoom out" onPointerDown={(event) => event.stopPropagation()} onClick={() => changeScale(-0.15)}>
+          <ZoomOut size={16} />
+        </button>
+        <strong>{Math.round(scale * 100)}%</strong>
+        <button type="button" title="Zoom in" onPointerDown={(event) => event.stopPropagation()} onClick={() => changeScale(0.15)}>
+          <ZoomIn size={16} />
+        </button>
       </div>
       {error ? (
         <div className="emptyPanelState">{error}</div>
