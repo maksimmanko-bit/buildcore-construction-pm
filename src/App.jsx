@@ -8467,7 +8467,7 @@ function NotificationsPanel({ notifications = [], onOpen }) {
   );
 }
 
-function SettingsHub({ canManage, canUseDeveloperMode, featureFlags = defaultFeatureFlags, isConfigured, onDeveloperMode, onNavigate, profile }) {
+function SettingsHub({ canManage, canUseDeveloperMode, featureFlags = defaultFeatureFlags, onDeveloperMode, onNavigate }) {
   const flags = normalizeFeatureFlags(featureFlags);
   const quickLinks = [
     canManage ? { id: "people", label: "People", text: "Approve requests, roles, trades, availability.", icon: UsersRound } : null,
@@ -8479,15 +8479,6 @@ function SettingsHub({ canManage, canUseDeveloperMode, featureFlags = defaultFea
   return (
     <div className="settingsHub">
       <section className="settingsSummaryPanel">
-        <Settings size={20} />
-        <span>
-          <strong>Supabase</strong>
-          <small>{isConfigured ? "Connected with environment variables" : "Not configured"}</small>
-        </span>
-        <div>
-          <strong>Workspace</strong>
-          <small>{profile?.company_id ? "Company data sync is active" : "No company connected"}</small>
-        </div>
         <div className="settingsFeatureGrid">
           <span className={flags.safetyForm ? "featurePill on" : "featurePill off"}>Safety Form {flags.safetyForm ? "On" : "Off"}</span>
           <span className={flags.beforeAfterPhotos ? "featurePill on" : "featurePill off"}>Before / After Photos {flags.beforeAfterPhotos ? "On" : "Off"}</span>
@@ -9656,16 +9647,20 @@ function PdfCanvasViewer({ fileName, url }) {
     if (event.touches?.length > 1) event.preventDefault();
   }
 
+  function changeScale(delta) {
+    setScale((value) => Math.min(1.9, Math.max(0.7, Number((value + delta).toFixed(2)))));
+  }
+
   return (
     <div className="pdfCanvasViewer" onTouchStart={preventPageZoom} onTouchMove={preventPageZoom}>
       <div className="pdfCanvasControls">
         <span>{pageNumbers.length ? `${pageNumbers.length} page${pageNumbers.length === 1 ? "" : "s"}` : "Loading PDF..."}</span>
         <div>
-          <button type="button" title="Zoom out" onClick={() => setScale((value) => Math.max(0.7, value - 0.12))}>
+          <button type="button" title="Zoom out" onPointerDown={(event) => event.stopPropagation()} onClick={() => changeScale(-0.15)}>
             <ZoomOut size={16} />
           </button>
           <strong>{Math.round(scale * 100)}%</strong>
-          <button type="button" title="Zoom in" onClick={() => setScale((value) => Math.min(1.8, value + 0.12))}>
+          <button type="button" title="Zoom in" onPointerDown={(event) => event.stopPropagation()} onClick={() => changeScale(0.15)}>
             <ZoomIn size={16} />
           </button>
         </div>
@@ -9695,13 +9690,22 @@ function PdfPageCanvas({ pageNumber, pdf, scale }) {
     async function renderPage() {
       const page = await pdf.getPage(pageNumber);
       if (cancelled || !canvasRef.current) return;
-      const viewport = page.getViewport({ scale: Math.max(0.7, scale) * Math.min(1.5, window.devicePixelRatio || 1) });
+      const safeScale = Math.max(0.7, scale);
+      const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
       const canvas = canvasRef.current;
+      const viewer = canvas.closest(".pdfCanvasViewer");
+      const pageViewport = page.getViewport({ scale: 1 });
+      const availableWidth = Math.max(260, (viewer?.clientWidth || 760) - 24);
+      const fitScale = Math.min(1, availableWidth / pageViewport.width);
+      const cssViewport = page.getViewport({ scale: fitScale * safeScale });
+      const renderViewport = page.getViewport({ scale: fitScale * safeScale * pixelRatio });
       const context = canvas.getContext("2d");
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-      canvas.style.aspectRatio = `${viewport.width} / ${viewport.height}`;
-      renderTask = page.render({ canvasContext: context, viewport });
+      canvas.width = Math.floor(renderViewport.width);
+      canvas.height = Math.floor(renderViewport.height);
+      canvas.style.width = `${Math.round(cssViewport.width)}px`;
+      canvas.style.height = "auto";
+      canvas.style.aspectRatio = `${renderViewport.width} / ${renderViewport.height}`;
+      renderTask = page.render({ canvasContext: context, viewport: renderViewport });
       await renderTask.promise;
     }
 
