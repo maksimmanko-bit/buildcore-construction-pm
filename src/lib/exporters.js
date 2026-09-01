@@ -32,6 +32,10 @@ function timeRange(start, end) {
   return `${time(start)} - ${time(end)}`;
 }
 
+function changeOrderStatusLabel(status) {
+  return status === "approved" || status === "completed" ? "Approved" : "Requested";
+}
+
 async function loadPublicAssetDataUrl(path) {
   const base = import.meta.env?.BASE_URL || "/";
   const normalizedBase = base.endsWith("/") ? base : `${base}/`;
@@ -346,6 +350,7 @@ export async function exportFieldReportPdf({ type, record, project, files = [], 
   y = addWrapped(doc, `Project: ${project?.name || "-"}`, 50, y, 500);
   y = addWrapped(doc, `Address: ${project?.address || "-"}`, 50, y + 4, 500);
   if (!isSiteVisit) y = addWrapped(doc, `Change Order Number: ${orderNumber}`, 50, y + 4, 500);
+  if (!isSiteVisit) y = addWrapped(doc, `Status: ${changeOrderStatusLabel(record.status)}`, 50, y + 4, 500);
   y = addWrapped(doc, `Date: ${dateLabel(isSiteVisit ? record.visit_date : record.order_date)}`, 50, y + 4, 500);
   y = addWrapped(doc, `Time: ${isSiteVisit ? timeRange(record.start_time, record.end_time) : time(record.order_time)}`, 50, y + 4, 500);
   y = addWrapped(doc, `Created by: ${creatorName || "-"}`, 50, y + 4, 500);
@@ -355,6 +360,11 @@ export async function exportFieldReportPdf({ type, record, project, files = [], 
 
   y = addSection(doc, "Description", y + 18);
   y = addWrapped(doc, record.description || "-", 50, y, 500);
+
+  if (!isSiteVisit) {
+    y = addSection(doc, "Proposed Additional Work", y + 18);
+    y = addWrapped(doc, record.proposed_work || "-", 50, y, 500);
+  }
 
   if (!isSiteVisit && record.approval_signature) {
     y = addSection(doc, "Approval Signature", y + 18);

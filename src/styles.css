@@ -458,6 +458,52 @@ button:disabled {
   color: #0b47d9;
 }
 
+.notificationButton {
+  position: relative;
+  display: grid;
+  width: 46px;
+  height: 46px;
+  min-height: 46px;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 12px 28px rgba(15, 23, 42, 0.07);
+  transition:
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.22s ease,
+    border-color 0.22s ease;
+}
+
+.notificationButton:hover {
+  transform: translateY(-1px);
+  border-color: rgba(207, 46, 46, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 16px 36px rgba(15, 23, 42, 0.11);
+}
+
+.notificationBadge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  min-width: 21px;
+  height: 21px;
+  place-items: center;
+  padding: 0 6px;
+  border: 2px solid rgba(255, 255, 255, 0.96);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ff4c4c, #cf2e2e);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 950;
+  box-shadow: 0 9px 18px rgba(207, 46, 46, 0.28);
+}
+
 @keyframes accountMenuIn {
   from {
     opacity: 0;
@@ -1488,6 +1534,16 @@ h1 {
   color: #1d4ed8;
 }
 
+.ticketStatus.requested {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+.ticketStatus.approved {
+  background: rgba(34, 197, 94, 0.14);
+  color: #166534;
+}
+
 .ticketScopeGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2211,6 +2267,61 @@ h1 {
 .fieldReportDetailHero.changeOrder {
   border-color: rgba(139, 92, 246, 0.16);
   background: linear-gradient(135deg, rgba(245, 243, 255, 0.9), rgba(255, 255, 255, 0.8));
+}
+
+.changeOrderStatusPicker {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.66)),
+    rgba(255, 255, 255, 0.72);
+}
+
+.changeOrderStatusPicker > span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.changeOrderStatusPicker > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.changeOrderStatusPicker button {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.74);
+  color: #334155;
+  font-weight: 950;
+  transition:
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.22s ease,
+    box-shadow 0.22s ease;
+}
+
+.changeOrderStatusPicker button:hover,
+.changeOrderStatusPicker button.active {
+  transform: translateY(-1px);
+  border-color: rgba(37, 99, 235, 0.24);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 14px 30px rgba(15, 23, 42, 0.08);
+}
+
+.changeOrderStatusPicker button.active {
+  background: linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(255, 255, 255, 0.78));
+  color: #1d4ed8;
 }
 
 .fieldSignatureBlock {
@@ -5455,6 +5566,143 @@ canvas {
   color: var(--brand-red);
 }
 
+.settingsHub,
+.notificationsPanel {
+  display: grid;
+  gap: 14px;
+}
+
+.settingsHub .settingsSummaryPanel {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.72)),
+    rgba(255, 255, 255, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 16px 36px rgba(15, 23, 42, 0.07);
+}
+
+.settingsHub .settingsSummaryPanel > svg {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(207, 46, 46, 0.1);
+  color: var(--brand-red);
+}
+
+.settingsHub .settingsSummaryPanel strong,
+.settingsHubCard strong,
+.notificationRow strong {
+  color: #111827;
+  font-weight: 950;
+}
+
+.settingsHub .settingsSummaryPanel small,
+.settingsHubCard small,
+.notificationRow small,
+.notificationRow em {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.settingsFeatureGrid {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settingsHubGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settingsHubCard,
+.notificationRow {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.68)),
+    rgba(255, 255, 255, 0.76);
+  color: #111827;
+  text-align: left;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 14px 30px rgba(15, 23, 42, 0.055);
+  transition:
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.22s ease,
+    box-shadow 0.22s ease;
+}
+
+.settingsHubCard:hover,
+.notificationRow:hover {
+  transform: translateY(-2px);
+  border-color: rgba(207, 46, 46, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 20px 44px rgba(15, 23, 42, 0.1);
+}
+
+.settingsHubCard > svg:first-child,
+.notificationIcon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 15px;
+  background: linear-gradient(145deg, rgba(207, 46, 46, 0.12), rgba(37, 99, 235, 0.09));
+  color: var(--brand-red);
+}
+
+.settingsHubCard.developer > svg:first-child {
+  background: linear-gradient(145deg, rgba(17, 24, 39, 0.1), rgba(37, 99, 235, 0.1));
+  color: #1d4ed8;
+}
+
+.settingsHubCard span,
+.notificationRow span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.notificationRow em {
+  overflow-wrap: anywhere;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.notificationRow.unread {
+  border-color: rgba(207, 46, 46, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(254, 242, 242, 0.58)),
+    rgba(255, 255, 255, 0.84);
+}
+
+.notificationRow > i {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #cf2e2e;
+  box-shadow: 0 0 0 6px rgba(207, 46, 46, 0.12);
+}
+
 .availableAvatarCard {
   position: relative;
 }
@@ -5790,7 +6038,8 @@ canvas {
   }
 
   .mobileMenuButton,
-  .mobileSearchButton {
+  .mobileSearchButton,
+  .notificationButton.mobile {
     display: inline-flex;
     min-height: 48px;
     align-items: center;
@@ -5800,6 +6049,11 @@ canvas {
     background: rgba(255, 255, 255, 0.86);
     color: var(--ink);
     box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+  }
+
+  .notificationButton.mobile {
+    width: 48px;
+    height: 48px;
   }
 
   .mobileSearchButton {
@@ -9507,6 +9761,17 @@ html {
     grid-template-columns: 1fr;
   }
 
+  .settingsHubGrid,
+  .changeOrderStatusPicker > div {
+    grid-template-columns: 1fr;
+  }
+
+  .settingsHubCard,
+  .notificationRow {
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    padding: 12px;
+  }
+
   .fieldSignatureBlock img {
     width: 100%;
   }
@@ -9826,11 +10091,11 @@ html {
 .annotatorFloatingToolbar .iconButton.active {
   background:
     radial-gradient(circle at 34% 20%, rgba(255, 255, 255, 0.85), transparent 42%),
-    linear-gradient(135deg, #cf2e2e, #2563eb);
+    linear-gradient(135deg, #0a84ff, #cf2e2e);
   color: #fff;
   box-shadow:
-    0 0 0 5px rgba(37, 99, 235, 0.12),
-    0 12px 24px rgba(207, 46, 46, 0.22);
+    0 0 0 5px rgba(10, 132, 255, 0.12),
+    0 12px 24px rgba(10, 132, 255, 0.18);
   transform: translateY(-2px) scale(1.06);
 }
 

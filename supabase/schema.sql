@@ -217,16 +217,49 @@ create table if not exists public.change_orders (
   order_number text,
   order_date date not null default current_date,
   order_time time not null default current_time,
-  status text not null default 'planned',
+  status text not null default 'requested',
   description text,
+  proposed_work text,
   approved_by text,
   approval_signature text,
   created_by uuid references public.profiles(id),
   completed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint change_orders_status_check check (status in ('planned', 'completed', 'cancelled'))
+  constraint change_orders_status_check check (status in ('requested', 'approved'))
 );
+
+create table if not exists public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  recipient_id uuid not null references public.profiles(id) on delete cascade,
+  actor_id uuid references public.profiles(id) on delete set null,
+  project_id uuid references public.projects(id) on delete cascade,
+  visit_id uuid references public.visits(id) on delete cascade,
+  change_order_id uuid references public.change_orders(id) on delete cascade,
+  type text not null,
+  title text not null,
+  message text not null,
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table public.change_orders
+  add column if not exists proposed_work text;
+
+do $$
+begin
+  update public.change_orders
+  set status = case when status = 'completed' then 'approved' else 'requested' end
+  where status is null or status not in ('requested', 'approved');
+end $$;
+
+alter table public.change_orders
+  alter column status set default 'requested';
+
+alter table public.change_orders
+  drop constraint if exists change_orders_status_check,
+  add constraint change_orders_status_check check (status in ('requested', 'approved'));
 
 alter table public.visit_files
   add column if not exists site_visit_id uuid references public.site_visits(id) on delete cascade,
@@ -239,6 +272,8 @@ create index if not exists site_visits_project_date_idx on public.site_visits(pr
 create index if not exists change_orders_company_date_idx on public.change_orders(company_id, order_date);
 create index if not exists change_orders_project_date_idx on public.change_orders(project_id, order_date);
 create unique index if not exists change_orders_project_order_number_idx on public.change_orders(project_id, order_number) where order_number is not null;
+create index if not exists notifications_recipient_created_idx on public.notifications(recipient_id, created_at desc);
+create index if not exists notifications_company_created_idx on public.notifications(company_id, created_at desc);
 create index if not exists visit_files_site_visit_idx on public.visit_files(site_visit_id);
 create index if not exists visit_files_change_order_idx on public.visit_files(change_order_id);
 
@@ -774,11 +809,12 @@ as $$
   union all
 
   select concat('changeOrder-', co.id), 'changeOrder', p.name, coalesce(co.order_number, 'Change Order') || ' / ' || co.order_date::text,
-    left(coalesce(co.description, '') || ' ' || coalesce(co.approved_by, '') || ' ' || coalesce(co.order_number, '') || ' ' || coalesce(p.address, ''), 220), null::text
+    left(coalesce(co.description, '') || ' ' || coalesce(co.proposed_work, '') || ' ' || coalesce(co.approved_by, '') || ' ' || coalesce(co.order_number, '') || ' ' || coalesce(p.address, ''), 220), null::text
   from public.change_orders co
   join public.projects p on p.id = co.project_id
   where co.company_id = public.current_company_id()
     and (co.description ilike '%' || search_query || '%'
+      or co.proposed_work ilike '%' || search_query || '%'
       or co.approved_by ilike '%' || search_query || '%'
       or co.order_number ilike '%' || search_query || '%'
       or p.name ilike '%' || search_query || '%'
@@ -811,6 +847,7 @@ alter table public.visit_notes enable row level security;
 alter table public.visit_activity enable row level security;
 alter table public.site_visits enable row level security;
 alter table public.change_orders enable row level security;
+alter table public.notifications enable row level security;
 
 alter table public.visits replica identity full;
 alter table public.visit_people replica identity full;
@@ -820,13 +857,14 @@ alter table public.visit_notes replica identity full;
 alter table public.visit_files replica identity full;
 alter table public.site_visits replica identity full;
 alter table public.change_orders replica identity full;
+alter table public.notifications replica identity full;
 alter table public.companies replica identity full;
 
 do $$
 declare
   table_name text;
 begin
-  foreach table_name in array array['companies', 'visits', 'visit_people', 'visit_equipment', 'visit_activity', 'visit_notes', 'visit_files', 'site_visits', 'change_orders']
+  foreach table_name in array array['companies', 'visits', 'visit_people', 'visit_equipment', 'visit_activity', 'visit_notes', 'visit_files', 'site_visits', 'change_orders', 'notifications']
   loop
     if not exists (
       select 1
@@ -1035,9 +1073,26 @@ for all to authenticated
 using (company_id = public.current_company_id() and public.current_role() <> 'builder')
 with check (company_id = public.current_company_id() and public.current_role() <> 'builder');
 
+drop policy if exists "users read own notifications" on public.notifications;
+create policy "users read own notifications" on public.notifications
+for select to authenticated
+using (company_id = public.current_company_id() and recipient_id = auth.uid());
+
+drop policy if exists "users update own notifications" on public.notifications;
+create policy "users update own notifications" on public.notifications
+for update to authenticated
+using (company_id = public.current_company_id() and recipient_id = auth.uid())
+with check (company_id = public.current_company_id() and recipient_id = auth.uid());
+
+drop policy if exists "active members create company notifications" on public.notifications;
+create policy "active members create company notifications" on public.notifications
+for insert to authenticated
+with check (company_id = public.current_company_id() and actor_id = auth.uid());
+
 grant select, insert, update, delete on public.site_visits to authenticated;
 grant select, insert, update, delete on public.change_orders to authenticated;
 grant select, insert, update, delete on public.visit_notes to authenticated;
+grant select, insert, update on public.notifications to authenticated;
 
 alter table public.edit_locks enable row level security;
 

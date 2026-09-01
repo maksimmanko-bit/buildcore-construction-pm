@@ -280,6 +280,7 @@ const demo = {
   visitNotes: [],
   siteVisits: [],
   changeOrders: [],
+  notifications: [],
   files: [
     {
       id: "file-1",
@@ -309,6 +310,7 @@ const navItems = [
   { id: "documents", label: "Documents", icon: FileText },
   { id: "safetyReports", label: "Safety Reports", icon: FileBarChart2 },
 ];
+const settingsNavIds = ["people", "equipment", "documents", "safetyReports"];
 
 const roleOptions = ["owner", "project_manager", "office_manager", "builder"];
 const projectStatusMap = {
@@ -324,6 +326,14 @@ const visitStatusMap = {
   completed: "Done",
   cancelled: "Cancelled",
 };
+function normalizeChangeOrderStatus(status) {
+  return status === "approved" || status === "completed" ? "approved" : "requested";
+}
+
+function changeOrderStatusLabel(status) {
+  return normalizeChangeOrderStatus(status) === "approved" ? "Approved" : "Requested";
+}
+
 const hazardOptions = ["Working at heights", "Excavation / trench", "Electrical hazard", "Heavy equipment", "Traffic / public access", "Weather exposure", "Dust / silica", "Manual lifting"];
 const timeLabels = ["7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM"];
 const colors = ["blue", "green", "yellow", "purple", "orange"];
@@ -497,8 +507,9 @@ const emptyChangeOrderForm = {
   project_id: "",
   order_date: getWinnipegDateValue(),
   order_time: getWinnipegTimeValue(),
-  status: "completed",
+  status: "requested",
   description: "",
+  proposed_work: "",
   approved_by: "",
   approval_signature: "",
   files: [],
@@ -514,6 +525,7 @@ function makePhotoFolder(index = 1) {
 function fieldReportFormHasDraft(form = {}) {
   return (
     String(form.description ?? "").trim().length > 0 ||
+    String(form.proposed_work ?? "").trim().length > 0 ||
     String(form.approved_by ?? "").trim().length > 0 ||
     String(form.approval_signature ?? "").trim().length > 0 ||
     (form.files?.length ?? 0) > 0 ||
@@ -1113,6 +1125,7 @@ export default function App() {
   const [editingEquipmentId, setEditingEquipmentId] = useState(null);
   const [editingVisitId, setEditingVisitId] = useState(null);
   const [editingSiteVisitId, setEditingSiteVisitId] = useState(null);
+  const [editingChangeOrderId, setEditingChangeOrderId] = useState(null);
   const [companyForm, setCompanyForm] = useState({ company_name: "BuildCore Construction", full_name: "", phone: "" });
   const [projectForm, setProjectForm] = useState(emptyProjectForm);
   const [equipmentForm, setEquipmentForm] = useState(emptyEquipmentForm);
@@ -1142,12 +1155,14 @@ export default function App() {
   const canUseDeveloperMode = Boolean(profile?.is_active && profile?.role !== "builder");
   const canCreateFieldReports = Boolean(profile?.is_active && profile?.role !== "builder");
   const visibleNavItems = navItems
+    .filter((item) => !settingsNavIds.includes(item.id))
     .filter((item) => canManage || !["people", "equipment"].includes(item.id))
     .filter((item) => canCreateFieldReports || !["siteVisits", "changeOrders"].includes(item.id))
     .filter((item) => activeFeatureFlags.safetyForm || item.id !== "safetyReports")
     .filter((item) => activeFeatureFlags.siteInspections || item.id !== "siteVisits")
     .filter((item) => activeFeatureFlags.changeOrders || item.id !== "changeOrders");
   const currentUserName = profile?.full_name || session?.user?.email || "James Carter";
+  const unreadNotifications = (data.notifications ?? []).filter((item) => !item.read_at);
   const dictationBusy = dictationBusyCount > 0;
   const handleDictationBusyChange = useCallback((isBusy) => {
     setDictationBusyCount((count) => Math.max(0, count + (isBusy ? 1 : -1)));
@@ -1231,7 +1246,7 @@ export default function App() {
         ? supabase.from("profiles").select("*").order("is_active", { ascending: true }).order("full_name")
         : supabase.from("profiles").select("*").eq("is_active", true).order("full_name");
 
-      const [companyResult, projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult, visitNotesResult] = await Promise.all([
+      const [companyResult, projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult, visitNotesResult, notificationsResult] = await Promise.all([
         supabase.from("companies").select("feature_flags").eq("id", nextProfile.company_id).single(),
         supabase.from("projects").select("*").order("created_at", { ascending: false }),
         peopleQuery,
@@ -1240,11 +1255,13 @@ export default function App() {
         supabase.from("visit_files").select("*").order("created_at", { ascending: false }),
         supabase.from("visit_activity").select("*").order("created_at", { ascending: false }).limit(500),
         supabase.from("visit_notes").select("*").order("created_at", { ascending: false }),
+        supabase.from("notifications").select("*").eq("recipient_id", nextProfile.id).order("created_at", { ascending: false }).limit(100),
       ]);
 
       const failed = [companyResult, projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult].find((result) => result.error);
       if (failed) throw failed.error;
       if (visitNotesResult.error && visitNotesResult.error.code !== "42P01") throw visitNotesResult.error;
+      if (notificationsResult.error && notificationsResult.error.code !== "42P01") throw notificationsResult.error;
 
       const nextProjects = projectsResult.data ?? [];
       const allPeople = peopleResult.data ?? [];
@@ -1269,6 +1286,7 @@ export default function App() {
         files: filesResult.data ?? [],
         activities: activityResult.data ?? [],
         visitNotes: visitNotesResult.error?.code === "42P01" ? [] : visitNotesResult.data ?? [],
+        notifications: notificationsResult.error?.code === "42P01" ? [] : notificationsResult.data ?? [],
       };
       setData(nextData);
       setServerConnected(true);
@@ -1444,6 +1462,9 @@ export default function App() {
       .on("postgres_changes", { event: "*", schema: "public", table: "visit_notes", filter: `company_id=eq.${profile.company_id}` }, () => {
         void loadVisitNotes();
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `recipient_id=eq.${profile.id}` }, () => {
+        void loadNotifications();
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "visit_files", filter: `company_id=eq.${profile.company_id}` }, () => {
         void loadFiles();
       })
@@ -1452,7 +1473,7 @@ export default function App() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [profile?.company_id, profile?.is_active]);
+  }, [profile?.company_id, profile?.id, profile?.is_active]);
 
   useEffect(() => {
     let alive = true;
@@ -1786,6 +1807,56 @@ export default function App() {
     });
   }
 
+  function notificationRecipients({ builderIds = [], managers = false } = {}) {
+    const recipients = new Map();
+    if (managers) {
+      (rowsSource.people ?? [])
+        .filter((person) => person.is_active && person.role !== "builder")
+        .forEach((person) => recipients.set(person.id, person));
+    }
+    builderIds.forEach((id) => {
+      const person = rowsSource.people.find((item) => item.id === id);
+      if (person?.is_active && person.role === "builder") recipients.set(person.id, person);
+    });
+    recipients.delete(profile?.id);
+    return [...recipients.keys()];
+  }
+
+  async function createNotifications({ builderIds = [], changeOrderId = null, message, managers = false, projectId = null, title, type, visitId = null }) {
+    if (!supabase || !profile?.company_id) return;
+    const recipientIds = notificationRecipients({ builderIds, managers });
+    if (recipientIds.length === 0) return;
+    const rows = recipientIds.map((recipientId) => ({
+      actor_id: profile.id,
+      change_order_id: changeOrderId,
+      company_id: profile.company_id,
+      message,
+      project_id: projectId,
+      recipient_id: recipientId,
+      title,
+      type,
+      visit_id: visitId,
+    }));
+    const { error } = await supabase.from("notifications").insert(rows);
+    if (error && error.code !== "42P01") console.warn("Notification insert failed", error);
+  }
+
+  async function openNotifications() {
+    setModalType("notifications");
+    if (!supabase || !profile?.id || unreadNotifications.length === 0) return;
+    const readAt = new Date().toISOString();
+    const unreadIds = unreadNotifications.map((item) => item.id);
+    commitWorkspaceData((current) => ({
+      ...current,
+      notifications: (current.notifications ?? []).map((item) => (unreadIds.includes(item.id) ? { ...item, read_at: readAt } : item)),
+    }));
+    const { error } = await supabase.from("notifications").update({ read_at: readAt }).in("id", unreadIds).eq("recipient_id", profile.id);
+    if (error && error.code !== "42P01") {
+      setNotice(error.message);
+      loadNotifications();
+    }
+  }
+
   function resolveConfirmation(value) {
     const resolver = confirmationResolverRef.current;
     confirmationResolverRef.current = null;
@@ -1951,6 +2022,29 @@ export default function App() {
       const { data: visitNotes, error } = await supabase.from("visit_notes").select("*").order("created_at", { ascending: false });
       if (error) throw error;
       commitWorkspaceData((current) => ({ ...current, visitNotes: visitNotes ?? [] }));
+      setServerConnected(true);
+    } catch (error) {
+      if (error.code !== "42P01") {
+        setServerConnected(false);
+        setNotice(error.message);
+      }
+    } finally {
+      if (!quiet) setLoading(false);
+    }
+  }
+
+  async function loadNotifications({ quiet = true } = {}) {
+    if (!supabase || !session || !profile?.id) return;
+    if (!quiet) setLoading(true);
+    try {
+      const { data: notifications, error } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("recipient_id", profile.id)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      commitWorkspaceData((current) => ({ ...current, notifications: notifications ?? [] }));
       setServerConnected(true);
     } catch (error) {
       if (error.code !== "42P01") {
@@ -2437,6 +2531,16 @@ export default function App() {
       setSelectedDate(firstVisit.visit_date);
       setSelectedProjectId(firstVisit.project_id);
       setSelectedVisitId(firstVisit.id);
+      void createNotifications({
+        builderIds: visitForm.people_ids,
+        message: editingVisitId
+          ? `${currentUserName} updated your ticket on ${formatDateLabel(firstVisit.visit_date)}.`
+          : `${currentUserName} assigned you to a new ticket on ${formatDateLabel(firstVisit.visit_date)}.`,
+        projectId: firstVisit.project_id,
+        title: editingVisitId ? "Ticket updated" : "New ticket assigned",
+        type: editingVisitId ? "ticket_updated" : "ticket_assigned",
+        visitId: firstVisit.id,
+      });
       triggerSoftPulse();
       setNotice(
         editingVisitId
@@ -2537,8 +2641,9 @@ export default function App() {
       setNotice("Select project before saving Change Order.");
       return;
     }
-    if (!changeOrderForm.approval_signature) {
-      setNotice("Digital signature is required before saving Change Order.");
+    const changeOrderStatus = normalizeChangeOrderStatus(changeOrderForm.status);
+    if (changeOrderStatus === "approved" && (!changeOrderForm.approved_by.trim() || !changeOrderForm.approval_signature)) {
+      setNotice("Approved Change Order requires Approved by and digital signature.");
       return;
     }
 
@@ -2547,28 +2652,37 @@ export default function App() {
     try {
       const createdNow = new Date();
       const orderNumber = changeOrderForm.order_number || nextChangeOrderNumber(project, rowsSource.changeOrders ?? []);
-      const { data: saved, error } = await supabase
-        .from("change_orders")
-        .insert({
-          company_id: rowsSource.companyId,
-          project_id: project.id,
-          order_number: orderNumber,
-          order_date: getWinnipegDateValue(createdNow),
-          order_time: getWinnipegTimeValue(createdNow),
-          status: "completed",
-          description: changeOrderForm.description.trim() || null,
-          approved_by: changeOrderForm.approved_by.trim() || null,
-          approval_signature: changeOrderForm.approval_signature || null,
-          created_by: profile.id,
-          completed_at: createdNow.toISOString(),
-        })
-        .select()
-        .single();
+      const existing = editingChangeOrderId ? rowsSource.changeOrders.find((item) => item.id === editingChangeOrderId) : null;
+      const payload = {
+        project_id: project.id,
+        status: changeOrderStatus,
+        description: changeOrderForm.description.trim() || null,
+        proposed_work: changeOrderForm.proposed_work.trim() || null,
+        approved_by: changeOrderForm.approved_by.trim() || null,
+        approval_signature: changeOrderForm.approval_signature || null,
+        completed_at: changeOrderStatus === "approved" ? existing?.completed_at || createdNow.toISOString() : null,
+      };
+      const saveQuery = editingChangeOrderId
+        ? supabase.from("change_orders").update(payload).eq("id", editingChangeOrderId).select().single()
+        : supabase
+            .from("change_orders")
+            .insert({
+              ...payload,
+              company_id: rowsSource.companyId,
+              order_number: orderNumber,
+              order_date: getWinnipegDateValue(createdNow),
+              order_time: getWinnipegTimeValue(createdNow),
+              created_by: profile.id,
+            })
+            .select()
+            .single();
+      const { data: saved, error } = await saveQuery;
       if (error) throw error;
 
       await uploadFieldReportPhotos({
         changeOrderId: saved.id,
         description: changeOrderForm.description,
+        proposedWork: changeOrderForm.proposed_work,
         files: changeOrderForm.files,
         captions: changeOrderForm.captions,
         folders: changeOrderForm.folders,
@@ -2576,15 +2690,29 @@ export default function App() {
         project,
       });
 
-      await logProjectActivity(project.id, "change_order_created", `${currentUserName} created ${orderNumber}.`, { changeOrderId: saved.id, orderNumber });
-      commitWorkspaceData((current) => ({ ...current, changeOrders: [saved, ...(current.changeOrders ?? [])] }));
+      await logProjectActivity(project.id, editingChangeOrderId ? "change_order_updated" : "change_order_created", `${currentUserName} ${editingChangeOrderId ? "updated" : "created"} ${saved.order_number || orderNumber}.`, { changeOrderId: saved.id, orderNumber: saved.order_number || orderNumber, status: saved.status });
+      if (!editingChangeOrderId) {
+        void createNotifications({
+          changeOrderId: saved.id,
+          managers: true,
+          message: `${currentUserName} created ${saved.order_number || orderNumber} for ${project.name}.`,
+          projectId: project.id,
+          title: "New Change Order",
+          type: "change_order_created",
+        });
+      }
+      commitWorkspaceData((current) => {
+        const kept = (current.changeOrders ?? []).filter((item) => item.id !== saved.id);
+        return { ...current, changeOrders: [saved, ...kept] };
+      });
       setSelectedProjectId(project.id);
       setSelectedChangeOrderId(saved.id);
+      setEditingChangeOrderId(null);
       setChangeOrderForm({ ...emptyChangeOrderForm, project_id: rowsSource.projects[0]?.id ?? "", order_date: todayValue, order_time: getWinnipegTimeValue(), files: [], captions: {}, folders: [] });
       setModalType(null);
       setUploadProgress(null);
       triggerSoftPulse();
-      setNotice("Change Order saved.");
+      setNotice(editingChangeOrderId ? "Change Order changes saved." : "Change Order saved.");
       await Promise.all([loadChangeOrders(), loadFiles(), loadActivities()]);
     } catch (error) {
       setNotice(error.message);
@@ -2622,11 +2750,11 @@ export default function App() {
 
   async function updateChangeOrderStatus(item, status) {
     if (!supabase || !item?.id || !canCreateFieldReports) return;
-    if (status === "completed" && !item.approval_signature) {
-      setNotice("Open Change Order and add digital signature before completing.");
+    if (status === "approved" && (!item.approved_by || !item.approval_signature)) {
+      setNotice("Open Change Order and add Approved by plus digital signature before approving.");
       return;
     }
-    const patch = { status, completed_at: status === "completed" ? new Date().toISOString() : null };
+    const patch = { status, completed_at: status === "approved" ? new Date().toISOString() : null };
     const { data: saved, error } = await supabase.from("change_orders").update(patch).eq("id", item.id).select().single();
     if (error) {
       setNotice(error.message);
@@ -2634,7 +2762,7 @@ export default function App() {
     }
     commitWorkspaceData((current) => ({ ...current, changeOrders: (current.changeOrders ?? []).map((row) => (row.id === saved.id ? saved : row)) }));
     triggerSoftPulse();
-    setNotice(status === "completed" ? "Change Order completed." : "Change Order updated.");
+    setNotice(status === "approved" ? "Change Order approved." : "Change Order marked requested.");
   }
 
   async function deleteSiteVisit(item) {
@@ -3040,7 +3168,7 @@ export default function App() {
     return (rowsSource.files ?? []).filter((file) => note?.id && file.note_id === note.id);
   }
 
-  async function uploadFieldReportPhotos({ captions = {}, changeOrderId, description, files = [], folders = [], label, project, siteVisitId }) {
+  async function uploadFieldReportPhotos({ captions = {}, changeOrderId, description, files = [], folders = [], label, project, proposedWork = "", siteVisitId }) {
     const plainQueue = (files ?? []).map((file) => ({
       caption: captions?.[fileInputKey(file)]?.trim() || "",
       file,
@@ -3072,7 +3200,7 @@ export default function App() {
         siteVisitId,
         file: item.file,
         photoCaption: item.caption,
-        searchText: `${label}. ${project.name}. ${primaryProjectAddress(project)}. ${description || ""}. ${item.folderName}. ${item.folderDescription}. ${item.caption}`,
+        searchText: `${label}. ${project.name}. ${primaryProjectAddress(project)}. ${description || ""}. ${proposedWork || ""}. ${item.folderName}. ${item.folderDescription}. ${item.caption}`,
       });
       rows.push(row);
       completed += 1;
@@ -3173,6 +3301,29 @@ export default function App() {
     setModalType("siteVisit");
   }
 
+  function editChangeOrder(item) {
+    if (!item || !canCreateFieldReports) return;
+    setSelectedProjectId(item.project_id);
+    setSelectedChangeOrderId(item.id);
+    setEditingChangeOrderId(item.id);
+    setChangeOrderForm({
+      ...emptyChangeOrderForm,
+      project_id: item.project_id,
+      order_date: item.order_date || getWinnipegDateValue(),
+      order_time: String(item.order_time || getWinnipegTimeValue()).slice(0, 5),
+      order_number: item.order_number || "",
+      status: normalizeChangeOrderStatus(item.status),
+      description: item.description || "",
+      proposed_work: item.proposed_work || "",
+      approved_by: item.approved_by || "",
+      approval_signature: item.approval_signature || "",
+      files: [],
+      captions: {},
+      folders: [],
+    });
+    setModalType("changeOrder");
+  }
+
   function openChangeOrderOverlay(item) {
     if (!item) return;
     setSelectedProjectId(item.project_id);
@@ -3213,6 +3364,10 @@ export default function App() {
   function openPasswordChange() {
     setPasswordForm({ password: "", confirm: "" });
     setModalType("passwordChange");
+  }
+
+  function openSettingsHub() {
+    closeMenusThen(() => setModalType("settingsHub"));
   }
 
   function openDeveloperMode() {
@@ -3356,6 +3511,16 @@ export default function App() {
       setVisitNoteForm(emptyVisitNoteForm);
       setModalType(null);
       setUploadProgress(null);
+      if (!visitNoteForm.id) {
+        void createNotifications({
+          managers: true,
+          message: `${currentUserName} added a note to an active ticket at ${activeProject.name}.`,
+          projectId: activeProject.id,
+          title: "New active ticket note",
+          type: "ticket_note_added",
+          visitId: activeVisit.id,
+        });
+      }
       triggerSoftPulse();
       setNotice("Ticket note saved.");
       await Promise.all([loadVisitNotes(), loadFiles(), loadActivities()]);
@@ -3766,6 +3931,18 @@ export default function App() {
     }
 
     setLoading(false);
+    void createNotifications({
+      builderIds: [
+        ...(assignment.people ?? []).map((person) => person.id),
+        row.kind === "person" ? row.id : "",
+        assignment.type === "person" ? assignment.resourceId : "",
+      ].filter(Boolean),
+      message: `${currentUserName} updated your ticket time to ${formatTimeRange(nextStartTime, nextEndTime)}.`,
+      projectId: assignment.projectId,
+      title: "Ticket schedule updated",
+      type: "ticket_updated",
+      visitId: assignment.visitId,
+    });
     triggerSoftPulse();
     setNotice(`Visit moved to ${formatTimeRange(nextStartTime, nextEndTime)}.`);
     loadVisits();
@@ -3857,6 +4034,14 @@ export default function App() {
         ),
         logVisitActivity(visit, "person_assigned", `${currentUserName} assigned ${profileDisplayName(person)} to this ticket.`, { personId, sourceVisitId, replacedVisitIds: conflictVisitIds }),
       ]);
+      void createNotifications({
+        builderIds: [personId],
+        message: `${currentUserName} assigned you to ${visit.work_scope || "a ticket"} on ${formatDateLabel(visit.visit_date)}.`,
+        projectId: visit.project_id,
+        title: "Ticket assignment changed",
+        type: "ticket_assigned",
+        visitId,
+      });
       triggerSoftPulse();
       setNotice(conflicts.length > 0 ? `${profileDisplayName(person)} moved to ticket.` : `${profileDisplayName(person)} assigned to ticket.`);
       loadVisits();
@@ -3903,6 +4088,14 @@ export default function App() {
       const { error } = await supabase.from("visit_people").insert(eligibleIds.map((profileId) => ({ visit_id: visitId, profile_id: profileId })));
       if (error) throw error;
       await logVisitActivity(visit, "people_group_assigned", `${currentUserName} assigned ${eligiblePeople.length} people to this ticket.`, { personIds: eligibleIds });
+      void createNotifications({
+        builderIds: eligibleIds,
+        message: `${currentUserName} assigned your group to ${visit.work_scope || "a ticket"} on ${formatDateLabel(visit.visit_date)}.`,
+        projectId: visit.project_id,
+        title: "Ticket assignment changed",
+        type: "ticket_assigned",
+        visitId,
+      });
       triggerSoftPulse();
       setNotice(skippedCount > 0 ? `${eligiblePeople.length} people assigned. ${skippedCount} skipped.` : `${eligiblePeople.length} people assigned to ticket.`);
       loadVisits();
@@ -4048,6 +4241,14 @@ export default function App() {
       const { error } = await supabase.from("visit_people").delete().eq("visit_id", visitId).eq("profile_id", personId);
       if (error) throw error;
       await logVisitActivity(visit, "person_removed", `${currentUserName} removed ${profileDisplayName(person)} from this ticket.`, { personId });
+      void createNotifications({
+        builderIds: [personId],
+        message: `${currentUserName} removed you from ${visit.work_scope || "a ticket"} on ${formatDateLabel(visit.visit_date)}.`,
+        projectId: visit.project_id,
+        title: "Ticket assignment changed",
+        type: "ticket_assignment_removed",
+        visitId,
+      });
       triggerSoftPulse();
       setNotice(`${profileDisplayName(person)} removed from ticket.`);
       loadVisits();
@@ -4100,6 +4301,7 @@ export default function App() {
       setModalType("siteVisit");
     }
     else if (activeNav === "changeOrders") {
+      setEditingChangeOrderId(null);
       setChangeOrderForm({
         ...emptyChangeOrderForm,
         project_id: selectedProject?.id ?? rowsSource.projects[0]?.id ?? "",
@@ -4260,6 +4462,7 @@ export default function App() {
     }
     setSelectedProjectId(project.id);
     setSelectedVisitId(visit.id);
+    setEditingChangeOrderId(null);
     setChangeOrderForm({
       ...emptyChangeOrderForm,
       project_id: project.id,
@@ -5039,10 +5242,6 @@ export default function App() {
               </button>
             );
           })}
-          <button className="sideNavItem drawerOnly" type="button" onClick={() => setNotice("No new notifications.")}>
-            <Bell size={20} />
-            <span>Notifications</span>
-          </button>
         </nav>
 
         <div className="sidebarUserWrap" ref={accountMenuRef}>
@@ -5052,12 +5251,10 @@ export default function App() {
                 <UserRound size={18} />
                 <span>My profile</span>
               </button>
-              {canUseDeveloperMode && (
-                <button type="button" onClick={openDeveloperMode}>
-                  <Wrench size={18} />
-                  <span>Developer mode</span>
-                </button>
-              )}
+              <button type="button" onClick={openSettingsHub}>
+                <Settings size={18} />
+                <span>Settings</span>
+              </button>
               <button type="button" onClick={() => closeMenusThen(signOut)}>
                 <LogOut size={18} />
                 <span>Sign out</span>
@@ -5105,6 +5302,7 @@ export default function App() {
             <Search size={18} />
             <span>Search</span>
           </button>
+          <NotificationButton count={unreadNotifications.length} mobile onClick={openNotifications} />
         </div>
         <header className="workspaceHeader">
           <div>
@@ -5117,9 +5315,7 @@ export default function App() {
               <span>Search</span>
             </button>
 
-            <button className="iconButton soft" type="button" title="Notifications" onClick={() => setNotice("No new notifications.")}>
-              <Bell size={20} />
-            </button>
+            <NotificationButton count={unreadNotifications.length} onClick={openNotifications} />
 
             <ServerStatusIndicator online={serverConnected && isSupabaseConfigured} />
           </div>
@@ -5438,6 +5634,7 @@ export default function App() {
             kind="changeOrder"
             onClose={closeDetailOverlay}
             onDelete={deleteChangeOrder}
+            onEdit={editChangeOrder}
             onEmail={emailChangeOrderReport}
             onExport={exportChangeOrderPdf}
             onOpenAttachment={openAttachment}
@@ -5496,6 +5693,49 @@ export default function App() {
             onClose={closeDetailOverlay}
             person={selectedPerson}
           />
+        )}
+
+        {modalType === "notifications" && (
+          <AppModal title="Notifications" onClose={() => setModalType(null)}>
+            <NotificationsPanel
+              notifications={data.notifications ?? []}
+              onOpen={(item) => {
+                setModalType(null);
+                if (item.visit_id) {
+                  const visit = rowsSource.visits.find((visitItem) => visitItem.id === item.visit_id);
+                  if (visit) openVisitOverlay(visit);
+                } else if (item.change_order_id) {
+                  const changeOrder = (rowsSource.changeOrders ?? []).find((row) => row.id === item.change_order_id);
+                  if (changeOrder) openChangeOrderOverlay(changeOrder);
+                } else if (item.project_id) {
+                  const project = rowsSource.projects.find((projectItem) => projectItem.id === item.project_id);
+                  if (project) openProjectOverlay(project, "project");
+                }
+              }}
+            />
+          </AppModal>
+        )}
+
+        {modalType === "settingsHub" && (
+          <AppModal title="Settings" onClose={() => setModalType(null)}>
+            <SettingsHub
+              canManage={canManage}
+              canUseDeveloperMode={canUseDeveloperMode}
+              featureFlags={activeFeatureFlags}
+              isConfigured={isSupabaseConfigured}
+              profile={profile}
+              onDeveloperMode={() => {
+                setModalType(null);
+                setDeveloperForm({ ...normalizeFeatureFlags(featureFlags), botCount: "10" });
+                window.setTimeout(() => setModalType("developerMode"), 160);
+              }}
+              onNavigate={(navId) => {
+                setModalType(null);
+                clearDetailOverlay();
+                setActiveNav(navId);
+              }}
+            />
+          </AppModal>
         )}
 
         {modalType === "onboarding" && (
@@ -5719,7 +5959,7 @@ export default function App() {
         )}
 
         {activeFeatureFlags.changeOrders && modalType === "changeOrder" && (
-          <AppModal title="Create Change Order" onClose={() => closeModalWithConfirmation(fieldReportFormHasDraft(changeOrderForm))} wide>
+          <AppModal title={editingChangeOrderId ? "Edit Change Order" : "Create Change Order"} onClose={() => closeModalWithConfirmation(fieldReportFormHasDraft(changeOrderForm))} wide>
             <ChangeOrderForm changeOrders={rowsSource.changeOrders ?? []} dictation={dictation} dictationBusy={dictationBusy} form={changeOrderForm} loading={loading} onChange={setChangeOrderForm} onSubmit={saveChangeOrder} projects={rowsSource.projects} />
           </AppModal>
         )}
@@ -6355,6 +6595,7 @@ function FieldReportDetailOverlay({ canManage, companyId, dictation, dictationBu
   const date = isSiteVisit ? record.visit_date : record.order_date;
   const timeText = isSiteVisit ? formatTimeRange(record.start_time, record.end_time) : formatTimeLabel(record.order_time);
   const completedText = record.completed_at ? formatDateTimeLabel(record.completed_at) : "Not completed";
+  const createdText = record.created_at ? formatDateTimeLabel(record.created_at) : `${formatDateLabel(date)} / ${timeText}`;
 
   return (
     <DetailOverlayShell title={`${project.name} ${title}`} onClose={onClose}>
@@ -6365,7 +6606,7 @@ function FieldReportDetailOverlay({ canManage, companyId, dictation, dictationBu
           <p>{formatDateLabel(date)} / {timeText}</p>
         </div>
         <div className="detailActionRow">
-          {canManage && isSiteVisit && (
+          {canManage && (
             <button className="outlineButton" type="button" onClick={() => onEdit?.(record)}>
               <Edit3 size={17} />
               Edit
@@ -6399,21 +6640,30 @@ function FieldReportDetailOverlay({ canManage, companyId, dictation, dictationBu
       <dl className="detailFacts">
         <ProjectFact icon={FolderKanban} label="Project" value={project.name} />
         {!isSiteVisit && <ProjectFact icon={FileBarChart2} label="CO Number" value={record.order_number || nextChangeOrderNumber(project, [])} />}
+        {!isSiteVisit && <ProjectFact icon={CircleGauge} label="Status" value={changeOrderStatusLabel(record.status)} badge />}
         <ProjectFact icon={ClipboardCheck} label="Created by" value={getProfileName(record.created_by, "Unknown")} />
         <ProjectFact icon={MapPin} label="Address" value={primaryProjectAddress(project) || "Not set"} />
-        <ProjectFact icon={CheckCircle2} label={isSiteVisit ? "Completed" : "Created"} value={completedText} />
+        <ProjectFact icon={CheckCircle2} label={isSiteVisit ? "Completed" : "Created"} value={isSiteVisit ? completedText : createdText} />
         {!isSiteVisit && <ProjectFact icon={UserRound} label="Approved by" value={record.approved_by || "Not set"} />}
       </dl>
 
       <div className="ticketScopeGrid">
-        <section>
-          <h3>Project Work Description</h3>
-          <p>{project.description || "No project work description yet."}</p>
-        </section>
+        {isSiteVisit && (
+          <section>
+            <h3>Project Work Description</h3>
+            <p>{project.description || "No project work description yet."}</p>
+          </section>
+        )}
         <section>
           <h3>{title} Description</h3>
           <p>{record.description || "No description yet."}</p>
         </section>
+        {!isSiteVisit && (
+          <section>
+            <h3>Proposed Additional Work</h3>
+            <p>{record.proposed_work || "No proposed additional work yet."}</p>
+          </section>
+        )}
       </div>
 
       {!isSiteVisit && record.approval_signature && (
@@ -7024,7 +7274,8 @@ function SiteVisitForm({ dictation, dictationBusy = false, form, loading, onChan
 function ChangeOrderForm({ changeOrders = [], dictation, dictationBusy = false, form, loading, onChange, onSubmit, projects = [] }) {
   const selectedProject = projects.find((project) => project.id === form.project_id);
   const previewNumber = form.order_number || nextChangeOrderNumber(selectedProject, changeOrders);
-  const nowLabel = `${formatDateLabel(getWinnipegDateValue())} / ${formatTimeLabel(getWinnipegTimeValue())}`;
+  const nowLabel = `${formatDateLabel(form.order_date || getWinnipegDateValue())} / ${formatTimeLabel(form.order_time || getWinnipegTimeValue())}`;
+  const isApproved = form.status === "approved";
   return (
     <form className="stackForm twoColumns fieldReportForm" onSubmit={onSubmit}>
       <FormField label="Project">
@@ -7043,18 +7294,39 @@ function ChangeOrderForm({ changeOrders = [], dictation, dictationBusy = false, 
       <FormField label="Created">
         <input readOnly value={nowLabel} />
       </FormField>
+      <div className="wide changeOrderStatusPicker">
+        <span>Change Order status</span>
+        <div>
+          {[
+            ["requested", "Requested"],
+            ["approved", "Approved"],
+          ].map(([value, label]) => (
+            <button className={form.status === value ? "active" : ""} key={value} type="button" onClick={() => onChange({ ...form, status: value })}>
+              <i className={`projectStatusDot ${value === "approved" ? "completed" : "planning"}`} />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <FormField label="Change description">
         <VoiceTextArea dictation={dictation} value={form.description} onChange={(value) => onChange({ ...form, description: value })} />
       </FormField>
-      <FieldPhotoFoldersEditor dictation={dictation} form={form} onChange={onChange} />
-      <FormField label="Approved by">
-        <input required value={form.approved_by} onChange={(event) => onChange({ ...form, approved_by: event.target.value })} />
+      <FormField label="Proposed Additional Work">
+        <VoiceTextArea dictation={dictation} value={form.proposed_work} onChange={(value) => onChange({ ...form, proposed_work: value })} />
       </FormField>
-      <div className="wide">
-        <SignaturePad label="Approval digital signature" value={form.approval_signature} onChange={(dataUrl) => onChange({ ...form, approval_signature: dataUrl })} />
-      </div>
+      <FieldPhotoFoldersEditor dictation={dictation} form={form} onChange={onChange} />
+      {isApproved && (
+        <>
+          <FormField label="Approved by">
+            <input required value={form.approved_by} onChange={(event) => onChange({ ...form, approved_by: event.target.value })} />
+          </FormField>
+          <div className="wide">
+            <SignaturePad label="Approval digital signature" value={form.approval_signature} onChange={(dataUrl) => onChange({ ...form, approval_signature: dataUrl })} />
+          </div>
+        </>
+      )}
       <div className="formActions wide">
-        <button className="addButton" type="submit" disabled={loading || dictationBusy || !form.project_id || !form.approval_signature}>
+        <button className="addButton" type="submit" disabled={loading || dictationBusy || !form.project_id || (isApproved && (!form.approved_by.trim() || !form.approval_signature))}>
           <Save size={18} />
           Save Change Order
         </button>
@@ -7658,7 +7930,7 @@ function FieldReportCard({ getProfileName, kind, onDelete, onEmail, onExport, on
           <small>{title} / {!isSiteVisit && record.order_number ? `${record.order_number} / ` : ""}{formatDateLabel(date)} / {timeText}</small>
           <em>{record.description || "No description yet."}</em>
         </span>
-        {isSiteVisit && <i className={`ticketStatus ${record.status}`}>{normalizeVisitStatus(record.status)}</i>}
+        <i className={`ticketStatus ${isSiteVisit ? record.status : normalizeChangeOrderStatus(record.status)}`}>{isSiteVisit ? normalizeVisitStatus(record.status) : changeOrderStatusLabel(record.status)}</i>
       </button>
       <div className="fieldReportActions">
         <small>Created by {getProfileName(record.created_by, "Unknown")}</small>
@@ -8161,18 +8433,57 @@ function ServerStatusIndicator({ online }) {
   );
 }
 
-function SettingsView({ featureFlags = defaultFeatureFlags, isConfigured, profile }) {
-  const flags = normalizeFeatureFlags(featureFlags);
+function NotificationButton({ count = 0, mobile = false, onClick }) {
   return (
-    <div className="listView">
-      <div className="listRow">
+    <button className={mobile ? "notificationButton mobile" : "notificationButton"} type="button" title="Notifications" onClick={onClick}>
+      <Bell size={mobile ? 20 : 19} />
+      {count > 0 && <span className="notificationBadge">{count > 99 ? "99+" : count}</span>}
+    </button>
+  );
+}
+
+function NotificationsPanel({ notifications = [], onOpen }) {
+  const rows = [...notifications].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  return (
+    <div className="notificationsPanel">
+      {rows.length === 0 ? (
+        <div className="emptyPanelState">No notifications yet.</div>
+      ) : (
+        rows.map((item) => (
+          <button className={item.read_at ? "notificationRow" : "notificationRow unread"} key={item.id} type="button" onClick={() => onOpen?.(item)}>
+            <span className="notificationIcon">
+              {item.type?.includes("change_order") ? <FileBarChart2 size={18} /> : item.type?.includes("note") ? <MessageSquarePlus size={18} /> : <Calendar size={18} />}
+            </span>
+            <span>
+              <strong>{item.title || "Notification"}</strong>
+              <small>{formatDateTimeLabel(item.created_at)}</small>
+              <em>{item.message}</em>
+            </span>
+            {!item.read_at && <i />}
+          </button>
+        ))
+      )}
+    </div>
+  );
+}
+
+function SettingsHub({ canManage, canUseDeveloperMode, featureFlags = defaultFeatureFlags, isConfigured, onDeveloperMode, onNavigate, profile }) {
+  const flags = normalizeFeatureFlags(featureFlags);
+  const quickLinks = [
+    canManage ? { id: "people", label: "People", text: "Approve requests, roles, trades, availability.", icon: UsersRound } : null,
+    canManage ? { id: "equipment", label: "Equipment", text: "Manage equipment avatars and units.", icon: Truck } : null,
+    { id: "documents", label: "Documents", text: "Browse project files, photos, PDF, and Excel.", icon: FileText },
+    flags.safetyForm ? { id: "safetyReports", label: "Safety Reports", text: "Open saved Safety Form PDFs.", icon: ClipboardCheck } : null,
+  ].filter(Boolean);
+
+  return (
+    <div className="settingsHub">
+      <section className="settingsSummaryPanel">
         <Settings size={20} />
         <span>
           <strong>Supabase</strong>
           <small>{isConfigured ? "Connected with environment variables" : "Not configured"}</small>
         </span>
-      </div>
-      <div className="settingsSummaryPanel">
         <div>
           <strong>Workspace</strong>
           <small>{profile?.company_id ? "Company data sync is active" : "No company connected"}</small>
@@ -8180,8 +8491,36 @@ function SettingsView({ featureFlags = defaultFeatureFlags, isConfigured, profil
         <div className="settingsFeatureGrid">
           <span className={flags.safetyForm ? "featurePill on" : "featurePill off"}>Safety Form {flags.safetyForm ? "On" : "Off"}</span>
           <span className={flags.beforeAfterPhotos ? "featurePill on" : "featurePill off"}>Before / After Photos {flags.beforeAfterPhotos ? "On" : "Off"}</span>
+          <span className={flags.siteInspections ? "featurePill on" : "featurePill off"}>Site Inspection {flags.siteInspections ? "On" : "Off"}</span>
+          <span className={flags.changeOrders ? "featurePill on" : "featurePill off"}>Change Order {flags.changeOrders ? "On" : "Off"}</span>
           <span className={flags.testBots ? "featurePill on" : "featurePill off"}>Test Bots {flags.testBots ? "On" : "Off"}</span>
         </div>
+      </section>
+
+      <div className="settingsHubGrid">
+        {quickLinks.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button className="settingsHubCard" key={item.id} type="button" onClick={() => onNavigate?.(item.id)}>
+              <Icon size={20} />
+              <span>
+                <strong>{item.label}</strong>
+                <small>{item.text}</small>
+              </span>
+              <ChevronRight size={18} />
+            </button>
+          );
+        })}
+        {canUseDeveloperMode && (
+          <button className="settingsHubCard developer" type="button" onClick={onDeveloperMode}>
+            <Wrench size={20} />
+            <span>
+              <strong>Developer Mode</strong>
+              <small>Feature switches, Safety Form, photos, inspections, Change Orders, and test bots.</small>
+            </span>
+            <ChevronRight size={18} />
+          </button>
+        )}
       </div>
     </div>
   );

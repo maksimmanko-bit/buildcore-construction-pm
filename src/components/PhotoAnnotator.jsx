@@ -11,13 +11,15 @@ const tools = [
 ];
 
 const swatches = [
-  { id: "red", label: "Red", value: "#cf2e2e", fill: "rgba(207,46,46,0.13)" },
-  { id: "yellow", label: "Yellow", value: "#f59e0b", fill: "rgba(245,158,11,0.16)" },
-  { id: "blue", label: "Blue", value: "#2563eb", fill: "rgba(37,99,235,0.13)" },
-  { id: "green", label: "Green", value: "#16a34a", fill: "rgba(22,163,74,0.13)" },
-  { id: "white", label: "White", value: "#ffffff", fill: "rgba(255,255,255,0.18)" },
-  { id: "black", label: "Black", value: "#111827", fill: "rgba(17,24,39,0.13)" },
+  { id: "blue", label: "Blue", value: "#0a84ff", fill: "rgba(10,132,255,0.1)" },
+  { id: "red", label: "Red", value: "#ff3b30", fill: "rgba(255,59,48,0.1)" },
+  { id: "yellow", label: "Yellow", value: "#ffcc00", fill: "rgba(255,204,0,0.14)" },
+  { id: "green", label: "Green", value: "#34c759", fill: "rgba(52,199,89,0.1)" },
+  { id: "white", label: "White", value: "#ffffff", fill: "rgba(255,255,255,0.16)" },
+  { id: "black", label: "Black", value: "#1c1c1e", fill: "rgba(28,28,30,0.1)" },
 ];
+
+const markupShadow = "rgba(15, 23, 42, 0.2) 0px 4px 12px";
 
 function getCanvasPoint(canvas, event) {
   try {
@@ -66,9 +68,9 @@ function makeAnnotationId() {
 
 function annotationControlDefaults(object) {
   object.set({
-    borderColor: "#2563eb",
+    borderColor: "#0a84ff",
     cornerColor: "#ffffff",
-    cornerStrokeColor: "#2563eb",
+    cornerStrokeColor: "#0a84ff",
     cornerSize: 14,
     cornerStyle: "circle",
     padding: 4,
@@ -80,6 +82,7 @@ function annotationControlDefaults(object) {
 }
 
 function createArrow({ color, point, strokeWidth }) {
+  const width = 180;
   const line = new Line([0, 0, 186, 0], {
     stroke: color,
     strokeWidth,
@@ -87,7 +90,8 @@ function createArrow({ color, point, strokeWidth }) {
     strokeLineJoin: "round",
     selectable: false,
     evented: false,
-    shadow: "rgba(15, 23, 42, 0.22) 0px 3px 7px",
+    strokeUniform: true,
+    shadow: markupShadow,
   });
   const head = new Triangle({
     left: 186,
@@ -100,13 +104,14 @@ function createArrow({ color, point, strokeWidth }) {
     originY: "center",
     selectable: false,
     evented: false,
-    shadow: "rgba(15, 23, 42, 0.18) 0px 3px 7px",
+    shadow: markupShadow,
   });
   return annotationControlDefaults(
     new Group([line, head], {
-      left: point.x,
+      left: point.x - width / 2,
       top: point.y,
       angle: -16,
+      objectCaching: true,
       data: { annotation: true, annotationType: "arrow" },
     }),
   );
@@ -116,8 +121,8 @@ function createShape({ color, fill, point, strokeWidth, tool }) {
   if (tool === "rect") {
     return annotationControlDefaults(
       new Rect({
-        left: point.x,
-        top: point.y,
+        left: point.x - 105,
+        top: point.y - 59,
         width: 210,
         height: 118,
         fill,
@@ -125,7 +130,9 @@ function createShape({ color, fill, point, strokeWidth, tool }) {
         strokeWidth,
         rx: 14,
         ry: 14,
-        shadow: "rgba(15, 23, 42, 0.12) 0px 5px 14px",
+        strokeUniform: true,
+        objectCaching: true,
+        shadow: markupShadow,
         data: { annotation: true, annotationType: "rect" },
       }),
     );
@@ -134,13 +141,15 @@ function createShape({ color, fill, point, strokeWidth, tool }) {
   if (tool === "circle") {
     return annotationControlDefaults(
       new FabricCircle({
-        left: point.x,
-        top: point.y,
+        left: point.x - 64,
+        top: point.y - 64,
         radius: 64,
         fill,
         stroke: color,
         strokeWidth,
-        shadow: "rgba(15, 23, 42, 0.12) 0px 5px 14px",
+        strokeUniform: true,
+        objectCaching: true,
+        shadow: markupShadow,
         data: { annotation: true, annotationType: "circle" },
       }),
     );
@@ -161,10 +170,11 @@ function createTextBubble({ color, point, text }) {
       fontSize: 34,
       fontFamily: "Inter, system-ui, sans-serif",
       fontWeight: 850,
-      backgroundColor: "rgba(255,255,255,0.92)",
-      borderColor: "#2563eb",
+      backgroundColor: "rgba(255,255,255,0.88)",
+      borderColor: "#0a84ff",
       padding: 12,
-      shadow: "rgba(15, 23, 42, 0.16) 0px 5px 16px",
+      objectCaching: true,
+      shadow: markupShadow,
       data: { annotation: true, annotationType: "text" },
     }),
   );
