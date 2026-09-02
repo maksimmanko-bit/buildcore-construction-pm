@@ -1962,7 +1962,7 @@ export default function App() {
     });
   }
 
-  function notificationRecipients({ builderIds = [], managers = false } = {}) {
+  function notificationRecipients({ builderIds = [], includeActor = false, managers = false } = {}) {
     const recipients = new Map();
     if (managers) {
       (rowsSource.people ?? [])
@@ -1973,13 +1973,13 @@ export default function App() {
       const person = rowsSource.people.find((item) => item.id === id);
       if (person?.is_active && person.role === "builder") recipients.set(person.id, person);
     });
-    recipients.delete(profile?.id);
+    if (!includeActor) recipients.delete(profile?.id);
     return [...recipients.keys()];
   }
 
-  async function createNotifications({ builderIds = [], changeOrderId = null, message, managers = false, projectId = null, title, type, visitId = null }) {
+  async function createNotifications({ builderIds = [], changeOrderId = null, includeActor = false, message, managers = false, projectId = null, title, type, visitId = null }) {
     if (!supabase || !profile?.company_id) return;
-    const recipientIds = notificationRecipients({ builderIds, managers });
+    const recipientIds = notificationRecipients({ builderIds, includeActor, managers });
     if (recipientIds.length === 0) return;
     const rows = recipientIds.map((recipientId) => ({
       actor_id: profile.id,
@@ -3940,6 +3940,7 @@ export default function App() {
       });
       if (isStartingTicket && absentTeam.length > 0) {
         void createNotifications({
+          includeActor: true,
           managers: true,
           message: `${activeProject.name} started with partial crew. Not arrived yet: ${absentTeam.map((person) => profileDisplayName(person, "Team member")).join(", ")}.`,
           projectId: activeProject.id,
