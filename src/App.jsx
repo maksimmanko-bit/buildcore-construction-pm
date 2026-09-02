@@ -340,7 +340,40 @@ function changeOrderStatusLabel(status) {
   return normalizeChangeOrderStatus(status) === "approved" ? "Approved" : "Requested";
 }
 
-const hazardOptions = ["Working at heights", "Excavation / trench", "Electrical hazard", "Heavy equipment", "Traffic / public access", "Weather exposure", "Dust / silica", "Manual lifting"];
+const safetyTemplateObjectTypes = [
+  { id: "text", label: "Text" },
+  { id: "checkboxes", label: "Checkbox block" },
+  { id: "textarea", label: "Text field" },
+  { id: "select", label: "Choice field" },
+];
+const defaultSafetyTemplate = {
+  version: 1,
+  objects: [
+    {
+      id: "psi-checklist",
+      type: "checkboxes",
+      title: "Potential hazards",
+      required: true,
+      items: [
+        { id: "working-at-heights", label: "Working at heights", details: false },
+        { id: "excavation-trench", label: "Excavation / trench", details: false },
+        { id: "electrical-hazard", label: "Electrical hazard", details: false },
+        { id: "heavy-equipment", label: "Heavy equipment", details: false },
+        { id: "traffic-public-access", label: "Traffic / public access", details: false },
+        { id: "weather-exposure", label: "Weather exposure", details: false },
+        { id: "dust-silica", label: "Dust / silica", details: false },
+        { id: "manual-lifting", label: "Manual lifting", details: false },
+      ],
+    },
+    {
+      id: "safety_notes",
+      type: "textarea",
+      title: "Safety notes",
+      required: false,
+      placeholder: "Add jobsite notes, controls, or office attention items...",
+    },
+  ],
+};
 const timeLabels = ["7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM"];
 const colors = ["blue", "green", "yellow", "purple", "orange"];
 const scheduleStartHour = 7;
@@ -351,10 +384,98 @@ const defaultFeatureFlags = {
   siteInspections: true,
   changeOrders: true,
   testBots: false,
+  safetyTemplate: defaultSafetyTemplate,
 };
 
 function normalizeFeatureFlags(flags) {
-  return { ...defaultFeatureFlags, ...(flags && typeof flags === "object" ? flags : {}) };
+  const next = { ...defaultFeatureFlags, ...(flags && typeof flags === "object" ? flags : {}) };
+  next.safetyTemplate = normalizeSafetyTemplate(next.safetyTemplate);
+  return next;
+}
+
+function makeStableId(value = "item") {
+  const base = String(value || "item")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 42);
+  return `${base || "item"}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeSafetyTemplate(template) {
+  const source = template && typeof template === "object" ? template : defaultSafetyTemplate;
+  const objects = Array.isArray(source.objects) && source.objects.length ? source.objects : defaultSafetyTemplate.objects;
+  return {
+    version: 1,
+    objects: objects
+      .map((object, objectIndex) => {
+        const type = safetyTemplateObjectTypes.some((item) => item.id === object?.type) ? object.type : "text";
+        const title = String(object?.title || (type === "text" ? "Information" : `Safety item ${objectIndex + 1}`)).trim();
+        const base = {
+          id: object?.id || makeStableId(`${type}-${objectIndex + 1}`),
+          type,
+          title,
+          required: Boolean(object?.required),
+        };
+        if (type === "checkboxes") {
+          const items = Array.isArray(object.items) ? object.items : [];
+          return {
+            ...base,
+            items: items.slice(0, 10).map((item, itemIndex) => ({
+              id: item?.id || makeStableId(`${title}-${itemIndex + 1}`),
+              label: String(item?.label || `Checkbox ${itemIndex + 1}`).trim(),
+              details: Boolean(item?.details),
+            })),
+          };
+        }
+        if (type === "textarea") {
+          return { ...base, placeholder: String(object?.placeholder || "Type notes here...") };
+        }
+        if (type === "select") {
+          const options = Array.isArray(object.options) ? object.options : [];
+          return {
+            ...base,
+            options: options.map((option) => String(option || "").trim()).filter(Boolean).slice(0, 12),
+          };
+        }
+        return { ...base, body: String(object?.body || "Safety information text.").trim() };
+      })
+      .filter((object) => object.type !== "checkboxes" || object.items.length > 0)
+      .filter((object) => object.type !== "select" || object.options.length > 0)
+      .slice(0, 24),
+  };
+}
+
+function emptySafetyResponses(template = defaultSafetyTemplate) {
+  return Object.fromEntries(
+    normalizeSafetyTemplate(template).objects.map((object) => [
+      object.id,
+      object.type === "checkboxes" ? { checked: [], details: {} } : object.type === "textarea" ? "" : object.type === "select" ? "" : true,
+    ]),
+  );
+}
+
+function safetyResponseText(object, value) {
+  if (object.type === "text") return object.body || "";
+  if (object.type === "textarea") return String(value || "").trim();
+  if (object.type === "select") return String(value || "").trim();
+  if (object.type === "checkboxes") {
+    const checked = new Set(value?.checked ?? []);
+    return object.items
+      .filter((item) => checked.has(item.id))
+      .map((item) => `${item.label}${value?.details?.[item.id] ? `: ${value.details[item.id]}` : ""}`)
+      .join(", ");
+  }
+  return "";
+}
+
+function safetyTemplateHasRequiredResponses(template, responses = {}) {
+  return normalizeSafetyTemplate(template).objects.every((object) => {
+    if (!object.required || object.type === "text") return true;
+    const value = responses[object.id];
+    if (object.type === "checkboxes") return (value?.checked ?? []).length > 0;
+    return Boolean(String(value || "").trim());
+  });
 }
 
 const demoAssignments = [
@@ -1233,7 +1354,7 @@ export default function App() {
   const [siteVisitForm, setSiteVisitForm] = useState(emptySiteVisitForm);
   const [changeOrderForm, setChangeOrderForm] = useState(emptyChangeOrderForm);
   const [visitNoteForm, setVisitNoteForm] = useState(emptyVisitNoteForm);
-  const [safetyForm, setSafetyForm] = useState({ hazards: [], notes: "", signatures: {}, presentIds: [] });
+  const [safetyForm, setSafetyForm] = useState({ responses: emptySafetyResponses(defaultSafetyTemplate), signatures: {}, presentIds: [] });
   const [workflowVisitId, setWorkflowVisitId] = useState("");
   const [photoStep, setPhotoStep] = useState({ kind: "", visitId: "", files: [], captions: {} });
   const [completionForm, setCompletionForm] = useState({ notes: "", files: [], captions: {} });
@@ -2140,8 +2261,7 @@ export default function App() {
   const visitFormDates = editingVisitId ? [visitForm.visit_date] : collectVisitDates(visitForm.visit_date, Math.max(1, parseWorkDayCount(visitForm.duration_days)));
   const visitWorkScopes = normalizeWorkScopes(visitForm.work_scopes, visitFormDates.length, visitForm.work_scope);
   const safetyFormHasDraft =
-    safetyForm.hazards.length > 0 ||
-    safetyForm.notes.trim().length > 0 ||
+    Object.values(safetyForm.responses ?? {}).some((value) => JSON.stringify(value ?? "").replace(/[{}\[\]":,]/g, "").trim().length > 0) ||
     Object.values(safetyForm.signatures ?? {}).some((signature) => String(signature ?? "").trim().length > 0);
   const beforePhotosHaveDraft =
     (photoStep.files?.length ?? 0) > 0 ||
@@ -3402,6 +3522,7 @@ export default function App() {
       siteInspections: Boolean(developerForm.siteInspections),
       changeOrders: Boolean(developerForm.changeOrders),
       testBots: Boolean(developerForm.testBots),
+      safetyTemplate: normalizeSafetyTemplate(developerForm.safetyTemplate),
     });
     const shouldCreateBots = nextFlags.testBots && !activeFeatureFlags.testBots;
     const shouldDeleteBots = !nextFlags.testBots && activeFeatureFlags.testBots;
@@ -3906,8 +4027,7 @@ export default function App() {
       const assignedTeam = rowsSource.people.filter((person) => visit.people_ids?.includes(person.id));
       const team = safetyFiles.length > 0 && profile?.id ? assignedTeam.filter((person) => person.id === profile.id) : assignedTeam;
       setSafetyForm({
-        hazards: [],
-        notes: "",
+        responses: emptySafetyResponses(activeFeatureFlags.safetyTemplate),
         signatures: Object.fromEntries(team.map((person) => [person.id, ""])),
         presentIds: team.map((person) => person.id),
       });
@@ -4074,8 +4194,10 @@ export default function App() {
     const absentTeam = assignedTeam.filter((person) => !presentIds.has(person.id));
     const isStartingTicket = !["on_site", "completed"].includes(activeVisit.status);
     const missingSignature = team.some((person) => !safetyForm.signatures[person.id]?.trim());
-    if (safetyForm.hazards.length === 0 || team.length === 0 || missingSignature) {
-      setNotice("Confirm who is on site, select hazards, and collect every present team member signature before continuing.");
+    const template = normalizeSafetyTemplate(activeFeatureFlags.safetyTemplate);
+    const responses = { ...emptySafetyResponses(template), ...(safetyForm.responses ?? {}) };
+    if (!safetyTemplateHasRequiredResponses(template, responses) || team.length === 0 || missingSignature) {
+      setNotice("Confirm who is on site, complete required Safety Form fields, and collect every present team member signature before continuing.");
       return;
     }
 
@@ -4104,21 +4226,65 @@ export default function App() {
       doc.text(`Current Time: ${formatTimeLabel(getWinnipegTimeValue(signedAt))}`, 220, 196);
       doc.text(`Scheduled Time: ${formatTimeRange(activeVisit.start_time, activeVisit.end_time)}`, 398, 196);
 
-      doc.setDrawColor(226, 232, 240);
-      doc.roundedRect(42, 244, 528, 112, 8, 8);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.text("Potential Hazards", 58, 270);
-      doc.setFont("helvetica", "normal");
-      const hazards = doc.splitTextToSize(safetyForm.hazards.join(", "), 492);
-      doc.text(hazards, 58, 292);
+      let y = 238;
+      const ensurePdfSpace = (height) => {
+        if (y + height < 626) return;
+        doc.addPage();
+        y = 44;
+      };
+      const drawCheckbox = (x, yPos, checked) => {
+        doc.setDrawColor(checked ? 22 : 148, checked ? 163 : 163, checked ? 74 : 184);
+        doc.setLineWidth(1);
+        doc.roundedRect(x, yPos, 11, 11, 2, 2);
+        if (!checked) return;
+        doc.setFillColor(22, 163, 74);
+        doc.roundedRect(x, yPos, 11, 11, 2, 2, "F");
+        doc.setDrawColor(255, 255, 255);
+        doc.setLineWidth(1.5);
+        doc.line(x + 2.4, yPos + 6, x + 4.8, yPos + 8.3);
+        doc.line(x + 4.8, yPos + 8.3, x + 9, yPos + 3);
+      };
+      const safetySummaryLines = [];
+      template.objects.forEach((object) => {
+        const response = responses[object.id];
+        const valueText = safetyResponseText(object, response);
+        ensurePdfSpace(object.type === "checkboxes" ? 58 + object.items.length * 30 : 86);
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        const startY = y;
+        const cardHeight = object.type === "checkboxes" ? 44 + object.items.reduce((height, item) => height + (response?.details?.[item.id] ? 42 : 24), 0) : 72;
+        doc.roundedRect(42, startY, 528, Math.min(cardHeight, 330), 8, 8, "FD");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.setTextColor(17, 24, 39);
+        doc.text(object.title, 58, y + 22);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        y += 42;
+        if (object.type === "checkboxes") {
+          const checked = new Set(response?.checked ?? []);
+          object.items.forEach((item) => {
+            ensurePdfSpace(42);
+            drawCheckbox(58, y - 9, checked.has(item.id));
+            doc.setTextColor(17, 24, 39);
+            doc.text(doc.splitTextToSize(item.label, 430), 76, y);
+            y += 22;
+            if (response?.details?.[item.id]) {
+              doc.setTextColor(71, 85, 105);
+              doc.text(doc.splitTextToSize(`Details: ${response.details[item.id]}`, 440), 76, y);
+              y += 20;
+            }
+          });
+        } else {
+          doc.setTextColor(51, 65, 85);
+          doc.text(doc.splitTextToSize(valueText || "Not filled", 480), 58, y);
+          y += 34;
+        }
+        y += 18;
+        if (valueText) safetySummaryLines.push(`${object.title}: ${valueText}`);
+      });
 
-      doc.setFont("helvetica", "bold");
-      doc.text("Notes", 58, 336);
-      doc.setFont("helvetica", "normal");
-      doc.text(doc.splitTextToSize(safetyForm.notes || "None", 430), 100, 336);
-
-      let y = 398;
+      ensurePdfSpace(190);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
       doc.text("Team Signatures", 42, y);
@@ -4130,15 +4296,19 @@ export default function App() {
         y += 34;
       }
       team.forEach((person) => {
+        ensurePdfSpace(116);
         doc.setDrawColor(226, 232, 240);
-        doc.roundedRect(42, y, 528, 82, 8, 8);
+        doc.roundedRect(42, y, 528, 98, 8, 8);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
         doc.text(person.full_name || person.email || "Team member", 58, y + 24);
         doc.setFont("helvetica", "normal");
-        doc.text(`Signed: ${formatDateTimeLabel(signedAt)}`, 58, y + 42);
-        doc.addImage(safetyForm.signatures[person.id], "PNG", 320, y + 12, 190, 48);
-        y += 96;
+        doc.setFontSize(8.5);
+        doc.text("Do not Sign untill you understand and agree with the PSI", 58, y + 42);
+        doc.setFontSize(10);
+        doc.text(`Signed: ${formatDateTimeLabel(signedAt)}`, 58, y + 60);
+        doc.addImage(safetyForm.signatures[person.id], "PNG", 320, y + 20, 190, 48);
+        y += 112;
       });
       doc.addImage(safetyLetterhead, "PNG", 332, 650, 238, 105);
 
@@ -4149,8 +4319,7 @@ export default function App() {
         getVisitAddress(activeVisit, activeProject),
         formatDateLabel(activeVisit.visit_date),
         formatDateTimeLabel(signedAt),
-        safetyForm.hazards.join(", "),
-        safetyForm.notes,
+        safetySummaryLines.join(" "),
         `Signed team IDs: ${team.map((person) => person.id).join(", ")}`,
         `Signed team names: ${names.join(", ")}`,
         `Absent team: ${absentTeam.map((person) => person.full_name || person.email || "Team member").join(", ")}`,
@@ -4171,7 +4340,8 @@ export default function App() {
         searchText: searchableText,
       });
       await logVisitActivity(activeVisit, "safety_form_saved", `${currentUserName} saved the digital safety form.`, {
-        hazards: safetyForm.hazards,
+        safetyTemplate: template,
+        safetyResponses: responses,
         team: names,
         absentTeam: absentTeam.map((person) => person.full_name || person.email || "Team member"),
       });
@@ -4197,7 +4367,7 @@ export default function App() {
         });
         setModalType(null);
         setWorkflowVisitId("");
-        setSafetyForm({ hazards: [], notes: "", signatures: {}, presentIds: [] });
+        setSafetyForm({ responses: emptySafetyResponses(activeFeatureFlags.safetyTemplate), signatures: {}, presentIds: [] });
         triggerSoftPulse();
         setNotice(alreadyHasBeforePhotos ? "Safety form saved. Your ticket actions are unlocked." : "Safety form saved. Work started.");
         loadVisits();
@@ -6647,11 +6817,11 @@ export default function App() {
               dictation={dictation}
               dictationBusy={dictationBusy}
               form={safetyForm}
-              hazards={hazardOptions}
               loading={safetyFormSaving}
               onChange={setSafetyForm}
               onSubmit={saveSafetyForm}
               project={workflowProject}
+              template={activeFeatureFlags.safetyTemplate}
               team={workflowPeople}
               visit={workflowVisit}
             />
@@ -7695,19 +7865,26 @@ function FieldReportFiles({ files = [], onOpen, profiles = [] }) {
   );
 }
 
-function SafetyFormModal({ dictation, dictationBusy = false, form, hazards, loading, onChange, onSubmit, project, team, visit }) {
+function SafetyFormModal({ dictation, dictationBusy = false, form, loading, onChange, onSubmit, project, team, template = defaultSafetyTemplate, visit }) {
+  const normalizedTemplate = normalizeSafetyTemplate(template);
+  const responses = { ...emptySafetyResponses(normalizedTemplate), ...(form.responses ?? {}) };
   const presentIds = form.presentIds?.length ? form.presentIds : team.map((person) => person.id);
   const presentTeam = team.filter((person) => presentIds.includes(person.id));
   const absentTeam = team.filter((person) => !presentIds.includes(person.id));
   const signaturesReady = presentTeam.length > 0 && presentTeam.every((person) => form.signatures[person.id]?.trim());
-  const canSubmit = form.hazards.length > 0 && signaturesReady;
+  const canSubmit = safetyTemplateHasRequiredResponses(normalizedTemplate, responses) && signaturesReady;
   const currentTime = formatTimeLabel(getWinnipegTimeValue());
 
-  function toggleHazard(hazard) {
-    const set = new Set(form.hazards);
-    if (set.has(hazard)) set.delete(hazard);
-    else set.add(hazard);
-    onChange({ ...form, hazards: [...set] });
+  function updateResponse(objectId, value) {
+    onChange({ ...form, responses: { ...responses, [objectId]: value } });
+  }
+
+  function toggleTemplateCheckbox(object, itemId) {
+    const current = responses[object.id] ?? { checked: [], details: {} };
+    const set = new Set(current.checked ?? []);
+    if (set.has(itemId)) set.delete(itemId);
+    else set.add(itemId);
+    updateResponse(object.id, { ...current, checked: [...set], details: current.details ?? {} });
   }
 
   function togglePresent(personId) {
@@ -7729,18 +7906,16 @@ function SafetyFormModal({ dictation, dictationBusy = false, form, hazards, load
         <span>{formatDateLabel(visit.visit_date)} · Current time {currentTime}</span>
       </div>
 
-      <fieldset className="pickerList safetySwitchList">
-        <legend>Potential hazards</legend>
-        {hazards.map((hazard) => (
-          <label className="safetySwitch" key={hazard}>
-            <input type="checkbox" checked={form.hazards.includes(hazard)} onChange={() => toggleHazard(hazard)} />
-            <span className="switchTrack" aria-hidden="true">
-              <span />
-            </span>
-            <strong>{hazard}</strong>
-          </label>
-        ))}
-      </fieldset>
+      {normalizedTemplate.objects.map((object) => (
+        <SafetyTemplateResponseObject
+          dictation={dictation}
+          key={object.id}
+          object={object}
+          onChange={(value) => updateResponse(object.id, value)}
+          onToggleCheckbox={(itemId) => toggleTemplateCheckbox(object, itemId)}
+          value={responses[object.id]}
+        />
+      ))}
 
       <fieldset className="pickerList safetySwitchList attendanceList">
         <legend>Who is on site?</legend>
@@ -7760,10 +7935,6 @@ function SafetyFormModal({ dictation, dictationBusy = false, form, hazards, load
         {absentTeam.length > 0 && <small className="attendanceNote">Absent team members will need their own Safety Form when they arrive.</small>}
       </fieldset>
 
-      <FormField label="Safety notes">
-        <VoiceTextArea dictation={dictation} value={form.notes} onChange={(value) => onChange({ ...form, notes: value })} />
-      </FormField>
-
       <div className="signatureStack">
         <h3>Team signatures</h3>
         {team.length === 0 ? (
@@ -7772,17 +7943,19 @@ function SafetyFormModal({ dictation, dictationBusy = false, form, hazards, load
           <div className="emptyPanelState">Select at least one team member who is on site.</div>
         ) : (
           presentTeam.map((person) => (
-            <SignaturePad
-              key={person.id}
-              label={person.full_name || person.email || "Team member"}
-              onChange={(dataUrl) =>
-                onChange({
-                  ...form,
-                  signatures: { ...form.signatures, [person.id]: dataUrl },
-                })
-              }
-              value={form.signatures[person.id] || ""}
-            />
+            <div className="signatureAgreement" key={person.id}>
+              <p>Do not Sign untill you understand and agree with the PSI</p>
+              <SignaturePad
+                label={person.full_name || person.email || "Team member"}
+                onChange={(dataUrl) =>
+                  onChange({
+                    ...form,
+                    signatures: { ...form.signatures, [person.id]: dataUrl },
+                  })
+                }
+                value={form.signatures[person.id] || ""}
+              />
+            </div>
           ))
         )}
       </div>
@@ -7794,6 +7967,77 @@ function SafetyFormModal({ dictation, dictationBusy = false, form, hazards, load
         </button>
       </div>
     </form>
+  );
+}
+
+function SafetyTemplateResponseObject({ dictation, object, onChange, onToggleCheckbox, value }) {
+  const requiredLabel = object.required ? `${object.title} *` : object.title;
+
+  if (object.type === "text") {
+    return (
+      <section className="safetyTemplateText">
+        <strong>{object.title}</strong>
+        <p>{object.body}</p>
+      </section>
+    );
+  }
+
+  if (object.type === "checkboxes") {
+    const checked = new Set(value?.checked ?? []);
+    const details = value?.details ?? {};
+    return (
+      <fieldset className="pickerList safetySwitchList safetyTemplateCheckboxes">
+        <legend>{requiredLabel}</legend>
+        {object.items.map((item) => {
+          const isChecked = checked.has(item.id);
+          return (
+            <label className={`safetySwitch safetyTemplateCheckbox ${item.details && isChecked ? "withDetails" : ""}`} key={item.id}>
+              <input type="checkbox" checked={isChecked} onChange={() => onToggleCheckbox(item.id)} />
+              <span className="switchTrack" aria-hidden="true">
+                <span />
+              </span>
+              <strong>{item.label}</strong>
+              {item.details && isChecked && (
+                <span className="checkboxDetailField" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+                  <VoiceTextInput
+                    dictation={dictation}
+                    placeholder="Add details..."
+                    value={details[item.id] ?? ""}
+                    onChange={(nextValue) =>
+                      onChange({
+                        ...(value ?? { checked: [], details: {} }),
+                        details: { ...details, [item.id]: nextValue },
+                      })
+                    }
+                  />
+                </span>
+              )}
+            </label>
+          );
+        })}
+      </fieldset>
+    );
+  }
+
+  if (object.type === "select") {
+    return (
+      <FormField label={requiredLabel}>
+        <select value={value ?? ""} onChange={(event) => onChange(event.target.value)} required={object.required}>
+          <option value="">Select...</option>
+          {object.options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </FormField>
+    );
+  }
+
+  return (
+    <FormField label={requiredLabel}>
+      <VoiceTextArea dictation={dictation} placeholder={object.placeholder || "Type notes here..."} required={object.required} value={value ?? ""} onChange={onChange} />
+    </FormField>
   );
 }
 
@@ -9426,6 +9670,9 @@ function EmojiAvatarPicker({ label = "Emoji avatar", onSelect, selected }) {
 }
 
 function DeveloperModeForm({ form, loading, onChange, onSubmit }) {
+  const [isSafetyBuilderOpen, setIsSafetyBuilderOpen] = useState(false);
+  const safetyTemplate = normalizeSafetyTemplate(form.safetyTemplate);
+
   return (
     <form className="developerModeForm" onSubmit={onSubmit}>
       <DeveloperSwitch
@@ -9434,6 +9681,20 @@ function DeveloperModeForm({ form, loading, onChange, onSubmit }) {
         label="Safety Form"
         onChange={(checked) => onChange({ ...form, safetyForm: checked })}
       />
+      {form.safetyForm && (
+        <div className="developerCustomizeBlock">
+          <button className="outlineButton" type="button" onClick={() => setIsSafetyBuilderOpen((current) => !current)}>
+            <Edit3 size={16} />
+            Customize Safety Form
+          </button>
+          {isSafetyBuilderOpen && (
+            <SafetyTemplateBuilder
+              template={safetyTemplate}
+              onChange={(nextTemplate) => onChange({ ...form, safetyTemplate: normalizeSafetyTemplate(nextTemplate) })}
+            />
+          )}
+        </div>
+      )}
       <DeveloperSwitch
         checked={form.beforeAfterPhotos}
         description="When off, Arrived and Complete no longer require before or after photos. Existing photos stay saved."
@@ -9470,6 +9731,205 @@ function DeveloperModeForm({ form, loading, onChange, onSubmit }) {
         </button>
       </div>
     </form>
+  );
+}
+
+function SafetyTemplateBuilder({ onChange, template }) {
+  const normalizedTemplate = normalizeSafetyTemplate(template);
+
+  function updateObjects(objects) {
+    onChange({ version: 1, objects });
+  }
+
+  function updateObject(index, nextObject) {
+    updateObjects(normalizedTemplate.objects.map((object, objectIndex) => (objectIndex === index ? nextObject : object)));
+  }
+
+  function addObject(type) {
+    const base = {
+      id: makeStableId(`safety-${type}`),
+      required: false,
+      title: type === "text" ? "Information" : type === "checkboxes" ? "Checklist" : type === "select" ? "Selection" : "Text field",
+      type,
+    };
+    const object =
+      type === "checkboxes"
+        ? { ...base, items: [{ id: makeStableId("checkbox"), label: "New checkbox", details: false }] }
+        : type === "select"
+          ? { ...base, options: ["Option 1", "Option 2"] }
+          : type === "textarea"
+            ? { ...base, placeholder: "Type notes here..." }
+            : { ...base, body: "Information text for the team." };
+    updateObjects([...normalizedTemplate.objects, object]);
+  }
+
+  function moveObject(index, direction) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= normalizedTemplate.objects.length) return;
+    const objects = [...normalizedTemplate.objects];
+    const [item] = objects.splice(index, 1);
+    objects.splice(nextIndex, 0, item);
+    updateObjects(objects);
+  }
+
+  function removeObject(index) {
+    if (normalizedTemplate.objects.length <= 1) return;
+    updateObjects(normalizedTemplate.objects.filter((_, objectIndex) => objectIndex !== index));
+  }
+
+  return (
+    <section className="safetyTemplateBuilder">
+      <div className="safetyBuilderHeader">
+        <div>
+          <strong>Safety Form Builder</strong>
+          <small>Create the exact PSI flow your crew will fill before work starts.</small>
+        </div>
+      </div>
+      <div className="safetyBuilderAddGrid">
+        {safetyTemplateObjectTypes.map((type) => (
+          <button className="outlineButton" key={type.id} type="button" onClick={() => addObject(type.id)}>
+            <Plus size={15} />
+            {type.label}
+          </button>
+        ))}
+      </div>
+      <div className="safetyBuilderObjects">
+        {normalizedTemplate.objects.map((object, index) => (
+          <SafetyTemplateObjectEditor
+            index={index}
+            key={object.id}
+            object={object}
+            onMove={moveObject}
+            onRemove={removeObject}
+            onUpdate={(nextObject) => updateObject(index, nextObject)}
+            total={normalizedTemplate.objects.length}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SafetyTemplateObjectEditor({ index, object, onMove, onRemove, onUpdate, total }) {
+  function updateField(field, value) {
+    onUpdate({ ...object, [field]: value });
+  }
+
+  function updateCheckboxItem(itemIndex, nextItem) {
+    onUpdate({ ...object, items: object.items.map((item, index) => (index === itemIndex ? nextItem : item)) });
+  }
+
+  function addCheckboxItem() {
+    if ((object.items ?? []).length >= 10) return;
+    onUpdate({ ...object, items: [...(object.items ?? []), { id: makeStableId("checkbox"), label: "New checkbox", details: false }] });
+  }
+
+  function removeCheckboxItem(itemIndex) {
+    if ((object.items ?? []).length <= 1) return;
+    onUpdate({ ...object, items: object.items.filter((_, index) => index !== itemIndex) });
+  }
+
+  function updateOption(optionIndex, value) {
+    onUpdate({ ...object, options: object.options.map((option, index) => (index === optionIndex ? value : option)) });
+  }
+
+  function addOption() {
+    onUpdate({ ...object, options: [...(object.options ?? []), `Option ${(object.options ?? []).length + 1}`] });
+  }
+
+  function removeOption(optionIndex) {
+    if ((object.options ?? []).length <= 1) return;
+    onUpdate({ ...object, options: object.options.filter((_, index) => index !== optionIndex) });
+  }
+
+  return (
+    <article className="safetyBuilderObject">
+      <div className="safetyBuilderObjectHeader">
+        <div>
+          <strong>{object.title || safetyTemplateObjectTypes.find((type) => type.id === object.type)?.label}</strong>
+          <small>{safetyTemplateObjectTypes.find((type) => type.id === object.type)?.label}</small>
+        </div>
+        <div className="safetyBuilderObjectActions">
+          <button className="iconButton soft" disabled={index === 0} type="button" onClick={() => onMove(index, -1)} title="Move up">
+            <ChevronUp size={16} />
+          </button>
+          <button className="iconButton soft" disabled={index === total - 1} type="button" onClick={() => onMove(index, 1)} title="Move down">
+            <ChevronDown size={16} />
+          </button>
+          <button className="iconButton danger" disabled={total <= 1} type="button" onClick={() => onRemove(index)} title="Remove block">
+            <Trash2 size={16} />
+          </button>
+        </div>
+      </div>
+      <div className="safetyBuilderFields">
+        <FormField label="Block title">
+          <input value={object.title} onChange={(event) => updateField("title", event.target.value)} />
+        </FormField>
+        {object.type !== "text" && (
+          <label className="developerSwitch compactDeveloperSwitch">
+            <span>
+              <strong>Required</strong>
+              <small>User must complete this block before saving.</small>
+            </span>
+            <span className="developerSwitchControl">
+              <input type="checkbox" checked={Boolean(object.required)} onChange={(event) => updateField("required", event.target.checked)} />
+              <span className="switchTrack" aria-hidden="true">
+                <span />
+              </span>
+            </span>
+          </label>
+        )}
+        {object.type === "text" && (
+          <FormField label="Text shown to worker">
+            <textarea value={object.body} onChange={(event) => updateField("body", event.target.value)} />
+          </FormField>
+        )}
+        {object.type === "textarea" && (
+          <FormField label="Placeholder">
+            <input value={object.placeholder ?? ""} onChange={(event) => updateField("placeholder", event.target.value)} />
+          </FormField>
+        )}
+      </div>
+      {object.type === "checkboxes" && (
+        <div className="safetyBuilderRows">
+          {(object.items ?? []).map((item, itemIndex) => (
+            <div className="safetyBuilderRow" key={item.id}>
+              <input value={item.label} onChange={(event) => updateCheckboxItem(itemIndex, { ...item, label: event.target.value })} />
+              <label className="miniSwitchLine">
+                <input type="checkbox" checked={Boolean(item.details)} onChange={(event) => updateCheckboxItem(itemIndex, { ...item, details: event.target.checked })} />
+                <span className="switchTrack" aria-hidden="true">
+                  <span />
+                </span>
+                Details field
+              </label>
+              <button className="iconButton soft" disabled={(object.items ?? []).length <= 1} type="button" onClick={() => removeCheckboxItem(itemIndex)} title="Remove checkbox">
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+          <button className="outlineButton" disabled={(object.items ?? []).length >= 10} type="button" onClick={addCheckboxItem}>
+            <Plus size={15} />
+            Add checkbox
+          </button>
+        </div>
+      )}
+      {object.type === "select" && (
+        <div className="safetyBuilderRows">
+          {(object.options ?? []).map((option, optionIndex) => (
+            <div className="safetyBuilderRow" key={`${object.id}-${optionIndex}`}>
+              <input value={option} onChange={(event) => updateOption(optionIndex, event.target.value)} />
+              <button className="iconButton soft" disabled={(object.options ?? []).length <= 1} type="button" onClick={() => removeOption(optionIndex)} title="Remove option">
+                <Trash2 size={15} />
+              </button>
+            </div>
+          ))}
+          <button className="outlineButton" type="button" onClick={addOption}>
+            <Plus size={15} />
+            Add option
+          </button>
+        </div>
+      )}
+    </article>
   );
 }
 

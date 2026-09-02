@@ -2160,6 +2160,164 @@ h1 {
   transform: translateX(20px);
 }
 
+.developerCustomizeBlock,
+.safetyTemplateBuilder,
+.safetyBuilderObjects,
+.safetyBuilderFields,
+.safetyBuilderRows {
+  display: grid;
+  gap: 12px;
+}
+
+.developerCustomizeBlock {
+  padding: 14px;
+  border: 1px solid rgba(226, 232, 240, 0.78);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.72)),
+    rgba(255, 255, 255, 0.74);
+}
+
+.developerCustomizeBlock > .outlineButton {
+  justify-content: center;
+  min-height: 48px;
+  border-radius: 16px;
+}
+
+.safetyTemplateBuilder {
+  padding: 14px;
+  border: 1px solid rgba(207, 46, 46, 0.12);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.78)),
+    rgba(255, 255, 255, 0.8);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 16px 34px rgba(15, 23, 42, 0.06);
+}
+
+.safetyBuilderHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.safetyBuilderHeader strong,
+.safetyBuilderObjectHeader strong {
+  display: block;
+  color: #111827;
+  font-weight: 950;
+}
+
+.safetyBuilderHeader small,
+.safetyBuilderObjectHeader small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 780;
+  line-height: 1.35;
+}
+
+.safetyBuilderAddGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.safetyBuilderAddGrid .outlineButton {
+  min-width: 0;
+  justify-content: center;
+  padding-inline: 10px;
+  border-radius: 15px;
+  font-size: 12px;
+}
+
+.safetyBuilderObject {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(226, 232, 240, 0.86);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.safetyBuilderObjectHeader,
+.safetyBuilderObjectActions,
+.safetyBuilderRow,
+.miniSwitchLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.safetyBuilderObjectHeader {
+  justify-content: space-between;
+}
+
+.safetyBuilderFields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.safetyBuilderFields .formField:has(textarea),
+.safetyBuilderRows,
+.safetyBuilderRow {
+  grid-column: 1 / -1;
+}
+
+.safetyBuilderRow {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(226, 232, 240, 0.72);
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.safetyBuilderRow input {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.miniSwitchLine {
+  flex: 0 0 auto;
+  min-width: 150px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.miniSwitchLine input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.miniSwitchLine .switchTrack {
+  width: 42px;
+  height: 25px;
+}
+
+.miniSwitchLine .switchTrack span {
+  width: 19px;
+  height: 19px;
+}
+
+.miniSwitchLine input:checked + .switchTrack {
+  background: var(--brand-red);
+}
+
+.miniSwitchLine input:checked + .switchTrack span {
+  transform: translateX(17px);
+}
+
+.compactDeveloperSwitch {
+  min-height: 64px;
+  border-radius: 16px;
+}
+
 .safetySummary span {
   color: var(--muted);
   font-weight: 760;
@@ -5951,6 +6109,76 @@ canvas {
   transform: translateX(20px);
 }
 
+.safetyTemplateText {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.76);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.66)),
+    rgba(255, 255, 255, 0.78);
+}
+
+.safetyTemplateText strong {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.safetyTemplateText p {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.safetyTemplateCheckboxes {
+  align-items: stretch;
+}
+
+.safetyTemplateCheckbox.withDetails {
+  grid-column: span 1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.safetyTemplateCheckbox.withDetails .voiceTextControl {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.checkboxDetailField {
+  grid-column: 1 / -1;
+  display: block;
+  width: 100%;
+}
+
+.safetyTemplateCheckbox.withDetails input[type="text"] {
+  width: 100%;
+}
+
+.signatureAgreement {
+  display: grid;
+  gap: 8px;
+}
+
+.signatureAgreement p {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(207, 46, 46, 0.16);
+  border-radius: 14px;
+  background: rgba(254, 242, 242, 0.72);
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
 .mutedLine {
   color: #64748b;
 }
@@ -9450,6 +9678,22 @@ body.overlayLocked {
 }
 
 @media (max-width: 860px) {
+  .safetyBuilderAddGrid,
+  .safetyBuilderFields,
+  .safetySwitchList {
+    grid-template-columns: 1fr;
+  }
+
+  .safetyBuilderRow {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .miniSwitchLine {
+    min-width: 0;
+    width: 100%;
+  }
+
   .modal,
   .modal:not(.wideModal),
   .wideModal {
