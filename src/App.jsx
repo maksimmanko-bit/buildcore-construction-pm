@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import {
   Activity,
   Bell,
@@ -56,10 +56,10 @@ import { localGlobalSearch } from "./lib/search.js";
 import { getGoogleMapsUrl, getWeatherForAddress } from "./lib/weather.js";
 import { readCachedWorkspace, writeCachedWorkspace } from "./lib/localCache.js";
 import { loadPdfDocumentFromUrl } from "./lib/fileText.js";
+import DocumentUploader from "./components/DocumentUploader.jsx";
 import { VoiceTextArea, VoiceTextInput } from "./components/VoiceDictation.jsx";
 
 const PhotoAnnotator = lazy(() => import("./components/PhotoAnnotator.jsx"));
-const DocumentUploader = lazy(() => import("./components/DocumentUploader.jsx"));
 
 const WINNIPEG_TIME_ZONE = "America/Winnipeg";
 
@@ -7048,6 +7048,7 @@ function DocumentListRow({ file, onOpen, profiles = [], project }) {
 
 function AttachmentSections({ featureFlags = defaultFeatureFlags, files, onDownloadArchive, onOpen, profiles = [], uploader = null }) {
   const [openUploaderId, setOpenUploaderId] = useState("");
+  const sectionRefs = useRef({});
   const flags = normalizeFeatureFlags(featureFlags);
   const groups = [
     flags.safetyForm ? { id: "safety", label: "Safety Forms", icon: FileText, uploadMode: "pdf", fileType: "safety_form", items: files.filter((file) => file.file_type === "safety_form") } : null,
@@ -7063,8 +7064,17 @@ function AttachmentSections({ featureFlags = defaultFeatureFlags, files, onDownl
       {groups.map((group) => {
         const Icon = group.icon;
         const canUploadGroup = Boolean(uploader && (uploader.visitId || !["before", "after"].includes(group.id)));
+        function startDirectUpload() {
+          flushSync(() => setOpenUploaderId(group.id));
+          const section = sectionRefs.current[group.id];
+          const inputType = group.uploadMode === "photo" ? "photo" : "document";
+          section?.querySelector(`input[data-upload-input="${inputType}"]`)?.click();
+        }
         return (
-          <section className={`attachmentSection ${group.id}`} key={group.id}>
+          <section className={`attachmentSection ${group.id}`} key={group.id} ref={(node) => {
+            if (node) sectionRefs.current[group.id] = node;
+            else delete sectionRefs.current[group.id];
+          }}>
             <div className="attachmentSectionHeader">
               <h3>
                 <Icon size={17} />
@@ -7078,14 +7088,14 @@ function AttachmentSections({ featureFlags = defaultFeatureFlags, files, onDownl
                   </button>
                 )}
                 {canUploadGroup && (
-                  <button className="sectionAddButton" type="button" title={`Add ${group.label}`} onClick={() => setOpenUploaderId((value) => (value === group.id ? "" : group.id))}>
+                  <button className="sectionAddButton" type="button" title={`Add ${group.label}`} onClick={startDirectUpload}>
                     <Plus size={18} />
                   </button>
                 )}
               </div>
             </div>
             {canUploadGroup && openUploaderId === group.id && (
-              <div className="sectionUploader">
+              <div className="sectionUploader directUploader" aria-hidden="true">
                 <DocumentUploaderShell {...uploader} compact fileType={group.fileType} uploadMode={group.uploadMode} showPreview={false} />
               </div>
             )}

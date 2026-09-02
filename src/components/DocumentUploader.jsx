@@ -275,6 +275,7 @@ export default function DocumentUploader({ changeOrderId, compact = false, compa
         <input
           ref={documentInputRef}
           accept={uploadMode === "pdf" ? ".pdf,application/pdf" : uploadMode === "excel" ? ".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : ".pdf,.xls,.xlsx,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+          data-upload-input="document"
           multiple
           type="file"
           onChange={(event) => {
@@ -286,7 +287,7 @@ export default function DocumentUploader({ changeOrderId, compact = false, compa
             uploadEntries(selectedFiles.map((file) => ({ file })));
           }}
         />
-        <input ref={photoInputRef} accept="image/jpeg,image/png,image/webp" multiple type="file" onChange={(event) => requestPhotoCaptions(event.target.files)} />
+        <input ref={photoInputRef} accept="image/jpeg,image/png,image/webp" data-upload-input="photo" multiple type="file" onChange={(event) => requestPhotoCaptions(event.target.files)} />
 
         {(uploadMode === "all" || uploadMode === "photo") && (
           <button type="button" onClick={() => photoInputRef.current?.click()} disabled={busy || dictationBusy}>
