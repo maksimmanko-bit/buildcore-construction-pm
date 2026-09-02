@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
+import { jsPDF } from "jspdf";
 import {
   Activity,
   Bell,
@@ -3843,7 +3844,6 @@ export default function App() {
 
     setActionPending("safetyForm", true);
     try {
-      const { jsPDF } = await import("jspdf");
       const names = team.map((person) => person.full_name || person.email || "Team member");
       const signedAt = new Date();
       const safetyLetterhead = await imageUrlToDataUrl(`${import.meta.env.BASE_URL}samsom-industries-letterhead.png`);
