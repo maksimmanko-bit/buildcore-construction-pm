@@ -58,6 +58,7 @@ import { getGoogleMapsUrl, getWeatherForAddress } from "./lib/weather.js";
 import { readCachedWorkspace, writeCachedWorkspace } from "./lib/localCache.js";
 import { loadPdfDocumentFromUrl } from "./lib/fileText.js";
 import { recordClientError } from "./lib/errorLog.js";
+import { countOfflineOperations, deleteOfflineOperation, enqueueOfflineOperation, isProbablyOfflineError, readOfflineOperations } from "./lib/offlineQueue.js";
 import DocumentUploader from "./components/DocumentUploader.jsx";
 import { VoiceTextArea, VoiceTextInput } from "./components/VoiceDictation.jsx";
 
@@ -1237,6 +1238,7 @@ export default function App() {
   const [photoStep, setPhotoStep] = useState({ kind: "", visitId: "", files: [], captions: {} });
   const [completionForm, setCompletionForm] = useState({ notes: "", files: [], captions: {} });
   const [uploadProgress, setUploadProgress] = useState(null);
+  const [offlineQueueCount, setOfflineQueueCount] = useState(0);
   const [profileForm, setProfileForm] = useState({ first_name: "", last_name: "", phone: "", avatarFile: null, avatarEmoji: "", removeAvatar: false });
   const [passwordForm, setPasswordForm] = useState({ password: "", confirm: "" });
   const [personForm, setPersonForm] = useState({ first_name: "", last_name: "", phone: "", role: "builder", trade: "", availability_status: "available" });
@@ -1247,6 +1249,8 @@ export default function App() {
   const [avatarUrls, setAvatarUrls] = useState({});
   const accountMenuRef = useRef(null);
   const authRedirectHandledRef = useRef(false);
+  const offlineQueueProcessingRef = useRef(false);
+  const reminderCheckRef = useRef("");
 
   const isLive = Boolean(session && profile?.is_active);
   const canManage = Boolean(profile?.is_active && ["owner", "project_manager", "office_manager"].includes(profile?.role));
@@ -1301,6 +1305,158 @@ export default function App() {
       }
       return { ...current, [key]: true };
     });
+  }
+
+  async function refreshOfflineQueueCount() {
+    if (!profile?.id || !rowsSource.companyId) {
+      setOfflineQueueCount(0);
+      return;
+    }
+    const count = await countOfflineOperations({ companyId: rowsSource.companyId, userId: profile.id });
+    setOfflineQueueCount(count);
+  }
+
+  async function queueCompletionOffline({ completionNotes = "", files = [], visit, project }) {
+    if (!profile?.id || !rowsSource.companyId || !visit?.id || !project?.id) {
+      throw new Error("Cannot save offline without a signed-in user, project, and ticket.");
+    }
+
+    const queuedAt = new Date().toISOString();
+    const assignedPeople = rowsSource.people.filter((person) => visit.people_ids?.includes(person.id));
+    const officeOverride = canManage && isPastDate(visit.visit_date, getWinnipegDateValue()) && !visit.people_ids?.includes(profile.id);
+    const filePayload = files.map((file) => ({
+      caption: completionForm.captions?.[fileInputKey(file)]?.trim() || "",
+      file,
+      lastModified: file.lastModified || null,
+      name: file.name || "after-photo.jpg",
+      type: file.type || "image/jpeg",
+    }));
+    const operation = await enqueueOfflineOperation({
+      type: "complete_visit",
+      userId: profile.id,
+      companyId: rowsSource.companyId,
+      profileName: currentUserName,
+      project: { id: project.id, name: project.name },
+      visit: {
+        id: visit.id,
+        project_id: visit.project_id,
+        visit_date: visit.visit_date,
+        work_scope: visit.work_scope,
+        people_ids: visit.people_ids ?? [],
+      },
+      completionNotes,
+      officeOverride,
+      onBehalfOf: assignedPeople.map((person) => ({ id: person.id, name: profileDisplayName(person, "Team member") })),
+      files: filePayload,
+      queuedAt,
+    });
+
+    commitWorkspaceData((current) => ({
+      ...current,
+      visits: (current.visits ?? []).map((item) =>
+        item.id === visit.id
+          ? {
+              ...item,
+              status: "completed",
+              completed_at: queuedAt,
+              completion_notes: completionNotes,
+              offline_queued: true,
+            }
+          : item,
+      ),
+    }));
+    await refreshOfflineQueueCount();
+    return operation;
+  }
+
+  async function processOfflineQueue() {
+    if (offlineQueueProcessingRef.current || !supabase || !profile?.id || !rowsSource.companyId) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+
+    offlineQueueProcessingRef.current = true;
+    try {
+      const operations = await readOfflineOperations({ companyId: rowsSource.companyId, userId: profile.id });
+      let processed = 0;
+      for (const operation of operations) {
+        if (operation.type !== "complete_visit") continue;
+        const visit = (rowsSource.visits ?? []).find((item) => item.id === operation.visit?.id) ?? operation.visit;
+        const project = (rowsSource.projects ?? []).find((item) => item.id === operation.project?.id) ?? operation.project;
+        if (!visit?.id || !project?.id) continue;
+
+        if ((operation.files?.length ?? 0) > 0) setUploadProgress({ current: 0, total: operation.files.length, label: "Offline after photos" });
+        const uploadedRows = [];
+        for (const [index, item] of (operation.files ?? []).entries()) {
+          const alreadyUploaded = (rowsSource.files ?? []).some(
+            (file) =>
+              file.visit_id === visit.id &&
+              file.file_type === "completion_photo" &&
+              file.uploaded_by === profile.id &&
+              file.file_name === item.name &&
+              (file.photo_caption || "") === (item.caption || ""),
+          );
+          if (alreadyUploaded) {
+            setUploadProgress({ current: index + 1, total: operation.files?.length ?? 0, label: "Offline after photos" });
+            continue;
+          }
+          const row = await uploadVisitPhoto({
+            companyId: operation.companyId,
+            projectId: project.id,
+            visitId: visit.id,
+            profileId: profile.id,
+            file: item.file,
+            fileType: "completion_photo",
+            photoCaption: item.caption,
+            searchText: `After photo uploaded offline by ${operation.profileName || currentUserName} at ${operation.queuedAt}. ${operation.completionNotes || ""} ${item.caption || ""}`,
+          });
+          uploadedRows.push(row);
+          setUploadProgress({ current: index + 1, total: operation.files?.length ?? 0, label: "Offline after photos" });
+        }
+        if (uploadedRows.length > 0) {
+          commitWorkspaceData((current) => ({ ...current, files: [...uploadedRows, ...(current.files ?? [])] }));
+          await logVisitActivity(visit, "after_photos_uploaded", `${operation.profileName || currentUserName} synced ${uploadedRows.length} offline after photo${uploadedRows.length === 1 ? "" : "s"}.`, {
+            count: uploadedRows.length,
+            queuedAt: operation.queuedAt,
+            syncedAt: new Date().toISOString(),
+          });
+        }
+        await updateVisitStatusById(visit.id, "completed", { completed_at: operation.queuedAt, completion_notes: operation.completionNotes || "" });
+        const onBehalfNames = (operation.onBehalfOf ?? []).map((item) => item.name).filter(Boolean).join(", ") || "assigned crew";
+        await logVisitActivity(visit, "completed", operation.officeOverride ? `${operation.profileName || currentUserName} closed this previous-day active ticket on behalf of ${onBehalfNames} from offline queue.` : `${operation.profileName || currentUserName} completed the visit from offline queue.`, {
+          completedAt: operation.queuedAt,
+          offlineQueuedAt: operation.queuedAt,
+          syncedAt: new Date().toISOString(),
+          officeOverride: Boolean(operation.officeOverride),
+          onBehalfOf: operation.onBehalfOf ?? [],
+          notes: operation.completionNotes || "",
+        });
+        await deleteOfflineOperation(operation.id);
+        processed += 1;
+        setNotice("Offline ticket changes synced to Supabase.");
+      }
+      await refreshOfflineQueueCount();
+      if (processed > 0) await Promise.all([loadVisits(), loadActivities(), loadFiles()]);
+    } catch (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "processOfflineQueue" });
+      setNotice("Offline changes are still saved on this device. They will retry when the connection is stable.");
+    } finally {
+      setUploadProgress(null);
+      offlineQueueProcessingRef.current = false;
+    }
+  }
+
+  async function runActiveTicketReminderCheck() {
+    if (!supabase || !profile?.is_active || !profile.company_id) return;
+    if (getWinnipegTimeValue() < "18:00") return;
+    const cooldownKey = `${profile.company_id}:${getWinnipegDateValue()}:${Math.floor(Date.now() / (5 * 60 * 1000))}`;
+    if (reminderCheckRef.current === cooldownKey) return;
+    reminderCheckRef.current = cooldownKey;
+
+    const { data: inserted, error } = await supabase.rpc("create_active_ticket_end_of_day_reminders");
+    if (error) {
+      if (error.code !== "42883" && error.code !== "PGRST202") console.warn("Active ticket reminder check failed", error);
+      return;
+    }
+    if (Number(inserted) > 0) loadNotifications();
   }
 
   const errorContextRef = useRef({});
@@ -1843,6 +1999,36 @@ export default function App() {
     .filter((file) => selectedProject && (file.project_id === selectedProject.id || file.projectId === selectedProject.id) && !file.visit_id && !file.site_visit_id && !file.change_order_id);
 
   const selectedProjectPrimaryAddress = primaryProjectAddress(selectedProject);
+
+  useEffect(() => {
+    if (!isLive) {
+      setOfflineQueueCount(0);
+      return undefined;
+    }
+
+    void refreshOfflineQueueCount();
+    const handleOnline = () => {
+      void processOfflineQueue();
+    };
+    window.addEventListener("online", handleOnline);
+    const interval = window.setInterval(handleOnline, 15000);
+    handleOnline();
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.clearInterval(interval);
+    };
+  }, [isLive, profile?.id, rowsSource.companyId, rowsSource.projects, rowsSource.visits]);
+
+  useEffect(() => {
+    if (!isLive) return undefined;
+    const check = () => {
+      void runActiveTicketReminderCheck();
+    };
+    check();
+    const interval = window.setInterval(check, 60000);
+    return () => window.clearInterval(interval);
+  }, [isLive, profile?.company_id, profile?.id, rowsSource.visits]);
 
   useEffect(() => {
     let alive = true;
@@ -4094,8 +4280,25 @@ export default function App() {
       setNotice("Select a visit before completing work.");
       return;
     }
-    if (activeFeatureFlags.beforeAfterPhotos && completionForm.files.length === 0) {
+    const assignedPeople = rowsSource.people.filter((person) => activeVisit.people_ids?.includes(person.id));
+    const onBehalfNames = assignedPeople.map((person) => profileDisplayName(person, "Team member")).join(", ") || "assigned crew";
+    const officeOverride = canManage && isPastDate(activeVisit.visit_date, getWinnipegDateValue()) && !activeVisit.people_ids?.includes(profile.id);
+    const requiresAfterPhotos = activeFeatureFlags.beforeAfterPhotos && !officeOverride;
+    if (requiresAfterPhotos && completionForm.files.length === 0) {
       setNotice("Upload at least one after photo before completing work.");
+      return;
+    }
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      await queueCompletionOffline({
+        completionNotes: completionForm.notes,
+        files: completionForm.files,
+        project: activeProject,
+        visit: activeVisit,
+      });
+      setModalType(null);
+      setWorkflowVisitId("");
+      setCompletionForm({ notes: "", files: [], captions: {} });
+      setNotice("Saved offline on this device. It will sync to Supabase when the connection is back.");
       return;
     }
 
@@ -4122,10 +4325,16 @@ export default function App() {
       await logVisitActivity(
         activeVisit,
         "completed",
-        completedLate ? `${currentUserName} completed a previous-day active visit for ${formatDateLabel(activeVisit.visit_date)}.` : `${currentUserName} completed the visit.`,
+        officeOverride
+          ? `${currentUserName} closed this previous-day active ticket on behalf of ${onBehalfNames}.`
+          : completedLate
+            ? `${currentUserName} completed a previous-day active visit for ${formatDateLabel(activeVisit.visit_date)}.`
+            : `${currentUserName} completed the visit.`,
         {
           completedAt: new Date().toISOString(),
           completedLate,
+          officeOverride,
+          onBehalfOf: assignedPeople.map((person) => ({ id: person.id, name: profileDisplayName(person, "Team member") })),
           ticketDate: activeVisit.visit_date,
           notes: completionForm.notes,
           skippedAfterPhotos: !activeFeatureFlags.beforeAfterPhotos,
@@ -4141,6 +4350,23 @@ export default function App() {
       loadFiles();
     } catch (error) {
       recordClientError(error, { ...errorContextRef.current, source: "saveCompletion" });
+      if (isProbablyOfflineError(error)) {
+        try {
+          await queueCompletionOffline({
+            completionNotes: completionForm.notes,
+            files: completionForm.files,
+            project: activeProject,
+            visit: activeVisit,
+          });
+          setModalType(null);
+          setWorkflowVisitId("");
+          setCompletionForm({ notes: "", files: [], captions: {} });
+          setNotice("Connection dropped. Completion was saved offline and will retry automatically.");
+          return;
+        } catch (queueError) {
+          recordClientError(queueError, { ...errorContextRef.current, source: "queueCompletionOffline" });
+        }
+      }
       setNotice(error.message);
     } finally {
       setUploadProgress(null);
@@ -5762,7 +5988,7 @@ export default function App() {
 
             <NotificationButton count={unreadNotifications.length} onClick={openNotifications} />
 
-            <ServerStatusIndicator online={serverConnected && isSupabaseConfigured} />
+            <ServerStatusIndicator online={serverConnected && isSupabaseConfigured} queueCount={offlineQueueCount} />
           </div>
         </header>
 
@@ -6450,7 +6676,15 @@ export default function App() {
 
         {modalType === "completeVisit" && workflowVisit && workflowProject && (
           <AppModal confirmOnClose={completionHasDraft} title="Complete Work" onClose={() => closeModalWithConfirmation(completionHasDraft)}>
-            <CompleteVisitModal dictation={dictation} dictationBusy={dictationBusy} form={completionForm} loading={completionSaving} onChange={setCompletionForm} onSubmit={saveCompletion} requirePhotos={activeFeatureFlags.beforeAfterPhotos} />
+            <CompleteVisitModal
+              dictation={dictation}
+              dictationBusy={dictationBusy}
+              form={completionForm}
+              loading={completionSaving}
+              onChange={setCompletionForm}
+              onSubmit={saveCompletion}
+              requirePhotos={activeFeatureFlags.beforeAfterPhotos && !(canManage && isPastDate(workflowVisit.visit_date, todayValue) && !workflowVisit.people_ids?.includes(profile?.id))}
+            />
           </AppModal>
         )}
 
@@ -6919,6 +7153,7 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
   const isFutureVisit = dateRelation > 0;
   const canStartVisit = canStartPlannedVisit(visit, today);
   const canFinishVisit = canUseActiveVisitWorkflow(visit, today);
+  const officeOverrideAvailable = canDeleteTickets && isPastVisit && visit.status === "on_site" && !visit.people_ids?.includes(profileId);
   const crewStatus = people.map((person) => {
     const arrived = safetyEnabled ? personHasSafetyFile(person, files) : ["on_site", "completed"].includes(visit.status);
     return {
@@ -7009,7 +7244,7 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
           {canFinishVisit && !safetyLocked && (
             <button className="completeWorkButton" type="button" onClick={onComplete}>
               <CheckCircle2 size={18} />
-              Complete
+              {officeOverrideAvailable ? "Office Close" : "Complete"}
             </button>
           )}
           {canFinishVisit && !safetyLocked && (
@@ -7020,7 +7255,11 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
           )}
           {isFutureVisit && <span className="workflowHint">Future tickets are view-only until their scheduled date.</span>}
           {isPastVisit && visit.status === "planned" && <span className="workflowHint">Past planned tickets can be corrected by PM, Owner, or Office Manager.</span>}
-          {isPastVisit && visit.status === "on_site" && !safetyLocked && <span className="workflowHint">This Active ticket is from a previous day. Completion will use the current Winnipeg time.</span>}
+          {isPastVisit && visit.status === "on_site" && !safetyLocked && (
+            <span className="workflowHint">
+              {officeOverrideAvailable ? "Office close will be saved on behalf of the assigned crew with current Winnipeg time." : "This Active ticket is from a previous day. Completion will use the current Winnipeg time."}
+            </span>
+          )}
         </div>
       ) : safetyLocked ? (
         <div className="thanksBox muted">Complete your Safety Form before ticket actions unlock.</div>
@@ -8985,13 +9224,14 @@ function InfoView({ icon: Icon, title, text }) {
   );
 }
 
-function ServerStatusIndicator({ online }) {
+function ServerStatusIndicator({ online, queueCount = 0 }) {
+  const statusClass = queueCount > 0 ? "pending" : online ? "online" : "offline";
   return (
-    <div className={online ? "serverStatus online" : "serverStatus offline"} title={online ? "Supabase server connected" : "Supabase server is not responding"}>
+    <div className={`serverStatus ${statusClass}`} title={queueCount > 0 ? "Offline changes are waiting to sync" : online ? "Supabase server connected" : "Supabase server is not responding"}>
       <span className="serverStatusLight" />
       <span>
-        <strong>{online ? "Server Connected" : "Server Offline"}</strong>
-        <small>{online ? "Supabase live" : "Check connection"}</small>
+        <strong>{queueCount > 0 ? "Sync Pending" : online ? "Server Connected" : "Server Offline"}</strong>
+        <small>{queueCount > 0 ? `${queueCount} offline item${queueCount === 1 ? "" : "s"}` : online ? "Supabase live" : "Check connection"}</small>
       </span>
     </div>
   );
