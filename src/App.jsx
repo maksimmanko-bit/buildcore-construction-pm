@@ -3244,25 +3244,25 @@ export default function App() {
 
   async function uploadPhotosWithProgress({ files, captions, fileType, label, project, searchTextForFile, visit }) {
     let completed = 0;
-    const rows = await Promise.all(
-      files.map(async (file) => {
-        const caption = captions?.[fileInputKey(file)]?.trim() || "";
-        const row = await uploadVisitPhoto({
-          companyId: rowsSource.companyId,
-          projectId: project.id,
-          visitId: visit.id,
-          profileId: profile.id,
-          file,
-          fileType,
-          photoCaption: caption,
-          searchText: searchTextForFile(file, caption),
-        });
-        completed += 1;
-        setUploadProgress({ current: completed, total: files.length, label });
-        commitWorkspaceData((current) => ({ ...current, files: [row, ...(current.files ?? [])] }));
-        return row;
-      }),
-    );
+    const rows = [];
+
+    for (const file of files) {
+      const caption = captions?.[fileInputKey(file)]?.trim() || "";
+      const row = await uploadVisitPhoto({
+        companyId: rowsSource.companyId,
+        projectId: project.id,
+        visitId: visit.id,
+        profileId: profile.id,
+        file,
+        fileType,
+        photoCaption: caption,
+        searchText: searchTextForFile(file, caption),
+      });
+      completed += 1;
+      rows.push(row);
+      setUploadProgress({ current: completed, total: files.length, label });
+      commitWorkspaceData((current) => ({ ...current, files: [row, ...(current.files ?? [])] }));
+    }
 
     return rows;
   }
