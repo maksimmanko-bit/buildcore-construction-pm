@@ -1251,10 +1251,13 @@ function DateField({ label, onChange, value }) {
 }
 
 function ProjectSearchSelect({ onChange, projects = [], value }) {
+  const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const wrapRef = useRef(null);
   const selectedProject = useMemo(() => projects.find((project) => project.id === value) ?? null, [projects, value]);
   const filteredProjects = useMemo(() => {
     const normalizedQuery = normalizeProjectSearch(query);
+    if (!normalizedQuery) return [];
     const ranked = projects
       .map((project, index) => {
         const name = normalizeProjectSearch(project.name);
@@ -1275,20 +1278,38 @@ function ProjectSearchSelect({ onChange, projects = [], value }) {
   }, [projects, query]);
 
   useEffect(() => {
+    if (!isOpen) return undefined;
+    function handlePointerDown(event) {
+      if (wrapRef.current?.contains(event.target)) return;
+      setIsOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isOpen]);
+
+  useEffect(() => {
     setQuery("");
+    setIsOpen(false);
   }, [value]);
 
   return (
-    <div className="projectSearchSelect">
+    <div className="projectSearchSelect" ref={wrapRef}>
       <div className="projectSearchInputWrap">
         <Search size={17} />
         <input
           autoComplete="off"
-          placeholder="Search project or job number"
+          placeholder={selectedProject ? `${selectedProject.name}${selectedProject.job_number ? ` / ${selectedProject.job_number}` : ""}` : "Search project or job number"}
           type="search"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
         />
+        <button aria-label="Show project search" type="button" onClick={() => setIsOpen((current) => !current)}>
+          <ChevronDown size={16} />
+        </button>
       </div>
       {selectedProject && (
         <div className="selectedProjectPreview">
@@ -1297,27 +1318,33 @@ function ProjectSearchSelect({ onChange, projects = [], value }) {
           <em>{selectedProject.job_number || "No job number"}</em>
         </div>
       )}
-      <div className="projectSearchResults" role="listbox">
-        {filteredProjects.length > 0 ? (
-          filteredProjects.map((project) => (
-            <button
-              aria-selected={project.id === value}
-              className={project.id === value ? "projectSearchOption active" : "projectSearchOption"}
-              key={project.id}
-              type="button"
-              onClick={() => onChange(project.id)}
-            >
-              <span>
-                <strong>{project.name}</strong>
-                <em>{project.job_number || "No job number"}</em>
-              </span>
-              {project.id === value && <CheckCircle2 size={18} />}
-            </button>
-          ))
-        ) : (
-          <div className="projectSearchEmpty">No projects found</div>
-        )}
-      </div>
+      {isOpen && (
+        <div className="projectSearchPopover" role="listbox">
+          {query.trim() ? (
+            filteredProjects.length > 0 ? (
+              filteredProjects.map((project) => (
+                <button
+                  aria-selected={project.id === value}
+                  className={project.id === value ? "projectSearchOption active" : "projectSearchOption"}
+                  key={project.id}
+                  type="button"
+                  onClick={() => onChange(project.id)}
+                >
+                  <span>
+                    <strong>{project.name}</strong>
+                    <em>{project.job_number || "No job number"}</em>
+                  </span>
+                  {project.id === value && <CheckCircle2 size={18} />}
+                </button>
+              ))
+            ) : (
+              <div className="projectSearchEmpty">No projects found</div>
+            )
+          ) : (
+            <div className="projectSearchEmpty">Start typing a project name or job number</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
