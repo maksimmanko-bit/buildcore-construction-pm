@@ -37,6 +37,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
           VITE_AUTH_REDIRECT_URL: https://maksimmanko-bit.github.io/buildcore-construction-pm/
+          VITE_PASSWORD_RECOVERY_REDIRECT_URL: https://maksimmanko-bit.github.io/buildcore-construction-pm/?mode=recovery
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

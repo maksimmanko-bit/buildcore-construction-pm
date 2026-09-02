@@ -65,6 +65,7 @@ const PhotoAnnotator = lazy(() => import("./components/PhotoAnnotator.jsx"));
 const WINNIPEG_TIME_ZONE = "America/Winnipeg";
 const PRODUCTION_SITE_URL = "https://maksimmanko-bit.github.io/buildcore-construction-pm/";
 const AUTH_REDIRECT_URL = ensureTrailingSlash(import.meta.env.VITE_AUTH_REDIRECT_URL || PRODUCTION_SITE_URL);
+const PASSWORD_RECOVERY_REDIRECT_URL = import.meta.env.VITE_PASSWORD_RECOVERY_REDIRECT_URL || `${PRODUCTION_SITE_URL}?mode=recovery`;
 
 function getWinnipegParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -952,6 +953,29 @@ function getAuthRedirectUrl() {
   return AUTH_REDIRECT_URL;
 }
 
+function getPasswordRecoveryRedirectUrl() {
+  return PASSWORD_RECOVERY_REDIRECT_URL;
+}
+
+function getAuthUrlParams() {
+  const searchParams = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const read = (key) => searchParams.get(key) || hashParams.get(key) || "";
+  return {
+    accessToken: read("access_token"),
+    code: read("code"),
+    error: read("error"),
+    errorDescription: read("error_description"),
+    mode: read("mode"),
+    refreshToken: read("refresh_token"),
+    type: read("type"),
+  };
+}
+
+function clearAuthUrlParams() {
+  window.history.replaceState({}, document.title, `${window.location.origin}${window.location.pathname}`);
+}
+
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1184,6 +1208,7 @@ export default function App() {
   const [isAccountMenuClosing, setIsAccountMenuClosing] = useState(false);
   const [avatarUrls, setAvatarUrls] = useState({});
   const accountMenuRef = useRef(null);
+  const authRedirectHandledRef = useRef(false);
 
   const isLive = Boolean(session && profile?.is_active);
   const canManage = Boolean(profile?.is_active && ["owner", "project_manager", "office_manager"].includes(profile?.role));
@@ -1401,10 +1426,18 @@ export default function App() {
   useEffect(() => {
     if (!supabase) return undefined;
 
-    supabase.auth.getSession().then(({ data: authData }) => {
-      setSession(authData.session);
+    let cancelled = false;
+
+    async function initializeAuth() {
+      const recoverySession = await handleAuthRedirectFromUrl();
+      if (cancelled) return;
+      const { data: authData } = await supabase.auth.getSession();
+      if (cancelled) return;
+      setSession(recoverySession ?? authData.session);
       setAuthReady(true);
-    });
+    }
+
+    initializeAuth();
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (event === "PASSWORD_RECOVERY") {
@@ -1426,7 +1459,10 @@ export default function App() {
       setAuthReady(true);
     });
 
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -1970,6 +2006,53 @@ export default function App() {
     resolver?.(value);
   }
 
+  async function handleAuthRedirectFromUrl() {
+    if (authRedirectHandledRef.current) return null;
+    const params = getAuthUrlParams();
+    const isRecoveryUrl = params.mode === "recovery" || params.type === "recovery";
+    if (!isRecoveryUrl) return null;
+    authRedirectHandledRef.current = true;
+
+    setIsPasswordRecovery(true);
+    setRecoveryForm({ password: "", confirm: "" });
+    setModalType("passwordRecovery");
+
+    if (params.error) {
+      clearAuthUrlParams();
+      setNotice(params.errorDescription || "This reset link is expired or already used. Send a new reset link.");
+      return null;
+    }
+
+    try {
+      if (params.code) {
+        const { data: authData, error } = await supabase.auth.exchangeCodeForSession(params.code);
+        if (error) throw error;
+        clearAuthUrlParams();
+        setNotice("Create a new password to continue.");
+        return authData.session ?? null;
+      }
+
+      if (params.accessToken && params.refreshToken) {
+        const { data: authData, error } = await supabase.auth.setSession({
+          access_token: params.accessToken,
+          refresh_token: params.refreshToken,
+        });
+        if (error) throw error;
+        clearAuthUrlParams();
+        setNotice("Create a new password to continue.");
+        return authData.session ?? null;
+      }
+
+      setNotice("Create a new password to continue.");
+      return null;
+    } catch (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "handlePasswordRecoveryUrl" });
+      clearAuthUrlParams();
+      setNotice(error.message || "Password reset link could not be opened. Send a new reset link.");
+      return null;
+    }
+  }
+
   async function closeModalWithConfirmation(hasUnsavedDraft = false) {
     if (
       hasUnsavedDraft &&
@@ -2292,7 +2375,7 @@ export default function App() {
 
     setLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-      redirectTo: getAuthRedirectUrl(),
+      redirectTo: getPasswordRecoveryRedirectUrl(),
     });
     setLoading(false);
 
