@@ -9753,44 +9753,59 @@ function HelpCenter({ role = "" }) {
   const isBuilder = role === "builder";
   const managerSections = [
     {
-      title: "Start the day",
-      text: "Open Schedule first. It shows the whole company day: projects, tickets, crews, equipment, status, arrival, safety, photos, and work completion in one place.",
-      steps: ["Check today's tickets and active work.", "Use Search to jump to any project, ticket, person, document, or note.", "Open Notifications to see notes, assignments, late arrivals, active tickets, and Change Order updates."],
+      title: "One place to run the day",
+      text: "BuildCore gives the owner, PM, and office a clear command center. Instead of chasing calls, texts, photos, and paper notes, the day is organized around projects, tickets, crews, safety, photos, files, and decisions.",
+      steps: ["Open Schedule to see who is working, where they are going, and what is still active.", "Use Search to jump to any project, ticket, person, document, note, job number, or file.", "Open Notifications to catch assignments, notes, late arrivals, active tickets, and Change Order updates before they become surprises.", "Use each project as the single place where the job history stays clean and easy to review."],
     },
     {
-      title: "Schedule and dispatch",
-      text: "Schedule works like a native dispatch board. Drag one person, a crew group, or equipment onto a project time slot to create or update a ticket.",
-      steps: ["Create tickets by choosing project, address, date, time, work scope, people, and equipment.", "Use project search by name or job number when there are many projects.", "Move people or equipment between tickets without rebuilding the schedule.", "Watch conflicts, missing safety, partial crew, and active tickets before they become office problems."],
+      title: "Search finds the job fast",
+      text: "Search is built for the way construction teams remember work. You can search by project name, job number, address, person, note, document, file name, work scope, or saved report.",
+      steps: ["Use the top Search button when you need to jump across the whole workspace.", "Search inside project pickers by name or job number when creating tickets, inspections, or Change Orders.", "Search the Projects tab by any useful detail, including job number, address, contact, PM, status, or description.", "Use search results to open the exact project, ticket, document, or person without clicking through folders."],
     },
     {
-      title: "Projects and tickets",
-      text: "Projects are the home for the full job history. Tickets are the daily field work records connected to that project.",
-      steps: ["Create projects with unique six-digit job numbers.", "Open a project to see tickets, Site Inspections, Change Orders, files, photos, PDF exports, and Activity Feed.", "Open a ticket to review crew, actual start/finish, safety status, photos, notes, and workflow actions.", "PM, Owner, and Office Manager can correct old active tickets with an office override. The Activity Feed records who closed it."],
+      title: "Schedule that dispatches work",
+      text: "Schedule is built like a field dispatch board, not a static calendar. It turns planning into action: crews, equipment, time, address, work scope, and status are all visible together.",
+      steps: ["Drag one worker, a full crew group, or equipment onto a project time slot to create or update a ticket.", "Choose projects quickly by searching name or job number.", "Move people or equipment between tickets without rebuilding the day.", "See conflicts, missing safety, partial crew, and old active tickets while there is still time to fix them.", "Keep office and field aligned without sending the same instructions twice."],
     },
     {
-      title: "People and control",
-      text: "People management keeps the office in control without extra calls. Roles decide what each person can see and do.",
-      steps: ["Approve new accounts and assign Owner, Project Manager, Office Manager, or Builder roles.", "Set trades, availability, phone, avatar, and profile details.", "Builders only see their own work tools; office roles see management, reporting, documents, and settings.", "Late arrival and partial crew tracking shows who arrived, who did not, and who still needs a Safety Form."],
+      title: "Projects stay organized",
+      text: "Every project becomes a clean record of what happened. Daily tickets, photos, PDFs, Excel files, Site Inspections, Change Orders, notes, and history stay attached to the job instead of disappearing into messages.",
+      steps: ["Create projects with unique six-digit job numbers so work is easy to track and search.", "Open a project to see all tickets, reports, Change Orders, attachments, exports, and Activity Feed.", "Open a ticket to review crew, actual start and finish, safety status, photos, notes, and completion.", "Use office override when an old active ticket needs to be closed properly. The Activity Feed records who did it and why it happened."],
+    },
+    {
+      title: "Clear responsibility",
+      text: "Roles keep the company controlled without making the app heavy. Office roles manage the business view. Builders see the work they need on site.",
+      steps: ["Approve new accounts and assign Owner, Project Manager, Office Manager, or Builder roles.", "Set trades, availability, phone numbers, avatars, and profile details.", "Control what each person can access based on their role.", "Track late arrival and partial crew status so the office knows who arrived, who did not, and who still needs a Safety Form.", "Reduce repeated check-in calls because the ticket shows the current field status."],
     },
     {
       title: "Safety forms",
-      text: "Safety Forms protect the company and keep the field workflow honest. A worker who has not signed the required form cannot continue ticket actions until they complete safety.",
-      steps: ["Use Developer Mode / Safety Form to customize the PSI form.", "Add text blocks, checkbox blocks, text fields, select fields, and conditional detail fields.", "Each team member signs under the warning: Do not Sign untill you understand and agree with the PSI.", "Saved Safety Forms become PDF files attached to the ticket and visible in Safety Reports."],
+      text: "Safety Forms make compliance part of the workflow. The app helps protect the company by keeping proof, signatures, and job context attached to the right ticket.",
+      steps: ["Use Developer Mode / Safety Form to customize the PSI form for your company.", "Add text blocks, checkbox blocks, text fields, select fields, and conditional detail fields in the order you need.", "Require workers to complete safety before continuing ticket actions.", "Handle late arrivals correctly: if a worker missed the crew Safety Form, they complete their own form before work actions unlock.", "Saved Safety Forms become PDF files attached to the ticket and visible in Safety Reports."],
     },
     {
       title: "Photos, documents, and annotations",
-      text: "Photos and files stay attached to the right project, ticket, Change Order, or inspection block, so the office does not have to hunt through messages.",
-      steps: ["Upload Before, After, project, ticket, inspection, or Change Order photos from the correct block.", "Add notes by typing or voice dictation.", "Annotate photos with Apple-style pen, arrows, shapes, text, undo/redo, and save back to the original photo.", "Open PDFs and files from Documents, project overlays, or ticket overlays. Download a full archive from a specific attachment block."],
+      text: "Photos and files become organized job evidence. The office no longer has to ask who took a photo, which job it belongs to, or whether the before and after record exists.",
+      steps: ["Upload Before, After, project, ticket, inspection, or Change Order photos from the correct block.", "Add notes by typing or voice dictation while the context is fresh.", "Annotate photos with clean pen, arrows, shapes, text, undo/redo, and save back to the original photo.", "Open PDFs and files from Documents, project overlays, or ticket overlays.", "Download a full archive from a specific attachment block when you need a clean handoff or record."],
+    },
+    {
+      title: "PDFs and exports",
+      text: "PDF generation turns field activity into clean documents. It helps with billing, client updates, internal review, closeout, and proof of completed work.",
+      steps: ["Export project reports when you need a professional project summary.", "Export ticket PDFs with work details, crew, time, notes, photos, and completion records.", "Export Safety Forms as signed PDFs attached to the ticket.", "Export Change Orders and Site Inspections for approval, client review, and job records.", "Export ticket data to Excel when the office needs a spreadsheet view."],
     },
     {
       title: "Change Orders and inspections",
-      text: "Change Orders and Site Inspections are connected to projects and can be created from the office or field when the role allows it.",
-      steps: ["Create a Change Order with description, Proposed Additional Work, Requested or Approved status.", "If Approved is selected, add approved-by details and signature.", "Export Change Orders and inspections to PDF for clean job documentation.", "All updates can notify the right people and remain in history."],
+      text: "Change Orders and Site Inspections keep decisions traceable. Work that changes in the field becomes documented, reviewed, and exportable instead of living only in conversation.",
+      steps: ["Create a Change Order with description, Proposed Additional Work, Requested or Approved status.", "If Approved is selected, add approved-by details and signature.", "Export Change Orders and inspections to PDF for clean job documentation.", "Notify the right people when important updates happen.", "Keep the full history connected to the project for billing, review, and closeout."],
+    },
+    {
+      title: "Small features that save time",
+      text: "The app is designed to remove small daily frictions that usually create office cleanup later.",
+      steps: ["Use voice dictation for notes and photo captions when typing is slow on site.", "Use attachment block archives to download exactly the files you need.", "Use Activity Feed to understand who changed what and when.", "Use Notifications history after the badge clears to revisit important updates.", "Use offline queue support so weak connection does not turn into lost work."],
     },
     {
       title: "Mobile mode on site",
-      text: "The mobile layout is built for the jobsite. It keeps Search, Notifications, Schedule, ticket actions, photos, safety, and completion close to the thumb.",
-      steps: ["Open today's ticket from Schedule or Notifications.", "Tap Arrived, complete Safety Form, upload Before Photos, add notes, then Complete Work with After Photos.", "If internet drops, photo/work actions can wait in the offline queue and sync when the phone is online.", "The page avoids heavy full-screen loading so field work feels steady instead of fragile."],
+      text: "Mobile mode makes the field part of the system. Workers can see the right ticket, confirm arrival, complete safety, upload photos, add notes, and finish work from the phone they already use on site.",
+      steps: ["Builders open today's ticket from Schedule or Notifications.", "They tap Arrived, complete Safety Form, upload Before Photos, add notes, then Complete Work with After Photos.", "The office sees progress without waiting for a phone call.", "If internet drops, photo and work actions can wait in the offline queue and sync when the phone is online.", "The result is less back-and-forth, cleaner records, and fewer missing details at the end of the day."],
     },
   ];
 
@@ -9799,6 +9814,11 @@ function HelpCenter({ role = "" }) {
       title: "Your day",
       text: "BuildCore shows the work that matters to you: today's assigned tickets, schedule, notifications, safety, photos, notes, and completion.",
       steps: ["Open Schedule to see where you are assigned today.", "Use Search to find your ticket or project quickly.", "Open Notifications to see new assignments, ticket changes, notes, and reminders."],
+    },
+    {
+      title: "Search and files",
+      text: "Search helps you get to the right work without digging. Files and PDFs stay attached to the correct ticket or project, so you can open what the office needs you to see.",
+      steps: ["Use Search when you need to find a ticket, project, document, note, or file.", "Open PDFs and photos from the ticket or project when they are attached.", "Use Notifications to return to new assignments or important updates.", "Use the photo annotator when you need to point out a detail clearly."],
     },
     {
       title: "Working a ticket",
@@ -9813,7 +9833,7 @@ function HelpCenter({ role = "" }) {
     {
       title: "Photos and notes",
       text: "Photos replace scattered text messages. Everything you upload stays connected to the correct ticket or project.",
-      steps: ["Use Before Photos before work starts.", "Use After Photos when work is complete.", "Add ticket notes for important updates, blockers, or instructions.", "Use the photo annotator to mark exactly what matters on an image."],
+      steps: ["Use Before Photos before work starts.", "Use After Photos when work is complete.", "Add ticket notes for important updates, blockers, or instructions.", "Use voice dictation when typing on site is inconvenient.", "Use the photo annotator to mark exactly what matters on an image."],
     },
     {
       title: "Mobile jobsite mode",
@@ -9832,7 +9852,7 @@ function HelpCenter({ role = "" }) {
         <p>
           {isBuilder
             ? "This guide covers only the tools builders use in the field, so every step stays focused on today's work."
-            : "BuildCore connects schedule, projects, crews, safety, photos, documents, notifications, and reporting so the office and field work from one source of truth."}
+            : "BuildCore helps the company owner see the work, control the process, protect the record, and keep the office and field moving from one source of truth."}
         </p>
       </section>
 
