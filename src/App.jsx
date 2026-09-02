@@ -639,12 +639,24 @@ function getPersonSafetyTokens(person) {
     .filter(Boolean);
 }
 
+function compactSafetyIdentity(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
 function personHasSafetyFile(person, files = []) {
-  const tokens = getPersonSafetyTokens(person);
+  const personId = String(person?.id || "").toLowerCase();
+  const compactNames = [person?.full_name, profileDisplayName(person, ""), person?.email]
+    .map(compactSafetyIdentity)
+    .filter(Boolean);
   const safetyFiles = files.filter((file) => file.file_type === "safety_form");
   return safetyFiles.some((file) => {
-    const haystack = `${file.file_name || ""} ${file.search_text || ""}`.toLowerCase();
-    return tokens.some((token) => haystack.includes(token));
+    const searchText = String(file.search_text || "").toLowerCase();
+    if (personId && searchText.includes(personId)) return true;
+
+    const fileName = compactSafetyIdentity(file.file_name);
+    return compactNames.some((name) => fileName.includes(name));
   });
 }
 
@@ -3902,6 +3914,9 @@ export default function App() {
         formatDateTimeLabel(signedAt),
         safetyForm.hazards.join(", "),
         safetyForm.notes,
+        `Signed team IDs: ${team.map((person) => person.id).join(", ")}`,
+        `Signed team names: ${names.join(", ")}`,
+        `Absent team: ${absentTeam.map((person) => person.full_name || person.email || "Team member").join(", ")}`,
         ...team.flatMap((person) => getSafetyIdentityTokens(person)),
         ...names,
         ...absentTeam.map((person) => person.full_name || person.email || "Team member"),
@@ -8654,14 +8669,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
   function currentUserHasSafety(files, visit) {
     if (!flags.safetyForm) return true;
     if (!visit?.people_ids?.includes(profile?.id)) return true;
-    const tokens = [profile?.id, profile?.full_name, profile?.email, profileDisplayName(profile, "")]
-      .map((value) => String(value || "").trim().toLowerCase())
-      .filter(Boolean);
-    const safetyFiles = files.filter((file) => file.file_type === "safety_form");
-    return safetyFiles.some((file) => {
-      const haystack = `${file.file_name || ""} ${file.search_text || ""}`.toLowerCase();
-      return tokens.some((token) => haystack.includes(token));
-    });
+    return personHasSafetyFile(profile, files);
   }
 
   useEffect(() => {
