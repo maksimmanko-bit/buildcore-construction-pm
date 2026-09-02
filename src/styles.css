@@ -6227,6 +6227,12 @@ canvas {
   gap: 14px;
 }
 
+.helpCenter {
+  gap: 16px;
+  width: min(780px, 100%);
+  margin: 0 auto;
+}
+
 .helpHero {
   display: grid;
   gap: 10px;
@@ -6261,7 +6267,7 @@ canvas {
 }
 
 .helpHero p {
-  max-width: 820px;
+  max-width: 680px;
   color: #475569;
   font-size: 15px;
   font-weight: 750;
@@ -6270,16 +6276,16 @@ canvas {
 
 .helpSectionGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
 }
 
 .helpSection {
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
-  padding: 16px;
+  padding: 18px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 20px;
   background:
