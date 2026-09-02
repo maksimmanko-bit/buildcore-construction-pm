@@ -62,6 +62,8 @@ import { VoiceTextArea, VoiceTextInput } from "./components/VoiceDictation.jsx";
 const PhotoAnnotator = lazy(() => import("./components/PhotoAnnotator.jsx"));
 
 const WINNIPEG_TIME_ZONE = "America/Winnipeg";
+const PRODUCTION_SITE_URL = "https://maksimmanko-bit.github.io/buildcore-construction-pm/";
+const AUTH_REDIRECT_URL = ensureTrailingSlash(import.meta.env.VITE_AUTH_REDIRECT_URL || PRODUCTION_SITE_URL);
 
 function getWinnipegParts(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -926,8 +928,15 @@ function highlightText(value, query) {
   );
 }
 
+function ensureTrailingSlash(value = "") {
+  return value.endsWith("/") ? value : `${value}/`;
+}
+
 function getAuthRedirectUrl() {
-  return `${window.location.origin}${window.location.pathname}`;
+  const currentUrl = `${window.location.origin}${window.location.pathname}`;
+  const isLocalUrl = /^(http:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?/i.test(window.location.host);
+  if (isLocalUrl || window.location.protocol === "file:") return AUTH_REDIRECT_URL;
+  return ensureTrailingSlash(currentUrl);
 }
 
 function fileToDataUrl(file) {
