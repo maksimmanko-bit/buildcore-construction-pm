@@ -10191,6 +10191,8 @@ html {
 .modalBackdrop .modal,
 .modalBackdrop .modal:not(.wideModal),
 .modalBackdrop .wideModal {
+  display: flex !important;
+  flex-direction: column !important;
   overflow: hidden !important;
   padding: 0 !important;
 }
@@ -10210,6 +10212,7 @@ html {
 }
 
 .modalBackdrop .modalBody {
+  flex: 1 1 auto;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;

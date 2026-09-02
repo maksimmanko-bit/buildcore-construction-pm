@@ -10038,6 +10038,11 @@ function ProjectAddressEditor({ addresses = [], onAdd, onRemove, onUpdate }) {
 
 function AppModal({ children, className = "", onClose, title, wide = false }) {
   const backdropPointerDownRef = useRef(false);
+  const bodyRef = useRef(null);
+
+  useEffect(() => {
+    bodyRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [className, title, wide]);
 
   function handleBackdropPointerDown(event) {
     backdropPointerDownRef.current = event.target === event.currentTarget;
@@ -10057,7 +10062,9 @@ function AppModal({ children, className = "", onClose, title, wide = false }) {
             <X size={18} />
           </button>
         </div>
-        <div className="modalBody">{children}</div>
+        <div className="modalBody" ref={bodyRef}>
+          {children}
+        </div>
       </div>
     </div>
   );
