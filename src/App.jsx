@@ -1515,9 +1515,9 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || isPasswordRecovery) return;
     refreshData();
-  }, [refreshData, session]);
+  }, [isPasswordRecovery, refreshData, session]);
 
   useEffect(() => {
     if (!profile) return;
@@ -5578,7 +5578,7 @@ export default function App() {
     );
   }
 
-  if (!session || !profile?.is_active) {
+  if (isPasswordRecovery || !session || !profile?.is_active) {
     return renderAuthScreen();
   }
 
