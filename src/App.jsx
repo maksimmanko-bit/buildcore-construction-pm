@@ -346,6 +346,7 @@ const safetyTemplateObjectTypes = [
   { id: "textarea", label: "Text field" },
   { id: "select", label: "Choice field" },
 ];
+const safetyCheckboxLimit = 12;
 const defaultSafetyTemplate = {
   version: 1,
   objects: [
@@ -421,7 +422,7 @@ function normalizeSafetyTemplate(template) {
           const items = Array.isArray(object.items) ? object.items : [];
           return {
             ...base,
-            items: items.slice(0, 10).map((item, itemIndex) => ({
+            items: items.slice(0, safetyCheckboxLimit).map((item, itemIndex) => ({
               id: item?.id || makeStableId(`${title}-${itemIndex + 1}`),
               label: String(item?.label || `Checkbox ${itemIndex + 1}`).trim(),
               details: Boolean(item?.details),
@@ -9820,7 +9821,7 @@ function SafetyTemplateObjectEditor({ index, object, onMove, onRemove, onUpdate,
   }
 
   function addCheckboxItem() {
-    if ((object.items ?? []).length >= 10) return;
+    if ((object.items ?? []).length >= safetyCheckboxLimit) return;
     onUpdate({ ...object, items: [...(object.items ?? []), { id: makeStableId("checkbox"), label: "New checkbox", details: false }] });
   }
 
@@ -9907,7 +9908,7 @@ function SafetyTemplateObjectEditor({ index, object, onMove, onRemove, onUpdate,
               </button>
             </div>
           ))}
-          <button className="outlineButton" disabled={(object.items ?? []).length >= 10} type="button" onClick={addCheckboxItem}>
+          <button className="outlineButton" disabled={(object.items ?? []).length >= safetyCheckboxLimit} type="button" onClick={addCheckboxItem}>
             <Plus size={15} />
             Add checkbox
           </button>
