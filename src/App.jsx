@@ -21,6 +21,7 @@ import {
   FileText,
   FolderKanban,
   Forklift,
+  CircleHelp,
   Home,
   ImagePlus,
   KeyRound,
@@ -4175,6 +4176,10 @@ export default function App() {
     closeMenusThen(() => setModalType("settingsHub"));
   }
 
+  function openHelpCenter() {
+    closeMenusThen(() => setModalType("helpCenter"));
+  }
+
   function openDeveloperMode() {
     if (!canUseDeveloperMode) {
       setNotice("Developer mode is available to Owner, PM, and Office Manager roles.");
@@ -6287,6 +6292,10 @@ export default function App() {
                 <Settings size={18} />
                 <span>Settings</span>
               </button>
+              <button type="button" onClick={openHelpCenter}>
+                <CircleHelp size={18} />
+                <span>Help</span>
+              </button>
               <button type="button" onClick={() => closeMenusThen(signOut)}>
                 <LogOut size={18} />
                 <span>Sign out</span>
@@ -6754,6 +6763,12 @@ export default function App() {
           </AppModal>
         )}
 
+        {modalType === "helpCenter" && (
+          <AppModal title="BuildCore help" onClose={() => setModalType(null)} wide>
+            <HelpCenter role={profile?.role} />
+          </AppModal>
+        )}
+
         {modalType === "settingsHub" && (
           <AppModal title="Settings" onClose={() => setModalType(null)}>
             <SettingsHub
@@ -7174,6 +7189,8 @@ export default function App() {
             <DeveloperModeForm form={developerForm} loading={loading} onChange={setDeveloperForm} onSubmit={saveDeveloperSettings} />
           </AppModal>
         )}
+
+        <footer className="creatorCredit">Designed &amp; Created by Maksym Manko</footer>
 
         {confirmation && <ConfirmationSheet confirmation={confirmation} onResolve={resolveConfirmation} />}
       </main>
@@ -9728,6 +9745,110 @@ function NotificationsPanel({ notifications = [], onOpen }) {
           </button>
         ))
       )}
+    </div>
+  );
+}
+
+function HelpCenter({ role = "" }) {
+  const isBuilder = role === "builder";
+  const managerSections = [
+    {
+      title: "Start the day",
+      text: "Open Schedule first. It shows the whole company day: projects, tickets, crews, equipment, status, arrival, safety, photos, and work completion in one place.",
+      steps: ["Check today's tickets and active work.", "Use Search to jump to any project, ticket, person, document, or note.", "Open Notifications to see notes, assignments, late arrivals, active tickets, and Change Order updates."],
+    },
+    {
+      title: "Schedule and dispatch",
+      text: "Schedule works like a native dispatch board. Drag one person, a crew group, or equipment onto a project time slot to create or update a ticket.",
+      steps: ["Create tickets by choosing project, address, date, time, work scope, people, and equipment.", "Use project search by name or job number when there are many projects.", "Move people or equipment between tickets without rebuilding the schedule.", "Watch conflicts, missing safety, partial crew, and active tickets before they become office problems."],
+    },
+    {
+      title: "Projects and tickets",
+      text: "Projects are the home for the full job history. Tickets are the daily field work records connected to that project.",
+      steps: ["Create projects with unique six-digit job numbers.", "Open a project to see tickets, Site Inspections, Change Orders, files, photos, PDF exports, and Activity Feed.", "Open a ticket to review crew, actual start/finish, safety status, photos, notes, and workflow actions.", "PM, Owner, and Office Manager can correct old active tickets with an office override. The Activity Feed records who closed it."],
+    },
+    {
+      title: "People and control",
+      text: "People management keeps the office in control without extra calls. Roles decide what each person can see and do.",
+      steps: ["Approve new accounts and assign Owner, Project Manager, Office Manager, or Builder roles.", "Set trades, availability, phone, avatar, and profile details.", "Builders only see their own work tools; office roles see management, reporting, documents, and settings.", "Late arrival and partial crew tracking shows who arrived, who did not, and who still needs a Safety Form."],
+    },
+    {
+      title: "Safety forms",
+      text: "Safety Forms protect the company and keep the field workflow honest. A worker who has not signed the required form cannot continue ticket actions until they complete safety.",
+      steps: ["Use Developer Mode / Safety Form to customize the PSI form.", "Add text blocks, checkbox blocks, text fields, select fields, and conditional detail fields.", "Each team member signs under the warning: Do not Sign untill you understand and agree with the PSI.", "Saved Safety Forms become PDF files attached to the ticket and visible in Safety Reports."],
+    },
+    {
+      title: "Photos, documents, and annotations",
+      text: "Photos and files stay attached to the right project, ticket, Change Order, or inspection block, so the office does not have to hunt through messages.",
+      steps: ["Upload Before, After, project, ticket, inspection, or Change Order photos from the correct block.", "Add notes by typing or voice dictation.", "Annotate photos with Apple-style pen, arrows, shapes, text, undo/redo, and save back to the original photo.", "Open PDFs and files from Documents, project overlays, or ticket overlays. Download a full archive from a specific attachment block."],
+    },
+    {
+      title: "Change Orders and inspections",
+      text: "Change Orders and Site Inspections are connected to projects and can be created from the office or field when the role allows it.",
+      steps: ["Create a Change Order with description, Proposed Additional Work, Requested or Approved status.", "If Approved is selected, add approved-by details and signature.", "Export Change Orders and inspections to PDF for clean job documentation.", "All updates can notify the right people and remain in history."],
+    },
+    {
+      title: "Mobile mode on site",
+      text: "The mobile layout is built for the jobsite. It keeps Search, Notifications, Schedule, ticket actions, photos, safety, and completion close to the thumb.",
+      steps: ["Open today's ticket from Schedule or Notifications.", "Tap Arrived, complete Safety Form, upload Before Photos, add notes, then Complete Work with After Photos.", "If internet drops, photo/work actions can wait in the offline queue and sync when the phone is online.", "The page avoids heavy full-screen loading so field work feels steady instead of fragile."],
+    },
+  ];
+
+  const builderSections = [
+    {
+      title: "Your day",
+      text: "BuildCore shows the work that matters to you: today's assigned tickets, schedule, notifications, safety, photos, notes, and completion.",
+      steps: ["Open Schedule to see where you are assigned today.", "Use Search to find your ticket or project quickly.", "Open Notifications to see new assignments, ticket changes, notes, and reminders."],
+    },
+    {
+      title: "Working a ticket",
+      text: "A ticket is your daily job card. It shows project name, address, time, team, equipment, work description, files, notes, and required actions.",
+      steps: ["Open the ticket and review the project work description.", "Tap Arrived when you are on site.", "Complete the Safety Form before continuing work actions.", "Upload Before Photos when required, add ticket notes if needed, then Complete Work with After Photos."],
+    },
+    {
+      title: "Safety first",
+      text: "If your team already signed safety together, you can continue. If you arrived late or missed the team form, BuildCore asks you to complete your own Safety Form before the rest of the ticket actions unlock.",
+      steps: ["Read the PSI carefully.", "Check the required boxes and fill any detail fields.", "Sign only after you understand and agree with the PSI.", "The saved Safety Form is attached to the ticket automatically."],
+    },
+    {
+      title: "Photos and notes",
+      text: "Photos replace scattered text messages. Everything you upload stays connected to the correct ticket or project.",
+      steps: ["Use Before Photos before work starts.", "Use After Photos when work is complete.", "Add ticket notes for important updates, blockers, or instructions.", "Use the photo annotator to mark exactly what matters on an image."],
+    },
+    {
+      title: "Mobile jobsite mode",
+      text: "The phone layout is designed for quick field use. Large buttons, simple overlays, notifications, camera upload, dictation, and local preview reduce back-and-forth with the office.",
+      steps: ["Keep the site open on your phone during the day.", "If the browser was backgrounded, reopen your ticket from Schedule or Notifications.", "If connection is weak, finish the action and let the app sync when internet returns.", "Use Notifications history to revisit important updates after the badge is cleared."],
+    },
+  ];
+
+  const sections = isBuilder ? builderSections : managerSections;
+
+  return (
+    <div className="helpCenter">
+      <section className="helpHero">
+        <span>{isBuilder ? "Field guide" : "Workspace guide"}</span>
+        <h3>{isBuilder ? "Everything you need on site." : "Run the job from schedule to closeout."}</h3>
+        <p>
+          {isBuilder
+            ? "This guide covers only the tools builders use in the field, so every step stays focused on today's work."
+            : "BuildCore connects schedule, projects, crews, safety, photos, documents, notifications, and reporting so the office and field work from one source of truth."}
+        </p>
+      </section>
+
+      <div className="helpSectionGrid">
+        {sections.map((section) => (
+          <section className="helpSection" key={section.title}>
+            <h4>{section.title}</h4>
+            <p>{section.text}</p>
+            <ol>
+              {section.steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          </section>
+        ))}
+      </div>
     </div>
   );
 }
