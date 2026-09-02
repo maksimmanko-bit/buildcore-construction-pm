@@ -8933,10 +8933,55 @@ function SectionToolbar({ actions, label, onAdd }) {
 }
 
 function ProjectsView({ canManage, getProfileName, onDelete, onEdit, onSelect, onStatusChange, projects }) {
+  const [projectQuery, setProjectQuery] = useState("");
+  const normalizedProjectQuery = normalizeProjectSearch(projectQuery);
+  const filteredProjects = useMemo(() => {
+    if (!normalizedProjectQuery) return projects;
+    const terms = normalizedProjectQuery.split(/\s+/).filter(Boolean);
+    return projects.filter((project) => {
+      const addresses = normalizeProjectAddresses(project)
+        .map((item) => `${item.label || ""} ${item.address || ""}`)
+        .join(" ");
+      const haystack = normalizeProjectSearch(
+        [
+          project.name,
+          project.job_number,
+          project.description,
+          project.contact_name,
+          project.contact_email,
+          project.contact_phone,
+          project.status,
+          getProfileName(project.manager_id ?? project.created_by, ""),
+          addresses,
+        ].join(" "),
+      );
+      return terms.every((term) => haystack.includes(term));
+    });
+  }, [getProfileName, normalizedProjectQuery, projects]);
+
   return (
-    <div className="listView">
+    <div className="listView projectsListView">
+      <div className="projectsListSearch">
+        <div className="projectSearchInputWrap">
+          <Search size={18} />
+          <input
+            autoComplete="off"
+            placeholder="Search projects, job numbers, address..."
+            type="search"
+            value={projectQuery}
+            onChange={(event) => setProjectQuery(event.target.value)}
+          />
+          {projectQuery && (
+            <button type="button" onClick={() => setProjectQuery("")}>
+              <X size={16} />
+            </button>
+          )}
+        </div>
+        <span>{normalizedProjectQuery ? `${filteredProjects.length} of ${projects.length}` : `${projects.length} project${projects.length === 1 ? "" : "s"}`}</span>
+      </div>
       {projects.length === 0 && <div className="emptyState">No projects yet. Press Add to create the first project.</div>}
-      {projects.map((project) => (
+      {projects.length > 0 && filteredProjects.length === 0 && <div className="emptyState">No matching projects found.</div>}
+      {filteredProjects.map((project) => (
         <div className="listRow projectListRow" key={project.id}>
           <button className="rowMainButton" type="button" onClick={() => onSelect(project)}>
             <FolderKanban size={20} />

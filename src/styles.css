@@ -5096,6 +5096,46 @@ canvas {
   padding: 0;
 }
 
+.projectsListView {
+  gap: 12px;
+}
+
+.projectsListSearch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 4px 2px 8px;
+}
+
+.projectsListSearch .projectSearchInputWrap {
+  min-height: 50px;
+}
+
+.projectsListSearch .projectSearchInputWrap button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #64748b;
+}
+
+.projectsListSearch > span {
+  padding: 8px 11px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.9);
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
 .peopleListRow {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0;
