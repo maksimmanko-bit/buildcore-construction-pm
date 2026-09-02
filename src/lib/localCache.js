@@ -50,3 +50,27 @@ export async function writeCachedWorkspace(userId, payload) {
     }),
   );
 }
+
+let pendingWorkspaceCacheWrite = null;
+let pendingWorkspaceCacheTimer = null;
+
+function scheduleIdleTask(callback) {
+  if ("requestIdleCallback" in window) return window.requestIdleCallback(callback, { timeout: 1500 });
+  return window.setTimeout(callback, 250);
+}
+
+export function scheduleWorkspaceCacheWrite(userId, payload) {
+  if (!userId || !payload) return null;
+  pendingWorkspaceCacheWrite = { userId, payload };
+  if (pendingWorkspaceCacheTimer) return pendingWorkspaceCacheTimer;
+
+  pendingWorkspaceCacheTimer = scheduleIdleTask(async () => {
+    pendingWorkspaceCacheTimer = null;
+    const nextWrite = pendingWorkspaceCacheWrite;
+    pendingWorkspaceCacheWrite = null;
+    if (nextWrite) await writeCachedWorkspace(nextWrite.userId, nextWrite.payload);
+    if (pendingWorkspaceCacheWrite) scheduleWorkspaceCacheWrite(pendingWorkspaceCacheWrite.userId, pendingWorkspaceCacheWrite.payload);
+  });
+
+  return pendingWorkspaceCacheTimer;
+}

@@ -55,7 +55,7 @@ import { isSupabaseConfigured, supabase } from "./lib/supabase.js";
 import { createAttachmentUrls, createProfileAvatarUrl, deleteVisitFile, replaceVisitPhotoWithAnnotation, uploadProfileAvatar, uploadVisitAttachment, uploadVisitGeneratedFile, uploadVisitPhoto } from "./lib/storage.js";
 import { localGlobalSearch } from "./lib/search.js";
 import { getGoogleMapsUrl, getWeatherForAddress } from "./lib/weather.js";
-import { readCachedWorkspace, writeCachedWorkspace } from "./lib/localCache.js";
+import { readCachedWorkspace, scheduleWorkspaceCacheWrite } from "./lib/localCache.js";
 import { loadPdfDocumentFromUrl } from "./lib/fileText.js";
 import { recordClientError } from "./lib/errorLog.js";
 import { countOfflineOperations, deleteOfflineOperation, enqueueOfflineOperation, isProbablyOfflineError, readOfflineOperations } from "./lib/offlineQueue.js";
@@ -1582,6 +1582,7 @@ export default function App() {
   }
 
   const errorContextRef = useRef({});
+  const realtimeRefreshTimersRef = useRef({});
   useEffect(() => {
     errorContextRef.current = {
       companyId: profile?.company_id || data.companyId || "",
@@ -1728,7 +1729,7 @@ export default function App() {
       };
       setData(nextData);
       setServerConnected(true);
-      writeCachedWorkspace(session.user.id, { profile: nextProfile, data: nextData });
+      scheduleWorkspaceCacheWrite(session.user.id, { profile: nextProfile, data: nextData });
 
       if (selectedProjectId && !nextProjects.some((project) => project.id === selectedProjectId)) setSelectedProjectId("");
     } catch (error) {
@@ -1889,6 +1890,14 @@ export default function App() {
   useEffect(() => {
     if (!supabase || !profile?.is_active || !profile.company_id) return undefined;
 
+    function scheduleRealtimeLoad(key, loader, delay = 350) {
+      if (realtimeRefreshTimersRef.current[key]) window.clearTimeout(realtimeRefreshTimersRef.current[key]);
+      realtimeRefreshTimersRef.current[key] = window.setTimeout(() => {
+        realtimeRefreshTimersRef.current[key] = null;
+        loader();
+      }, delay);
+    }
+
     const channel = supabase
       .channel(`buildcore-workspace-${profile.company_id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "companies", filter: `id=eq.${profile.company_id}` }, (payload) => {
@@ -1897,35 +1906,39 @@ export default function App() {
         setData((current) => ({ ...current, featureFlags: nextFeatureFlags }));
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "visits", filter: `company_id=eq.${profile.company_id}` }, () => {
-        void loadVisits();
+        scheduleRealtimeLoad("visits", () => void loadVisits());
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "site_visits", filter: `company_id=eq.${profile.company_id}` }, () => {
-        void loadSiteVisits();
+        scheduleRealtimeLoad("siteVisits", () => void loadSiteVisits());
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "change_orders", filter: `company_id=eq.${profile.company_id}` }, () => {
-        void loadChangeOrders();
+        scheduleRealtimeLoad("changeOrders", () => void loadChangeOrders());
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "visit_people" }, () => {
-        void loadVisits();
+        scheduleRealtimeLoad("visits", () => void loadVisits());
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "visit_equipment" }, () => {
-        void loadVisits();
+        scheduleRealtimeLoad("visits", () => void loadVisits());
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "visit_activity", filter: `company_id=eq.${profile.company_id}` }, () => {
-        void loadActivities();
+        scheduleRealtimeLoad("activities", () => void loadActivities());
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "visit_notes", filter: `company_id=eq.${profile.company_id}` }, () => {
-        void loadVisitNotes();
+        scheduleRealtimeLoad("visitNotes", () => void loadVisitNotes());
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `recipient_id=eq.${profile.id}` }, () => {
-        void loadNotifications();
+        scheduleRealtimeLoad("notifications", () => void loadNotifications());
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "visit_files", filter: `company_id=eq.${profile.company_id}` }, () => {
-        void loadFiles();
+        scheduleRealtimeLoad("files", () => void loadFiles());
       })
       .subscribe();
 
     return () => {
+      Object.values(realtimeRefreshTimersRef.current).forEach((timerId) => {
+        if (timerId) window.clearTimeout(timerId);
+      });
+      realtimeRefreshTimersRef.current = {};
       supabase.removeChannel(channel);
     };
   }, [profile?.company_id, profile?.id, profile?.is_active]);
@@ -2077,48 +2090,88 @@ export default function App() {
   const assignmentsSource = isLive ? liveAssignments : demoAssignments;
   const isRefreshingWorkspace = Boolean(isLive && loading && profile?.is_active && (data.projects?.length || data.people?.length || data.equipment?.length || data.files?.length));
   const profileById = useMemo(() => new Map((rowsSource.people ?? []).map((person) => [person.id, person])), [rowsSource.people]);
-  const getProfileName = useCallback((id, fallback = "Not set") => profileDisplayName(profileById.get(id), fallback), [profileById]);
-  const selectedProject = selectedProjectId ? rowsSource.projects.find((project) => project.id === selectedProjectId) : null;
-  const selectedAssignment = assignmentsSource.find((item) => item.id === selectedAssignmentId) ?? null;
-  const selectedProjectVisits = selectedProject
-    ? (rowsSource.visits ?? [])
-        .filter((visit) => visit.project_id === selectedProject.id)
-        .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`))
-    : [];
-  const selectedProjectSiteVisits = selectedProject
-    ? (rowsSource.siteVisits ?? [])
-        .filter((item) => activeFeatureFlags.siteInspections && item.project_id === selectedProject.id)
-        .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`))
-    : [];
-  const selectedProjectChangeOrders = selectedProject
-    ? (rowsSource.changeOrders ?? [])
-        .filter((item) => activeFeatureFlags.changeOrders && item.project_id === selectedProject.id)
-        .sort((a, b) => `${a.order_date} ${a.order_time}`.localeCompare(`${b.order_date} ${b.order_time}`))
-    : [];
-  const selectedVisit = selectedVisitId ? selectedProjectVisits.find((visit) => visit.id === selectedVisitId) ?? null : null;
-  const selectedSiteVisit = selectedSiteVisitId ? (rowsSource.siteVisits ?? []).find((item) => item.id === selectedSiteVisitId) ?? null : null;
-  const selectedChangeOrder = selectedChangeOrderId ? (rowsSource.changeOrders ?? []).find((item) => item.id === selectedChangeOrderId) ?? null : null;
-  const currentVisit = selectedVisit ?? selectedProjectVisits[0] ?? null;
-  const currentVisitFiles = (rowsSource.files ?? []).filter((file) => currentVisit?.id && file.visit_id === currentVisit.id);
-  const currentVisitNotes = getVisitNotes(currentVisit);
-  const selectedSiteVisitFiles = (rowsSource.files ?? []).filter((file) => selectedSiteVisit?.id && file.site_visit_id === selectedSiteVisit.id);
-  const selectedChangeOrderFiles = (rowsSource.files ?? []).filter((file) => selectedChangeOrder?.id && file.change_order_id === selectedChangeOrder.id);
-  const currentVisitPeople = currentVisit ? rowsSource.people.filter((person) => currentVisit.people_ids?.includes(person.id)) : [];
-  const currentVisitEquipment = currentVisit ? rowsSource.equipment.filter((item) => currentVisit.equipment_ids?.includes(item.id)) : [];
-  const selectedProjectActivities = selectedProject ? (rowsSource.activities ?? []).filter((item) => item.project_id === selectedProject.id) : [];
-  const workflowVisit = workflowVisitId ? (rowsSource.visits ?? []).find((visit) => visit.id === workflowVisitId) ?? currentVisit : currentVisit;
-  const workflowProject = workflowVisit ? rowsSource.projects.find((project) => project.id === workflowVisit.project_id) ?? selectedProject : selectedProject;
-  const workflowPeople = workflowVisit ? rowsSource.people.filter((person) => workflowVisit.people_ids?.includes(person.id)) : currentVisitPeople;
-  const selectedPerson = selectedPersonId ? [...(rowsSource.people ?? []), ...(rowsSource.pendingPeople ?? [])].find((person) => person.id === selectedPersonId) : null;
-  const todayValue = getWinnipegDateValue();
-  const overviewVisits = (rowsSource.visits ?? [])
-    .filter((visit) => visit.visit_date === overviewDate && (!isLive || visit.people_ids?.includes(profile?.id)))
-    .sort((a, b) => {
-      const statusOrder = { on_site: 0, planned: 1, completed: 2, cancelled: 3 };
-      return (statusOrder[a.status] ?? 4) - (statusOrder[b.status] ?? 4) || String(a.start_time).localeCompare(String(b.start_time));
+  const projectById = useMemo(() => new Map((rowsSource.projects ?? []).map((project) => [project.id, project])), [rowsSource.projects]);
+  const equipmentById = useMemo(() => new Map((rowsSource.equipment ?? []).map((item) => [item.id, item])), [rowsSource.equipment]);
+  const assignmentsByPerson = useMemo(() => {
+    const grouped = new Map();
+    (assignmentsSource ?? []).forEach((item) => {
+      if (item.type !== "person") return;
+      const list = grouped.get(item.resourceId) ?? [];
+      list.push(item);
+      grouped.set(item.resourceId, list);
     });
-  const projectAttachments = (rowsSource.files ?? [])
-    .filter((file) => selectedProject && (file.project_id === selectedProject.id || file.projectId === selectedProject.id) && !file.visit_id && !file.site_visit_id && !file.change_order_id);
+    return grouped;
+  }, [assignmentsSource]);
+  const assignmentsByEquipment = useMemo(() => {
+    const grouped = new Map();
+    (assignmentsSource ?? []).forEach((item) => {
+      if (item.type !== "equipment") return;
+      const list = grouped.get(item.resourceId) ?? [];
+      list.push(item);
+      grouped.set(item.resourceId, list);
+    });
+    return grouped;
+  }, [assignmentsSource]);
+  const getProfileName = useCallback((id, fallback = "Not set") => profileDisplayName(profileById.get(id), fallback), [profileById]);
+  const selectedProject = useMemo(() => (selectedProjectId ? projectById.get(selectedProjectId) ?? null : null), [projectById, selectedProjectId]);
+  const selectedAssignment = useMemo(() => assignmentsSource.find((item) => item.id === selectedAssignmentId) ?? null, [assignmentsSource, selectedAssignmentId]);
+  const selectedProjectVisits = useMemo(
+    () =>
+      selectedProject
+        ? (rowsSource.visits ?? [])
+            .filter((visit) => visit.project_id === selectedProject.id)
+            .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`))
+        : [],
+    [rowsSource.visits, selectedProject],
+  );
+  const selectedProjectSiteVisits = useMemo(
+    () =>
+      selectedProject
+        ? (rowsSource.siteVisits ?? [])
+            .filter((item) => activeFeatureFlags.siteInspections && item.project_id === selectedProject.id)
+            .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`))
+        : [],
+    [activeFeatureFlags.siteInspections, rowsSource.siteVisits, selectedProject],
+  );
+  const selectedProjectChangeOrders = useMemo(
+    () =>
+      selectedProject
+        ? (rowsSource.changeOrders ?? [])
+            .filter((item) => activeFeatureFlags.changeOrders && item.project_id === selectedProject.id)
+            .sort((a, b) => `${a.order_date} ${a.order_time}`.localeCompare(`${b.order_date} ${b.order_time}`))
+        : [],
+    [activeFeatureFlags.changeOrders, rowsSource.changeOrders, selectedProject],
+  );
+  const selectedVisit = useMemo(() => (selectedVisitId ? selectedProjectVisits.find((visit) => visit.id === selectedVisitId) ?? null : null), [selectedProjectVisits, selectedVisitId]);
+  const selectedSiteVisit = useMemo(() => (selectedSiteVisitId ? (rowsSource.siteVisits ?? []).find((item) => item.id === selectedSiteVisitId) ?? null : null), [rowsSource.siteVisits, selectedSiteVisitId]);
+  const selectedChangeOrder = useMemo(() => (selectedChangeOrderId ? (rowsSource.changeOrders ?? []).find((item) => item.id === selectedChangeOrderId) ?? null : null), [rowsSource.changeOrders, selectedChangeOrderId]);
+  const currentVisit = selectedVisit ?? selectedProjectVisits[0] ?? null;
+  const currentVisitFiles = useMemo(() => (rowsSource.files ?? []).filter((file) => currentVisit?.id && file.visit_id === currentVisit.id), [currentVisit?.id, rowsSource.files]);
+  const currentVisitNotes = useMemo(() => getVisitNotes(currentVisit), [currentVisit, rowsSource.visitNotes]);
+  const selectedSiteVisitFiles = useMemo(() => (rowsSource.files ?? []).filter((file) => selectedSiteVisit?.id && file.site_visit_id === selectedSiteVisit.id), [rowsSource.files, selectedSiteVisit?.id]);
+  const selectedChangeOrderFiles = useMemo(() => (rowsSource.files ?? []).filter((file) => selectedChangeOrder?.id && file.change_order_id === selectedChangeOrder.id), [rowsSource.files, selectedChangeOrder?.id]);
+  const currentVisitPeople = useMemo(() => (currentVisit ? (currentVisit.people_ids ?? []).map((id) => profileById.get(id)).filter(Boolean) : []), [currentVisit, profileById]);
+  const currentVisitEquipment = useMemo(() => (currentVisit ? (currentVisit.equipment_ids ?? []).map((id) => equipmentById.get(id)).filter(Boolean) : []), [currentVisit, equipmentById]);
+  const selectedProjectActivities = useMemo(() => (selectedProject ? (rowsSource.activities ?? []).filter((item) => item.project_id === selectedProject.id) : []), [rowsSource.activities, selectedProject]);
+  const workflowVisit = useMemo(() => (workflowVisitId ? (rowsSource.visits ?? []).find((visit) => visit.id === workflowVisitId) ?? currentVisit : currentVisit), [currentVisit, rowsSource.visits, workflowVisitId]);
+  const workflowProject = useMemo(() => (workflowVisit ? projectById.get(workflowVisit.project_id) ?? selectedProject : selectedProject), [projectById, selectedProject, workflowVisit]);
+  const workflowPeople = useMemo(() => (workflowVisit ? (workflowVisit.people_ids ?? []).map((id) => profileById.get(id)).filter(Boolean) : currentVisitPeople), [currentVisitPeople, profileById, workflowVisit]);
+  const selectedPerson = useMemo(() => (selectedPersonId ? [...(rowsSource.people ?? []), ...(rowsSource.pendingPeople ?? [])].find((person) => person.id === selectedPersonId) : null), [rowsSource.pendingPeople, rowsSource.people, selectedPersonId]);
+  const todayValue = getWinnipegDateValue();
+  const overviewVisits = useMemo(
+    () =>
+      (rowsSource.visits ?? [])
+        .filter((visit) => visit.visit_date === overviewDate && (!isLive || visit.people_ids?.includes(profile?.id)))
+        .sort((a, b) => {
+          const statusOrder = { on_site: 0, planned: 1, completed: 2, cancelled: 3 };
+          return (statusOrder[a.status] ?? 4) - (statusOrder[b.status] ?? 4) || String(a.start_time).localeCompare(String(b.start_time));
+        }),
+    [isLive, overviewDate, profile?.id, rowsSource.visits],
+  );
+  const projectAttachments = useMemo(
+    () => (rowsSource.files ?? []).filter((file) => selectedProject && (file.project_id === selectedProject.id || file.projectId === selectedProject.id) && !file.visit_id && !file.site_visit_id && !file.change_order_id),
+    [rowsSource.files, selectedProject],
+  );
 
   const selectedProjectPrimaryAddress = primaryProjectAddress(selectedProject);
 
@@ -2177,90 +2230,120 @@ export default function App() {
     };
   }, [selectedProjectPrimaryAddress]);
 
-  const peopleRows = rowsSource.people.map((person) => ({
-    ...person,
-    kind: "person",
-    subtitle: roleLabel(person.role),
-    resourceStatus: getPersonWorkStatus({ date: selectedDate, person: person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
-    peopleStatus: getPersonWorkStatus({ date: todayValue, person: person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
-    assignments: assignmentsSource.filter((item) => item.type === "person" && item.resourceId === person.id),
-  }));
+  const peopleRows = useMemo(
+    () =>
+      rowsSource.people.map((person) => ({
+        ...person,
+        kind: "person",
+        subtitle: roleLabel(person.role),
+        resourceStatus: getPersonWorkStatus({ date: selectedDate, person: person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
+        peopleStatus: getPersonWorkStatus({ date: todayValue, person: person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
+        assignments: assignmentsByPerson.get(person.id) ?? [],
+      })),
+    [assignmentsByPerson, rowsSource.people, rowsSource.projects, rowsSource.visits, selectedDate, todayValue],
+  );
 
-  const equipmentRows = rowsSource.equipment.map((equipment) => ({
-    ...equipment,
-    kind: "equipment",
-    full_name: equipment.name,
-    subtitle: equipment.type,
-    resourceStatus: getEquipmentWorkStatus({ date: selectedDate, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
-    assignments: assignmentsSource.filter((item) => item.type === "equipment" && item.resourceId === equipment.id),
-  }));
-  const projectRows = rowsSource.projects
-    .map((project, index) => {
-      const projectVisits = (rowsSource.visits ?? [])
-        .filter((visit) => visit.project_id === project.id && visit.visit_date === selectedDate && visit.status !== "cancelled")
-        .sort((a, b) => `${a.start_time} ${a.end_time}`.localeCompare(`${b.start_time} ${b.end_time}`));
-      const projectSiteVisits = (rowsSource.siteVisits ?? [])
-        .filter((item) => activeFeatureFlags.siteInspections && item.project_id === project.id && item.visit_date === selectedDate && item.status !== "cancelled")
-        .map((item) => ({
-          ...item,
-          id: `siteVisit-${item.id}`,
-          sourceId: item.id,
-          sourceType: "siteVisit",
-          start_time: item.status === "completed" && item.completed_at ? addHoursToTime(getWinnipegTimeValue(new Date(item.completed_at)), -1) : item.start_time,
-          end_time: item.status === "completed" && item.completed_at ? getWinnipegTimeValue(new Date(item.completed_at)) : item.end_time,
-        }));
-      const projectScheduleItems = [...projectVisits, ...projectSiteVisits].sort((a, b) => `${a.start_time} ${a.end_time}`.localeCompare(`${b.start_time} ${b.end_time}`));
-      const visitLanes = packVisitLanes(projectScheduleItems);
-      return {
-        ...project,
-        kind: "project",
-        full_name: project.name,
-        subtitle: project.job_number || primaryProjectAddress(project),
-        color: colors[index % colors.length],
-        laneCount: visitLanes.laneCount,
-        assignments: projectScheduleItems.map((item) => {
-          const isSiteVisit = item.sourceType === "siteVisit";
+  const equipmentRows = useMemo(
+    () =>
+      rowsSource.equipment.map((equipment) => ({
+        ...equipment,
+        kind: "equipment",
+        full_name: equipment.name,
+        subtitle: equipment.type,
+        resourceStatus: getEquipmentWorkStatus({ date: selectedDate, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
+        assignments: assignmentsByEquipment.get(equipment.id) ?? [],
+      })),
+    [assignmentsByEquipment, rowsSource.equipment, rowsSource.projects, rowsSource.visits, selectedDate],
+  );
+  const projectRows = useMemo(
+    () =>
+      rowsSource.projects
+        .map((project, index) => {
+          const projectVisits = (rowsSource.visits ?? [])
+            .filter((visit) => visit.project_id === project.id && visit.visit_date === selectedDate && visit.status !== "cancelled")
+            .sort((a, b) => `${a.start_time} ${a.end_time}`.localeCompare(`${b.start_time} ${b.end_time}`));
+          const projectSiteVisits = (rowsSource.siteVisits ?? [])
+            .filter((item) => activeFeatureFlags.siteInspections && item.project_id === project.id && item.visit_date === selectedDate && item.status !== "cancelled")
+            .map((item) => ({
+              ...item,
+              id: `siteVisit-${item.id}`,
+              sourceId: item.id,
+              sourceType: "siteVisit",
+              start_time: item.status === "completed" && item.completed_at ? addHoursToTime(getWinnipegTimeValue(new Date(item.completed_at)), -1) : item.start_time,
+              end_time: item.status === "completed" && item.completed_at ? getWinnipegTimeValue(new Date(item.completed_at)) : item.end_time,
+            }));
+          const projectScheduleItems = [...projectVisits, ...projectSiteVisits].sort((a, b) => `${a.start_time} ${a.end_time}`.localeCompare(`${b.start_time} ${b.end_time}`));
+          const visitLanes = packVisitLanes(projectScheduleItems);
           return {
-            id: isSiteVisit ? item.id : `visit-${item.id}`,
-            visitId: isSiteVisit ? "" : item.id,
-            projectId: item.project_id,
-            recordId: item.sourceId ?? item.id,
-            recordType: item.sourceType ?? "visit",
-            title: project.name,
-            subtitle: isSiteVisit ? getFieldReportLabel("siteVisit") : item.work_scope || normalizeVisitStatus(item.status),
-            start: toHour(item.start_time),
-            end: toHour(item.end_time),
-            timeText: formatTimeRange(item.start_time, item.end_time),
-            status: item.status,
-            isFirstVisit: item.is_first_visit,
-            color: isSiteVisit ? "green" : colors[index % colors.length],
-            people: isSiteVisit ? rowsSource.people.filter((person) => person.id === item.created_by) : rowsSource.people.filter((person) => item.people_ids?.includes(person.id)),
-            equipment: [],
-            laneIndex: visitLanes.laneByVisitId.get(item.id) ?? 0,
+            ...project,
+            kind: "project",
+            full_name: project.name,
+            subtitle: project.job_number || primaryProjectAddress(project),
+            color: colors[index % colors.length],
             laneCount: visitLanes.laneCount,
+            assignments: projectScheduleItems.map((item) => {
+              const isSiteVisit = item.sourceType === "siteVisit";
+              return {
+                id: isSiteVisit ? item.id : `visit-${item.id}`,
+                visitId: isSiteVisit ? "" : item.id,
+                projectId: item.project_id,
+                recordId: item.sourceId ?? item.id,
+                recordType: item.sourceType ?? "visit",
+                title: project.name,
+                subtitle: isSiteVisit ? getFieldReportLabel("siteVisit") : item.work_scope || normalizeVisitStatus(item.status),
+                start: toHour(item.start_time),
+                end: toHour(item.end_time),
+                timeText: formatTimeRange(item.start_time, item.end_time),
+                status: item.status,
+                isFirstVisit: item.is_first_visit,
+                color: isSiteVisit ? "green" : colors[index % colors.length],
+                people: isSiteVisit ? [profileById.get(item.created_by)].filter(Boolean) : (item.people_ids ?? []).map((id) => profileById.get(id)).filter(Boolean),
+                equipment: [],
+                laneIndex: visitLanes.laneByVisitId.get(item.id) ?? 0,
+                laneCount: visitLanes.laneCount,
+              };
+            }),
           };
-        }),
-      };
-    })
-    .filter((project) => project.assignments.length > 0);
-  const availableTodayPeople = rowsSource.people.filter((person) => getPersonWorkStatus({ date: selectedDate, person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }).tone === "available");
-  const availableTodayEquipment = rowsSource.equipment.filter((equipment) => getEquipmentWorkStatus({ date: selectedDate, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }).tone === "available");
-  const visitPickerPeople = rowsSource.people.map((person) => ({
-    ...person,
-    pickerStatus: getPersonWorkStatus({ date: visitForm.visit_date, person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
-  }));
-  const visitPickerEquipment = rowsSource.equipment.map((equipment) => ({
-    ...equipment,
-    pickerStatus: getEquipmentWorkStatus({ date: visitForm.visit_date, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
-  }));
-  const visitFormProject = rowsSource.projects.find((project) => project.id === visitForm.project_id);
-  const visitProjectAddressOptions = getProjectAddressOptions(visitFormProject);
-  const groupedVisitPickerPeople = tradeGroups
-    .map((trade) => ({ trade, people: visitPickerPeople.filter((person) => person.trade === trade) }))
-    .concat([{ trade: unassignedTradeLabel, people: visitPickerPeople.filter((person) => !tradeGroups.includes(person.trade)) }])
-    .filter((group) => group.people.length > 0);
-  const visitFormDates = editingVisitId ? [visitForm.visit_date] : collectVisitDates(visitForm.visit_date, Math.max(1, parseWorkDayCount(visitForm.duration_days)));
-  const visitWorkScopes = normalizeWorkScopes(visitForm.work_scopes, visitFormDates.length, visitForm.work_scope);
+        })
+        .filter((project) => project.assignments.length > 0),
+    [activeFeatureFlags.siteInspections, profileById, rowsSource.projects, rowsSource.siteVisits, rowsSource.visits, selectedDate],
+  );
+  const availableTodayPeople = useMemo(
+    () => rowsSource.people.filter((person) => getPersonWorkStatus({ date: selectedDate, person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }).tone === "available"),
+    [rowsSource.people, rowsSource.projects, rowsSource.visits, selectedDate],
+  );
+  const availableTodayEquipment = useMemo(
+    () => rowsSource.equipment.filter((equipment) => getEquipmentWorkStatus({ date: selectedDate, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }).tone === "available"),
+    [rowsSource.equipment, rowsSource.projects, rowsSource.visits, selectedDate],
+  );
+  const visitPickerPeople = useMemo(
+    () =>
+      rowsSource.people.map((person) => ({
+        ...person,
+        pickerStatus: getPersonWorkStatus({ date: visitForm.visit_date, person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
+      })),
+    [rowsSource.people, rowsSource.projects, rowsSource.visits, visitForm.visit_date],
+  );
+  const visitPickerEquipment = useMemo(
+    () =>
+      rowsSource.equipment.map((equipment) => ({
+        ...equipment,
+        pickerStatus: getEquipmentWorkStatus({ date: visitForm.visit_date, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
+      })),
+    [rowsSource.equipment, rowsSource.projects, rowsSource.visits, visitForm.visit_date],
+  );
+  const visitFormProject = useMemo(() => projectById.get(visitForm.project_id) ?? null, [projectById, visitForm.project_id]);
+  const visitProjectAddressOptions = useMemo(() => getProjectAddressOptions(visitFormProject), [visitFormProject]);
+  const groupedVisitPickerPeople = useMemo(
+    () =>
+      tradeGroups
+        .map((trade) => ({ trade, people: visitPickerPeople.filter((person) => person.trade === trade) }))
+        .concat([{ trade: unassignedTradeLabel, people: visitPickerPeople.filter((person) => !tradeGroups.includes(person.trade)) }])
+        .filter((group) => group.people.length > 0),
+    [visitPickerPeople],
+  );
+  const visitFormDates = useMemo(() => (editingVisitId ? [visitForm.visit_date] : collectVisitDates(visitForm.visit_date, Math.max(1, parseWorkDayCount(visitForm.duration_days)))), [editingVisitId, visitForm.duration_days, visitForm.visit_date]);
+  const visitWorkScopes = useMemo(() => normalizeWorkScopes(visitForm.work_scopes, visitFormDates.length, visitForm.work_scope), [visitForm.work_scope, visitForm.work_scopes, visitFormDates.length]);
   const safetyFormHasDraft =
     Object.values(safetyForm.responses ?? {}).some((value) => JSON.stringify(value ?? "").replace(/[{}\[\]":,]/g, "").trim().length > 0) ||
     Object.values(safetyForm.signatures ?? {}).some((signature) => String(signature ?? "").trim().length > 0);
@@ -2496,7 +2579,7 @@ export default function App() {
   function commitWorkspaceData(updater) {
     setData((current) => {
       const nextData = typeof updater === "function" ? updater(current) : updater;
-      if (session?.user?.id && profile?.id && nextData?.companyId) writeCachedWorkspace(session.user.id, { profile, data: nextData });
+      if (session?.user?.id && profile?.id && nextData?.companyId) scheduleWorkspaceCacheWrite(session.user.id, { profile, data: nextData });
       return nextData;
     });
   }
