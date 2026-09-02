@@ -7924,13 +7924,14 @@ function SafetyFormModal({ dictation, dictationBusy = false, form, loading, onCh
           <span className="mutedLine">No team members assigned to this ticket.</span>
         ) : (
           team.map((person) => (
-            <label className="safetySwitch" key={person.id}>
-              <input type="checkbox" checked={presentIds.includes(person.id)} onChange={() => togglePresent(person.id)} />
-              <span className="switchTrack" aria-hidden="true">
-                <span />
-              </span>
-              <strong>{person.full_name || person.email || "Team member"}</strong>
-            </label>
+            <div className={`safetySwitch ${presentIds.includes(person.id) ? "checked" : ""}`} key={person.id}>
+              <button className="safetySwitchButton" type="button" onClick={() => togglePresent(person.id)}>
+                <span className="switchTrack" aria-hidden="true">
+                  <span />
+                </span>
+                <strong>{person.full_name || person.email || "Team member"}</strong>
+              </button>
+            </div>
           ))
         )}
         {absentTeam.length > 0 && <small className="attendanceNote">Absent team members will need their own Safety Form when they arrive.</small>}
@@ -7992,14 +7993,15 @@ function SafetyTemplateResponseObject({ dictation, object, onChange, onToggleChe
         {object.items.map((item) => {
           const isChecked = checked.has(item.id);
           return (
-            <label className={`safetySwitch safetyTemplateCheckbox ${item.details && isChecked ? "withDetails" : ""}`} key={item.id}>
-              <input type="checkbox" checked={isChecked} onChange={() => onToggleCheckbox(item.id)} />
-              <span className="switchTrack" aria-hidden="true">
-                <span />
-              </span>
-              <strong>{item.label}</strong>
+            <div className={`safetySwitch safetyTemplateCheckbox ${isChecked ? "checked" : ""} ${item.details && isChecked ? "withDetails" : ""}`} key={item.id}>
+              <button className="safetySwitchButton" type="button" onClick={() => onToggleCheckbox(item.id)}>
+                <span className="switchTrack" aria-hidden="true">
+                  <span />
+                </span>
+                <strong>{item.label}</strong>
+              </button>
               {item.details && isChecked && (
-                <span className="checkboxDetailField" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
+                <span className="checkboxDetailField">
                   <VoiceTextInput
                     dictation={dictation}
                     placeholder="Add details..."
@@ -8013,7 +8015,7 @@ function SafetyTemplateResponseObject({ dictation, object, onChange, onToggleChe
                   />
                 </span>
               )}
-            </label>
+            </div>
           );
         })}
       </fieldset>
