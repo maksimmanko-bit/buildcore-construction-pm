@@ -9867,18 +9867,17 @@ function SafetyTemplateObjectEditor({ index, object, onMove, onRemove, onUpdate,
           <input value={object.title} onChange={(event) => updateField("title", event.target.value)} />
         </FormField>
         {object.type !== "text" && (
-          <label className="developerSwitch compactDeveloperSwitch">
+          <button className={`developerSwitch compactDeveloperSwitch ${object.required ? "checked" : ""}`} type="button" onClick={() => updateField("required", !object.required)}>
             <span>
               <strong>Required</strong>
               <small>User must complete this block before saving.</small>
             </span>
             <span className="developerSwitchControl">
-              <input type="checkbox" checked={Boolean(object.required)} onChange={(event) => updateField("required", event.target.checked)} />
               <span className="switchTrack" aria-hidden="true">
                 <span />
               </span>
             </span>
-          </label>
+          </button>
         )}
         {object.type === "text" && (
           <FormField label="Text shown to worker">
@@ -9896,13 +9895,12 @@ function SafetyTemplateObjectEditor({ index, object, onMove, onRemove, onUpdate,
           {(object.items ?? []).map((item, itemIndex) => (
             <div className="safetyBuilderRow" key={item.id}>
               <input value={item.label} onChange={(event) => updateCheckboxItem(itemIndex, { ...item, label: event.target.value })} />
-              <label className="miniSwitchLine">
-                <input type="checkbox" checked={Boolean(item.details)} onChange={(event) => updateCheckboxItem(itemIndex, { ...item, details: event.target.checked })} />
+              <button className={`miniSwitchLine ${item.details ? "checked" : ""}`} type="button" onClick={() => updateCheckboxItem(itemIndex, { ...item, details: !item.details })}>
                 <span className="switchTrack" aria-hidden="true">
                   <span />
                 </span>
                 Details field
-              </label>
+              </button>
               <button className="iconButton soft" disabled={(object.items ?? []).length <= 1} type="button" onClick={() => removeCheckboxItem(itemIndex)} title="Remove checkbox">
                 <Trash2 size={15} />
               </button>
@@ -9936,18 +9934,17 @@ function SafetyTemplateObjectEditor({ index, object, onMove, onRemove, onUpdate,
 
 function DeveloperSwitch({ checked, description, label, onChange }) {
   return (
-    <label className="developerSwitch">
+    <button className={`developerSwitch ${checked ? "checked" : ""}`} type="button" onClick={() => onChange(!checked)}>
       <span>
         <strong>{label}</strong>
         <small>{description}</small>
       </span>
       <span className="developerSwitchControl">
-        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
         <span className="switchTrack" aria-hidden="true">
           <span />
         </span>
       </span>
-    </label>
+    </button>
   );
 }
 
