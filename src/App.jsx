@@ -1073,6 +1073,14 @@ function cleanSearchText(value) {
     .trim();
 }
 
+function normalizeProjectSearch(value) {
+  return cleanSearchText(value).toLowerCase();
+}
+
+function projectPickerText(project) {
+  return [project?.name, project?.job_number].filter(Boolean).join(" ");
+}
+
 function cleanDownloadFileName(value, fallback = "buildcore-files") {
   return (
     String(value || fallback)
@@ -1238,6 +1246,78 @@ function DateField({ label, onChange, value }) {
           />
         </div>
       )}
+    </div>
+  );
+}
+
+function ProjectSearchSelect({ onChange, projects = [], value }) {
+  const [query, setQuery] = useState("");
+  const selectedProject = useMemo(() => projects.find((project) => project.id === value) ?? null, [projects, value]);
+  const filteredProjects = useMemo(() => {
+    const normalizedQuery = normalizeProjectSearch(query);
+    const ranked = projects
+      .map((project, index) => {
+        const name = normalizeProjectSearch(project.name);
+        const jobNumber = normalizeProjectSearch(project.job_number);
+        const haystack = normalizeProjectSearch(projectPickerText(project));
+        const matches = !normalizedQuery || haystack.includes(normalizedQuery);
+        let score = 0;
+        if (jobNumber === normalizedQuery) score += 50;
+        if (jobNumber.startsWith(normalizedQuery)) score += 30;
+        if (name.startsWith(normalizedQuery)) score += 20;
+        if (name.includes(normalizedQuery)) score += 10;
+        return { project, index, matches, score };
+      })
+      .filter((item) => item.matches)
+      .sort((a, b) => b.score - a.score || a.index - b.index);
+
+    return ranked.slice(0, normalizedQuery ? 12 : 8).map((item) => item.project);
+  }, [projects, query]);
+
+  useEffect(() => {
+    setQuery("");
+  }, [value]);
+
+  return (
+    <div className="projectSearchSelect">
+      <div className="projectSearchInputWrap">
+        <Search size={17} />
+        <input
+          autoComplete="off"
+          placeholder="Search project or job number"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </div>
+      {selectedProject && (
+        <div className="selectedProjectPreview">
+          <span>Selected</span>
+          <strong>{selectedProject.name}</strong>
+          <em>{selectedProject.job_number || "No job number"}</em>
+        </div>
+      )}
+      <div className="projectSearchResults" role="listbox">
+        {filteredProjects.length > 0 ? (
+          filteredProjects.map((project) => (
+            <button
+              aria-selected={project.id === value}
+              className={project.id === value ? "projectSearchOption active" : "projectSearchOption"}
+              key={project.id}
+              type="button"
+              onClick={() => onChange(project.id)}
+            >
+              <span>
+                <strong>{project.name}</strong>
+                <em>{project.job_number || "No job number"}</em>
+              </span>
+              {project.id === value && <CheckCircle2 size={18} />}
+            </button>
+          ))
+        ) : (
+          <div className="projectSearchEmpty">No projects found</div>
+        )}
+      </div>
     </div>
   );
 }
@@ -6800,14 +6880,7 @@ export default function App() {
           <AppModal title={editingVisitId ? "Edit visit" : "Schedule visit"} onClose={closeEditorModal} wide>
             <form className="stackForm twoColumns" onSubmit={saveVisit}>
               <FormField label="Project">
-                <select required value={visitForm.project_id} onChange={(event) => updateVisitProject(event.target.value)}>
-                  <option value="">Select project</option>
-                  {rowsSource.projects.map((project) => (
-                    <option value={project.id} key={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
+                <ProjectSearchSelect projects={rowsSource.projects} value={visitForm.project_id} onChange={updateVisitProject} />
               </FormField>
               {visitForm.project_id && (
                 <FormField label="Ticket address">
@@ -8324,14 +8397,7 @@ function SiteVisitForm({ dictation, dictationBusy = false, form, loading, onChan
   return (
     <form className="stackForm twoColumns fieldReportForm" onSubmit={onSubmit}>
       <FormField label="Project">
-        <select required value={form.project_id} onChange={(event) => onChange({ ...form, project_id: event.target.value })}>
-          <option value="">Select project</option>
-          {projects.map((project) => (
-            <option value={project.id} key={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
+        <ProjectSearchSelect projects={projects} value={form.project_id} onChange={(projectId) => onChange({ ...form, project_id: projectId })} />
       </FormField>
       <DateField label="Inspection date" value={form.visit_date} onChange={(date) => onChange({ ...form, visit_date: date })} />
       <FormField label="Status">
@@ -8384,14 +8450,7 @@ function ChangeOrderForm({ changeOrders = [], dictation, dictationBusy = false, 
   return (
     <form className="stackForm twoColumns fieldReportForm" onSubmit={onSubmit}>
       <FormField label="Project">
-        <select required value={form.project_id} onChange={(event) => onChange({ ...form, project_id: event.target.value })}>
-          <option value="">Select project</option>
-          {projects.map((project) => (
-            <option value={project.id} key={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
+        <ProjectSearchSelect projects={projects} value={form.project_id} onChange={(projectId) => onChange({ ...form, project_id: projectId })} />
       </FormField>
       <FormField label="CO number">
         <input readOnly value={form.project_id ? previewNumber : "Select project first"} />
