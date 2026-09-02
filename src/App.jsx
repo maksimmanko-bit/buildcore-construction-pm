@@ -9751,121 +9751,149 @@ function NotificationsPanel({ notifications = [], onOpen }) {
 
 function HelpCenter({ role = "" }) {
   const isBuilder = role === "builder";
-  const managerSections = [
-    {
-      title: "One place to run the day",
-      text: "BuildCore gives the owner, PM, and office a clear command center. Instead of chasing calls, texts, photos, and paper notes, the day is organized around projects, tickets, crews, safety, photos, files, and decisions.",
-      steps: ["Open Schedule to see who is working, where they are going, and what is still active.", "Use Search to jump to any project, ticket, person, document, note, job number, or file.", "Open Notifications to catch assignments, notes, late arrivals, active tickets, and Change Order updates before they become surprises.", "Use each project as the single place where the job history stays clean and easy to review."],
-    },
-    {
-      title: "Search finds the job fast",
-      text: "Search is built for the way construction teams remember work. You can search by project name, job number, address, person, note, document, file name, work scope, or saved report.",
-      steps: ["Use the top Search button when you need to jump across the whole workspace.", "Search inside project pickers by name or job number when creating tickets, inspections, or Change Orders.", "Search the Projects tab by any useful detail, including job number, address, contact, PM, status, or description.", "Use search results to open the exact project, ticket, document, or person without clicking through folders."],
-    },
-    {
-      title: "Schedule that dispatches work",
-      text: "Schedule is built like a field dispatch board, not a static calendar. It turns planning into action: crews, equipment, time, address, work scope, and status are all visible together.",
-      steps: ["Drag one worker, a full crew group, or equipment onto a project time slot to create or update a ticket.", "Choose projects quickly by searching name or job number.", "Move people or equipment between tickets without rebuilding the day.", "See conflicts, missing safety, partial crew, and old active tickets while there is still time to fix them.", "Keep office and field aligned without sending the same instructions twice."],
-    },
-    {
-      title: "Projects stay organized",
-      text: "Every project becomes a clean record of what happened. Daily tickets, photos, PDFs, Excel files, Site Inspections, Change Orders, notes, and history stay attached to the job instead of disappearing into messages.",
-      steps: ["Create projects with unique six-digit job numbers so work is easy to track and search.", "Open a project to see all tickets, reports, Change Orders, attachments, exports, and Activity Feed.", "Open a ticket to review crew, actual start and finish, safety status, photos, notes, and completion.", "Use office override when an old active ticket needs to be closed properly. The Activity Feed records who did it and why it happened."],
-    },
-    {
-      title: "Clear responsibility",
-      text: "Roles keep the company controlled without making the app heavy. Office roles manage the business view. Builders see the work they need on site.",
-      steps: ["Approve new accounts and assign Owner, Project Manager, Office Manager, or Builder roles.", "Set trades, availability, phone numbers, avatars, and profile details.", "Control what each person can access based on their role.", "Track late arrival and partial crew status so the office knows who arrived, who did not, and who still needs a Safety Form.", "Reduce repeated check-in calls because the ticket shows the current field status."],
-    },
-    {
-      title: "Safety forms",
-      text: "Safety Forms make compliance part of the workflow. The app helps protect the company by keeping proof, signatures, and job context attached to the right ticket.",
-      steps: ["Use Developer Mode / Safety Form to customize the PSI form for your company.", "Add text blocks, checkbox blocks, text fields, select fields, and conditional detail fields in the order you need.", "Require workers to complete safety before continuing ticket actions.", "Handle late arrivals correctly: if a worker missed the crew Safety Form, they complete their own form before work actions unlock.", "Saved Safety Forms become PDF files attached to the ticket and visible in Safety Reports."],
-    },
-    {
-      title: "Photos, documents, and annotations",
-      text: "Photos and files become organized job evidence. The office no longer has to ask who took a photo, which job it belongs to, or whether the before and after record exists.",
-      steps: ["Upload Before, After, project, ticket, inspection, or Change Order photos from the correct block.", "Add notes by typing or voice dictation while the context is fresh.", "Annotate photos with clean pen, arrows, shapes, text, undo/redo, and save back to the original photo.", "Open PDFs and files from Documents, project overlays, or ticket overlays.", "Download a full archive from a specific attachment block when you need a clean handoff or record."],
-    },
-    {
-      title: "PDFs and exports",
-      text: "PDF generation turns field activity into clean documents. It helps with billing, client updates, internal review, closeout, and proof of completed work.",
-      steps: ["Export project reports when you need a professional project summary.", "Export ticket PDFs with work details, crew, time, notes, photos, and completion records.", "Export Safety Forms as signed PDFs attached to the ticket.", "Export Change Orders and Site Inspections for approval, client review, and job records.", "Export ticket data to Excel when the office needs a spreadsheet view."],
-    },
-    {
-      title: "Change Orders and inspections",
-      text: "Change Orders and Site Inspections keep decisions traceable. Work that changes in the field becomes documented, reviewed, and exportable instead of living only in conversation.",
-      steps: ["Create a Change Order with description, Proposed Additional Work, Requested or Approved status.", "If Approved is selected, add approved-by details and signature.", "Export Change Orders and inspections to PDF for clean job documentation.", "Notify the right people when important updates happen.", "Keep the full history connected to the project for billing, review, and closeout."],
-    },
-    {
-      title: "Small features that save time",
-      text: "The app is designed to remove small daily frictions that usually create office cleanup later.",
-      steps: ["Use voice dictation for notes and photo captions when typing is slow on site.", "Use attachment block archives to download exactly the files you need.", "Use Activity Feed to understand who changed what and when.", "Use Notifications history after the badge clears to revisit important updates.", "Use offline queue support so weak connection does not turn into lost work."],
-    },
-    {
-      title: "Mobile mode on site",
-      text: "Mobile mode makes the field part of the system. Workers can see the right ticket, confirm arrival, complete safety, upload photos, add notes, and finish work from the phone they already use on site.",
-      steps: ["Builders open today's ticket from Schedule or Notifications.", "They tap Arrived, complete Safety Form, upload Before Photos, add notes, then Complete Work with After Photos.", "The office sees progress without waiting for a phone call.", "If internet drops, photo and work actions can wait in the offline queue and sync when the phone is online.", "The result is less back-and-forth, cleaner records, and fewer missing details at the end of the day."],
-    },
+  const tabs = [
+    { id: "daily-flow", label: "Daily flow" },
+    { id: "core-features", label: "Core features" },
+    { id: "proof-exports", label: "Proof & exports" },
+    { id: "mobile-field", label: "Mobile field mode" },
   ];
-
-  const builderSections = [
-    {
-      title: "Your day",
-      text: "BuildCore shows the work that matters to you: today's assigned tickets, schedule, notifications, safety, photos, notes, and completion.",
-      steps: ["Open Schedule to see where you are assigned today.", "Use Search to find your ticket or project quickly.", "Open Notifications to see new assignments, ticket changes, notes, and reminders."],
-    },
-    {
-      title: "Search and files",
-      text: "Search helps you get to the right work without digging. Files and PDFs stay attached to the correct ticket or project, so you can open what the office needs you to see.",
-      steps: ["Use Search when you need to find a ticket, project, document, note, or file.", "Open PDFs and photos from the ticket or project when they are attached.", "Use Notifications to return to new assignments or important updates.", "Use the photo annotator when you need to point out a detail clearly."],
-    },
-    {
-      title: "Working a ticket",
-      text: "A ticket is your daily job card. It shows project name, address, time, team, equipment, work description, files, notes, and required actions.",
-      steps: ["Open the ticket and review the project work description.", "Tap Arrived when you are on site.", "Complete the Safety Form before continuing work actions.", "Upload Before Photos when required, add ticket notes if needed, then Complete Work with After Photos."],
-    },
-    {
-      title: "Safety first",
-      text: "If your team already signed safety together, you can continue. If you arrived late or missed the team form, BuildCore asks you to complete your own Safety Form before the rest of the ticket actions unlock.",
-      steps: ["Read the PSI carefully.", "Check the required boxes and fill any detail fields.", "Sign only after you understand and agree with the PSI.", "The saved Safety Form is attached to the ticket automatically."],
-    },
-    {
-      title: "Photos and notes",
-      text: "Photos replace scattered text messages. Everything you upload stays connected to the correct ticket or project.",
-      steps: ["Use Before Photos before work starts.", "Use After Photos when work is complete.", "Add ticket notes for important updates, blockers, or instructions.", "Use voice dictation when typing on site is inconvenient.", "Use the photo annotator to mark exactly what matters on an image."],
-    },
-    {
-      title: "Mobile jobsite mode",
-      text: "The phone layout is designed for quick field use. Large buttons, simple overlays, notifications, camera upload, dictation, and local preview reduce back-and-forth with the office.",
-      steps: ["Keep the site open on your phone during the day.", "If the browser was backgrounded, reopen your ticket from Schedule or Notifications.", "If connection is weak, finish the action and let the app sync when internet returns.", "Use Notifications history to revisit important updates after the badge is cleared."],
-    },
-  ];
-
-  const sections = isBuilder ? builderSections : managerSections;
+  const guideSections = isBuilder
+    ? [
+        {
+          id: "daily-flow",
+          eyebrow: "01",
+          title: "Daily flow",
+          intro: "Start from your assigned work, follow the ticket steps, and keep the office updated without extra calls.",
+          cards: [
+            { icon: Calendar, title: "Open today's work", text: "Use Schedule or Notifications to find the ticket assigned to you.", points: ["Check project name, address, time, work scope, crew, and equipment.", "Open attached photos, PDFs, or notes before work starts."] },
+            { icon: CheckCircle2, title: "Work the ticket", text: "The ticket guides the field workflow in the right order.", points: ["Tap Arrived when you are on site.", "Complete Safety Form before other actions unlock.", "Upload Before Photos, add notes if needed, then Complete Work with After Photos."] },
+          ],
+        },
+        {
+          id: "core-features",
+          eyebrow: "02",
+          title: "Core features",
+          intro: "Everything shown to builders is focused on the jobsite: schedule, notifications, safety, photos, notes, and files.",
+          cards: [
+            { icon: Search, title: "Search", text: "Find the right ticket, project, document, note, or file without digging.", points: ["Search by project name, file name, note, or work detail.", "Use results to jump straight into the right place."] },
+            { icon: Bell, title: "Notifications", text: "See assignments, changes, reminders, and important notes.", points: ["The badge clears after you view notifications.", "History stays available when you need to look back."] },
+            { icon: ClipboardCheck, title: "Safety", text: "Safety keeps the job record clean and protects everyone on site.", points: ["Read the PSI carefully.", "If you arrived late, complete your own Safety Form before continuing."] },
+          ],
+        },
+        {
+          id: "proof-exports",
+          eyebrow: "03",
+          title: "Proof & exports",
+          intro: "Your uploads become part of the official project record.",
+          cards: [
+            { icon: Camera, title: "Photos and notes", text: "Before, After, and note photos stay connected to the correct ticket.", points: ["Use voice dictation when typing is inconvenient.", "Annotate photos to point out exact details."] },
+            { icon: FileText, title: "Files and PDFs", text: "Open project files, PDFs, and photos directly from the ticket or project.", points: ["Review documents the office attached.", "Uploaded Safety Forms become signed PDF records."] },
+          ],
+        },
+        {
+          id: "mobile-field",
+          eyebrow: "04",
+          title: "Mobile field mode",
+          intro: "The phone layout keeps the most important actions close and easy to tap on site.",
+          cards: [
+            { icon: Phone, title: "Built for the phone", text: "Schedule, Notifications, ticket actions, camera upload, dictation, and photo review are ready for field use.", points: ["Open the site on your phone during the day.", "If connection is weak, finish the action and let the app sync when internet returns."] },
+          ],
+        },
+      ]
+    : [
+        {
+          id: "daily-flow",
+          eyebrow: "01",
+          title: "Daily flow",
+          intro: "Run the company day from one calm place: plan work, watch the field, catch problems early, and finish with a clean record.",
+          cards: [
+            { icon: Calendar, title: "Morning dispatch", text: "Open Schedule to see who is working, where they are going, and what is still active.", points: ["Assign one worker, a crew group, or equipment by dragging onto a project time slot.", "Create tickets with project, address, date, time, work scope, people, and equipment."] },
+            { icon: Bell, title: "Live office awareness", text: "Notifications surface notes, assignments, late arrivals, partial crew, old active tickets, and Change Order updates.", points: ["Catch issues before the end of the day.", "Reduce repeated check-in calls because the ticket shows current field status."] },
+            { icon: CheckCircle2, title: "End-of-day cleanup", text: "Active tickets, missing safety, missing photos, and incomplete work are visible instead of hidden in messages.", points: ["Office override can close old active tickets when needed.", "Activity Feed records who changed what and when."] },
+          ],
+        },
+        {
+          id: "core-features",
+          eyebrow: "02",
+          title: "Core features",
+          intro: "The core tools are built around how construction work is actually remembered: job numbers, addresses, crews, photos, safety, and field notes.",
+          cards: [
+            { icon: Search, title: "Search", text: "Search across projects, tickets, people, documents, notes, job numbers, addresses, file names, work scopes, and saved reports.", points: ["Use global Search to jump across the whole workspace.", "Use project picker search by name or job number while creating tickets, inspections, and Change Orders.", "Use Projects search for job number, address, contact, PM, status, or description."] },
+            { icon: FolderKanban, title: "Projects and tickets", text: "Each project becomes the home for daily tickets, photos, PDFs, Excel files, Site Inspections, Change Orders, notes, and history.", points: ["Unique six-digit job numbers keep jobs easy to identify.", "Open a ticket to see crew, actual start and finish, safety, photos, notes, and completion."] },
+            { icon: UsersRound, title: "People control", text: "Roles keep access clean. Office roles manage the company view. Builders only see the tools they need on site.", points: ["Approve accounts and assign roles.", "Set trades, availability, phone numbers, avatars, and profile details.", "Track late arrival, partial crew, and missing Safety Forms."] },
+            { icon: ClipboardCheck, title: "Safety forms", text: "Safety becomes part of the workflow, not a separate paper chase.", points: ["Customize the PSI form in Developer Mode.", "Require workers to complete safety before continuing ticket actions.", "Saved Safety Forms become signed PDFs attached to the ticket."] },
+          ],
+        },
+        {
+          id: "proof-exports",
+          eyebrow: "03",
+          title: "Proof & exports",
+          intro: "BuildCore turns field activity into organized proof for billing, client updates, internal review, and closeout.",
+          cards: [
+            { icon: Camera, title: "Photos and annotations", text: "Before, After, project, ticket, inspection, and Change Order photos stay attached to the right record.", points: ["Add notes by typing or voice dictation while details are fresh.", "Annotate photos with clean pen, arrows, shapes, text, undo, redo, and save."] },
+            { icon: FileText, title: "PDF generation", text: "Generate ready-to-send documents from real project activity.", points: ["Export project summaries.", "Export ticket PDFs with work details, crew, time, notes, photos, and completion records.", "Export Safety Forms, Change Orders, and Site Inspections as clean PDFs."] },
+            { icon: Download, title: "Archives and Excel", text: "Download exactly the files or spreadsheet data the office needs.", points: ["Download a full archive from a specific attachment block.", "Export ticket data to Excel for office review, billing support, or planning."] },
+            { icon: FileBarChart2, title: "Change Orders", text: "Changed work becomes documented, reviewed, signed when approved, and connected to the job record.", points: ["Use Requested or Approved status.", "Add Proposed Additional Work, approved-by details, signature, and files."] },
+          ],
+        },
+        {
+          id: "mobile-field",
+          eyebrow: "04",
+          title: "Mobile field mode",
+          intro: "The field team works from the phone they already carry. The office sees progress without waiting for a phone call.",
+          cards: [
+            { icon: Phone, title: "Jobsite workflow", text: "Builders open today's ticket, tap Arrived, complete Safety Form, upload Before Photos, add notes, and Complete Work with After Photos.", points: ["The workflow keeps important steps from being skipped.", "The office gets cleaner records with less back-and-forth."] },
+            { icon: Upload, title: "Offline queue", text: "Weak connection should not turn into lost work.", points: ["Photo and work actions can wait locally.", "When the phone is online, queued work syncs back to Supabase."] },
+          ],
+        },
+      ];
 
   return (
     <div className="helpCenter">
       <section className="helpHero">
-        <span>{isBuilder ? "Field guide" : "Workspace guide"}</span>
-        <h3>{isBuilder ? "Everything you need on site." : "Run the job from schedule to closeout."}</h3>
-        <p>
-          {isBuilder
-            ? "This guide covers only the tools builders use in the field, so every step stays focused on today's work."
-            : "BuildCore helps the company owner see the work, control the process, protect the record, and keep the office and field moving from one source of truth."}
-        </p>
+        <span>{isBuilder ? "Field Guide Center" : "Owner Guide Center"}</span>
+        <h3>{isBuilder ? "See the job. Sign safety. Add proof. Finish work." : "Plan the day. Control the field. Keep proof. Finish cleaner."}</h3>
+        <p>{isBuilder ? "A focused guide for the tools builders use on site every day." : "A clear operating guide for owners, PMs, and office managers who want fewer loose ends and a cleaner company record."}</p>
+        <div className="helpValueBadges">
+          {(isBuilder ? ["Today's work", "Safety first", "Photo proof", "Notifications"] : ["Less phone calls", "Cleaner closeout", "Field accountability", "Ready-to-send PDFs"]).map((label) => (
+            <em key={label}>{label}</em>
+          ))}
+        </div>
       </section>
 
-      <div className="helpSectionGrid">
-        {sections.map((section) => (
-          <section className="helpSection" key={section.title}>
-            <h4>{section.title}</h4>
-            <p>{section.text}</p>
-            <ol>
-              {section.steps.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>
+      <nav className="helpTabs" aria-label="Help sections">
+        {tabs.map((tab) => (
+          <a href={`#help-${tab.id}`} key={tab.id}>{tab.label}</a>
+        ))}
+      </nav>
+
+      <div className="helpGuideSections">
+        {guideSections.map((section) => (
+          <section className="helpGuideSection" id={`help-${section.id}`} key={section.id}>
+            <div className="helpSectionIntro">
+              <span>{section.eyebrow}</span>
+              <h4>{section.title}</h4>
+              <p>{section.intro}</p>
+            </div>
+            <div className="helpCardGrid">
+              {section.cards.map((card) => {
+                const Icon = card.icon;
+                return (
+                  <article className="helpFeatureCard" key={card.title}>
+                    <Icon size={22} />
+                    <div>
+                      <h5>{card.title}</h5>
+                      <p>{card.text}</p>
+                      <ul>
+                        {card.points.map((point) => (
+                          <li key={point}>{point}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           </section>
         ))}
       </div>
