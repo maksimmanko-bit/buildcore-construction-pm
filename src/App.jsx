@@ -816,6 +816,31 @@ function isWeekendDate(value) {
   return day === 0 || day === 6;
 }
 
+function compareDateValue(value, reference = getWinnipegDateValue()) {
+  const date = String(value || "");
+  const ref = String(reference || "");
+  if (!date || !ref) return 0;
+  if (date < ref) return -1;
+  if (date > ref) return 1;
+  return 0;
+}
+
+function isPastDate(value, reference = getWinnipegDateValue()) {
+  return compareDateValue(value, reference) < 0;
+}
+
+function isFutureDate(value, reference = getWinnipegDateValue()) {
+  return compareDateValue(value, reference) > 0;
+}
+
+function canStartPlannedVisit(visit, today = getWinnipegDateValue()) {
+  return Boolean(visit?.status === "planned" && compareDateValue(visit.visit_date, today) === 0);
+}
+
+function canUseActiveVisitWorkflow(visit, today = getWinnipegDateValue()) {
+  return Boolean(visit?.status === "on_site" && compareDateValue(visit.visit_date, today) <= 0);
+}
+
 function collectBusinessDates(startDate, count) {
   const dates = [];
   const next = new Date(`${startDate}T12:00:00`);
@@ -3668,6 +3693,19 @@ export default function App() {
       setNotice("Select today's visit first.");
       return;
     }
+    const today = getWinnipegDateValue();
+    if (visit.status === "planned" && !canStartPlannedVisit(visit, today)) {
+      setNotice(isFutureDate(visit.visit_date, today) ? "Future tickets cannot be started yet." : "Past planned tickets can be corrected by PM, Owner, or Office Manager.");
+      return;
+    }
+    if (visit.status === "on_site" && isFutureDate(visit.visit_date, today)) {
+      setNotice("Future tickets cannot be worked yet.");
+      return;
+    }
+    if (!["planned", "on_site"].includes(visit.status)) {
+      setNotice("Only planned or active tickets can use Arrived workflow.");
+      return;
+    }
 
     const files = getVisitFiles(visit);
     const safetyFiles = files.filter((file) => file.file_type === "safety_form");
@@ -3712,6 +3750,15 @@ export default function App() {
       setNotice("Select an active visit first.");
       return;
     }
+    const today = getWinnipegDateValue();
+    if (visit.status !== "on_site") {
+      setNotice("Only Active tickets can be completed.");
+      return;
+    }
+    if (isFutureDate(visit.visit_date, today)) {
+      setNotice("Future tickets cannot be completed before the visit date.");
+      return;
+    }
     if (visitActionsBlockedBySafety(visit)) {
       setNotice("Complete your Safety Form before continuing.");
       startArrivalWorkflow(visit);
@@ -3728,6 +3775,10 @@ export default function App() {
   function openVisitNoteModal(visit = currentVisit, note = null) {
     if (!visit?.id || visit.status !== "on_site") {
       setNotice("Ticket notes are available only while the ticket is Active.");
+      return;
+    }
+    if (isFutureDate(visit.visit_date, getWinnipegDateValue())) {
+      setNotice("Future tickets cannot receive work notes before the visit date.");
       return;
     }
     if (visitActionsBlockedBySafety(visit)) {
@@ -4050,6 +4101,7 @@ export default function App() {
 
     setActionPending("completion", true);
     try {
+      const completedLate = isPastDate(activeVisit.visit_date, getWinnipegDateValue());
       if (completionForm.files.length > 0) {
         setNotice(`Uploading ${completionForm.files.length} after photo${completionForm.files.length === 1 ? "" : "s"}...`);
         setUploadProgress({ current: 0, total: completionForm.files.length, label: "After photos" });
@@ -4067,16 +4119,23 @@ export default function App() {
         });
       }
       await updateVisitStatusById(activeVisit.id, "completed", { completion_notes: completionForm.notes });
-      await logVisitActivity(activeVisit, "completed", `${currentUserName} completed the visit.`, {
-        completedAt: new Date().toISOString(),
-        notes: completionForm.notes,
-        skippedAfterPhotos: !activeFeatureFlags.beforeAfterPhotos,
-      });
+      await logVisitActivity(
+        activeVisit,
+        "completed",
+        completedLate ? `${currentUserName} completed a previous-day active visit for ${formatDateLabel(activeVisit.visit_date)}.` : `${currentUserName} completed the visit.`,
+        {
+          completedAt: new Date().toISOString(),
+          completedLate,
+          ticketDate: activeVisit.visit_date,
+          notes: completionForm.notes,
+          skippedAfterPhotos: !activeFeatureFlags.beforeAfterPhotos,
+        },
+      );
       setModalType(null);
       setWorkflowVisitId("");
       setCompletionForm({ notes: "", files: [], captions: {} });
       triggerSoftPulse();
-      setNotice("Thank you. Work is Done.");
+      setNotice(completedLate ? "Past Active ticket completed. Saved with current Winnipeg time." : "Thank you. Work is Done.");
       loadVisits();
       loadActivities();
       loadFiles();
@@ -6070,6 +6129,7 @@ export default function App() {
             project={selectedProject}
             notes={currentVisitNotes}
             safetyLocked={visitActionsBlockedBySafety(currentVisit)}
+            today={todayValue}
             visit={currentVisit}
           />
         )}
@@ -6851,9 +6911,14 @@ function CrewStatusGroup({ emptyText, people = [], title, tone }) {
   );
 }
 
-function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationBusy = false, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onDownloadArchive, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onUploaded, people, profileId, profiles, project, safetyLocked = false, visit }) {
+function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationBusy = false, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onDownloadArchive, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onUploaded, people, profileId, profiles, project, safetyLocked = false, today = getWinnipegDateValue(), visit }) {
   const ticketAddress = getVisitAddress(visit, project);
   const safetyEnabled = normalizeFeatureFlags(featureFlags).safetyForm;
+  const dateRelation = compareDateValue(visit.visit_date, today);
+  const isPastVisit = dateRelation < 0;
+  const isFutureVisit = dateRelation > 0;
+  const canStartVisit = canStartPlannedVisit(visit, today);
+  const canFinishVisit = canUseActiveVisitWorkflow(visit, today);
   const crewStatus = people.map((person) => {
     const arrived = safetyEnabled ? personHasSafetyFile(person, files) : ["on_site", "completed"].includes(visit.status);
     return {
@@ -6929,30 +6994,33 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
 
       {visit.status !== "completed" ? (
         <div className="visitActions wideActions">
-          {visit.status === "planned" && (
+          {canStartVisit && (
             <button className="arrivedButton" type="button" onClick={onArrive}>
               <ClipboardCheck size={18} />
               Arrived
             </button>
           )}
-          {visit.status === "on_site" && safetyLocked && (
+          {canFinishVisit && safetyLocked && (
             <button className="arrivedButton" type="button" onClick={onArrive}>
               <ClipboardCheck size={18} />
               Complete Safety Form
             </button>
           )}
-          {visit.status === "on_site" && !safetyLocked && (
+          {canFinishVisit && !safetyLocked && (
             <button className="completeWorkButton" type="button" onClick={onComplete}>
               <CheckCircle2 size={18} />
               Complete
             </button>
           )}
-          {visit.status === "on_site" && !safetyLocked && (
+          {canFinishVisit && !safetyLocked && (
             <button type="button" onClick={() => onOpenNote?.(visit)}>
               <MessageSquarePlus size={18} />
               Add Note
             </button>
           )}
+          {isFutureVisit && <span className="workflowHint">Future tickets are view-only until their scheduled date.</span>}
+          {isPastVisit && visit.status === "planned" && <span className="workflowHint">Past planned tickets can be corrected by PM, Owner, or Office Manager.</span>}
+          {isPastVisit && visit.status === "on_site" && !safetyLocked && <span className="workflowHint">This Active ticket is from a previous day. Completion will use the current Winnipeg time.</span>}
         </div>
       ) : safetyLocked ? (
         <div className="thanksBox muted">Complete your Safety Form before ticket actions unlock.</div>
@@ -8752,7 +8820,12 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
         const project = projects.find((item) => item.id === visit.project_id);
         const files = getVisitFiles(visit);
         const hasCurrentUserSafety = currentUserHasSafety(files, visit);
-        const safetyLocked = isToday && visit.status === "on_site" && !hasCurrentUserSafety;
+        const dateRelation = compareDateValue(visit.visit_date, today);
+        const isPastVisit = dateRelation < 0;
+        const isFutureVisit = dateRelation > 0;
+        const canStartVisit = canStartPlannedVisit(visit, today);
+        const canFinishVisit = canUseActiveVisitWorkflow(visit, today);
+        const safetyLocked = canFinishVisit && !hasCurrentUserSafety;
         const hasBefore = files.some((file) => file.file_type === "before_photo");
         const hasAfter = files.some((file) => file.file_type === "completion_photo");
         const sitePhone = project?.contact_phone || "";
@@ -8847,7 +8920,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
               </section>
             </div>
 
-            {isToday && visit.status === "planned" && (
+            {canStartVisit && (
               <div className="visitActions wideActions">
                 <button className="arrivedButton" type="button" onClick={() => onArrive(visit)}>
                   <ClipboardCheck size={18} />
@@ -8864,7 +8937,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                 <span className="workflowHint">You need your own Safety Form before ticket actions unlock.</span>
               </div>
             )}
-            {isToday && visit.status === "on_site" && !safetyLocked && (
+            {canFinishVisit && !safetyLocked && (
               <div className="visitActions wideActions">
                 <button type="button" onClick={() => onOpenNote?.(visit)}>
                   <MessageSquarePlus size={18} />
@@ -8880,8 +8953,12 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                 </button>
               </div>
             )}
-            {isToday && visit.status === "completed" && <div className="thanksBox">Thank you. Work is Done.</div>}
-            {!isToday && <div className="thanksBox muted">Workflow actions are available only for today's ticket.</div>}
+            {isPastVisit && visit.status === "on_site" && !safetyLocked && (
+              <div className="thanksBox muted">This Active ticket is from a previous day. Completion will be saved with the current Winnipeg time.</div>
+            )}
+            {visit.status === "completed" && <div className="thanksBox">Thank you. Work is Done.</div>}
+            {isFutureVisit && <div className="thanksBox muted">Future tickets are view-only until their scheduled date.</div>}
+            {isPastVisit && visit.status === "planned" && <div className="thanksBox muted">Past planned tickets can be corrected by PM, Owner, or Office Manager.</div>}
           </section>
         );
       })}
