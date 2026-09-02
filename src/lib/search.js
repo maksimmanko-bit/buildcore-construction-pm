@@ -8,8 +8,19 @@ const searchableFields = {
   file: ["file_name", "photo_caption", "search_text", "project_name"],
 };
 
+function tokenizeSearch(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .split(/[^a-z0-9а-яё]+/i)
+    .filter(Boolean);
+}
+
 function includesQuery(value, query) {
-  return String(value ?? "").toLowerCase().includes(query);
+  const text = String(value ?? "").toLowerCase();
+  const queryTerms = tokenizeSearch(query);
+  if (queryTerms.length === 0) return false;
+  const textTerms = tokenizeSearch(text);
+  return queryTerms.every((term) => text.includes(term) || textTerms.some((textTerm) => textTerm.includes(term)));
 }
 
 function makeSnippet(text, query) {
@@ -37,7 +48,7 @@ function collectMatches(type, rows, query) {
 
 export function localGlobalSearch(data, query) {
   const normalized = query.trim().toLowerCase();
-  if (normalized.length < 2) return [];
+  if (normalized.length < 1) return [];
 
   return [
     ...collectMatches("project", data.projects, normalized),

@@ -632,6 +632,21 @@ function profileDisplayName(person, fallback = "Not set") {
   return firstLast || person.full_name || person.email || fallback;
 }
 
+function getPersonSafetyTokens(person) {
+  return [person?.id, person?.full_name, person?.email, profileDisplayName(person, "")]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function personHasSafetyFile(person, files = []) {
+  const tokens = getPersonSafetyTokens(person);
+  const safetyFiles = files.filter((file) => file.file_type === "safety_form");
+  return safetyFiles.some((file) => {
+    const haystack = `${file.file_name || ""} ${file.search_text || ""}`.toLowerCase();
+    return tokens.some((token) => haystack.includes(token));
+  });
+}
+
 function getPersonWorkStatus({ date, person, personId, projects = [], visits = [] }) {
   const resolvedPersonId = personId ?? person?.id;
   const dayVisits = visits.filter((visit) => visit.visit_date === date && visit.people_ids?.includes(resolvedPersonId) && visit.status !== "cancelled");
@@ -934,10 +949,7 @@ function ensureTrailingSlash(value = "") {
 }
 
 function getAuthRedirectUrl() {
-  const currentUrl = `${window.location.origin}${window.location.pathname}`;
-  const isLocalUrl = /^(http:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?/i.test(window.location.host);
-  if (isLocalUrl || window.location.protocol === "file:") return AUTH_REDIRECT_URL;
-  return ensureTrailingSlash(currentUrl);
+  return AUTH_REDIRECT_URL;
 }
 
 function fileToDataUrl(file) {
@@ -1056,7 +1068,6 @@ function Avatar({ profile, small = false, url }) {
     "face",
     small ? "small" : "",
     emoji ? "emoji" : "",
-    defaultEmoji ? "defaultIcon" : "",
     `avatarVariant${avatarSeed % 6}`,
   ]
     .filter(Boolean)
@@ -1622,21 +1633,24 @@ export default function App() {
 
   useEffect(() => {
     const query = searchQuery.trim();
-    if (query.length < 2) {
+    if (query.length < 1) {
       setSearchResults([]);
       return;
     }
 
     const handle = window.setTimeout(async () => {
+      const localResults = filterResultsByFeatures(localGlobalSearch({ ...data, visits: liveAssignments }, query), activeFeatureFlags);
       if (supabase && session && profile) {
         const { data: results, error } = await supabase.rpc("global_search", { search_query: query });
         if (!error) {
-          setSearchResults(filterResultsByFeatures(results ?? [], activeFeatureFlags));
+          const merged = new Map();
+          [...localResults, ...filterResultsByFeatures(results ?? [], activeFeatureFlags)].forEach((result) => merged.set(result.id, result));
+          setSearchResults([...merged.values()].slice(0, 12));
           return;
         }
       }
 
-      setSearchResults(filterResultsByFeatures(localGlobalSearch({ ...data, visits: liveAssignments }, query), activeFeatureFlags));
+      setSearchResults(localResults);
     }, 160);
 
     return () => window.clearTimeout(handle);
@@ -3221,21 +3235,13 @@ export default function App() {
   }
 
   function getSafetyIdentityTokens(person) {
-    return [person?.id, person?.full_name, person?.email, profileDisplayName(person, "")]
-      .map((value) => String(value || "").trim().toLowerCase())
-      .filter(Boolean);
+    return getPersonSafetyTokens(person);
   }
 
   function profileHasSafetyForVisit(visit, person = profile) {
     if (!activeFeatureFlags.safetyForm) return true;
     if (!visit?.people_ids?.includes(person?.id)) return true;
-    const safetyFiles = getVisitFiles(visit).filter((file) => file.file_type === "safety_form");
-    if (safetyFiles.length === 0) return false;
-    const tokens = getSafetyIdentityTokens(person);
-    return safetyFiles.some((file) => {
-      const haystack = `${file.file_name || ""} ${file.search_text || ""}`.toLowerCase();
-      return tokens.some((token) => haystack.includes(token));
-    });
+    return personHasSafetyFile(person, getVisitFiles(visit));
   }
 
   function visitActionsBlockedBySafety(visit) {
@@ -3733,6 +3739,7 @@ export default function App() {
     const presentIds = new Set(safetyForm.presentIds?.length ? safetyForm.presentIds : assignedTeam.map((person) => person.id));
     const team = assignedTeam.filter((person) => presentIds.has(person.id));
     const absentTeam = assignedTeam.filter((person) => !presentIds.has(person.id));
+    const isStartingTicket = !["on_site", "completed"].includes(activeVisit.status);
     const missingSignature = team.some((person) => !safetyForm.signatures[person.id]?.trim());
     if (safetyForm.hazards.length === 0 || team.length === 0 || missingSignature) {
       setNotice("Confirm who is on site, select hazards, and collect every present team member signature before continuing.");
@@ -3833,6 +3840,16 @@ export default function App() {
         team: names,
         absentTeam: absentTeam.map((person) => person.full_name || person.email || "Team member"),
       });
+      if (isStartingTicket && absentTeam.length > 0) {
+        void createNotifications({
+          managers: true,
+          message: `${activeProject.name} started with partial crew. Not arrived yet: ${absentTeam.map((person) => profileDisplayName(person, "Team member")).join(", ")}.`,
+          projectId: activeProject.id,
+          title: "Partial crew arrival",
+          type: "partial_crew_arrival",
+          visitId: activeVisit.id,
+        });
+      }
 
       const alreadyHasBeforePhotos = getVisitFiles(activeVisit).some((file) => file.file_type === "before_photo");
       if (!activeFeatureFlags.beforeAfterPhotos || alreadyHasBeforePhotos) {
@@ -5728,7 +5745,7 @@ export default function App() {
             </div>
 
             <div className="visitActions">
-              <button type="button" disabled={!currentVisit?.id} onClick={() => updateVisitStatus("on_site")}>
+              <button className="arrivedButton" type="button" disabled={!currentVisit?.id} onClick={() => updateVisitStatus("on_site")}>
                 <ClipboardCheck size={18} />
                 Arrived
               </button>
@@ -5799,8 +5816,8 @@ export default function App() {
               </div>
 
               <div className="searchPanelResults">
-                {searchQuery.trim().length < 2 ? (
-                  <div className="searchEmptyState">Type at least 2 characters to search across projects, visits, PDFs, and Excel files.</div>
+                {searchQuery.trim().length < 1 ? (
+                  <div className="searchEmptyState">Start typing to search across projects, visits, PDFs, and Excel files.</div>
                 ) : searchResults.filter((result) => activeFeatureFlags.safetyForm || (result.file_type ?? result.fileType) !== "safety_form").length > 0 ? (
                   searchResults.filter((result) => activeFeatureFlags.safetyForm || (result.file_type ?? result.fileType) !== "safety_form").map((result) => (
                     <button className="searchResult" key={result.id} type="button" onClick={() => handleSearchSelect(result)}>
@@ -6718,8 +6735,37 @@ function ActivityFeed({ activities = [], canDeleteItems = false, getProfileName,
   );
 }
 
+function CrewStatusGroup({ emptyText, people = [], title, tone }) {
+  return (
+    <article className={`crewStatusGroup ${tone}`}>
+      <strong>{title}</strong>
+      {people.length > 0 ? (
+        <div>
+          {people.map((person) => (
+            <span key={person.id}>{profileDisplayName(person, "Team member")}</span>
+          ))}
+        </div>
+      ) : (
+        <small>{emptyText}</small>
+      )}
+    </article>
+  );
+}
+
 function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationBusy = false, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onDownloadArchive, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onUploaded, people, profileId, profiles, project, safetyLocked = false, visit }) {
   const ticketAddress = getVisitAddress(visit, project);
+  const safetyEnabled = normalizeFeatureFlags(featureFlags).safetyForm;
+  const crewStatus = people.map((person) => {
+    const arrived = safetyEnabled ? personHasSafetyFile(person, files) : ["on_site", "completed"].includes(visit.status);
+    return {
+      arrived,
+      missingSafety: safetyEnabled && !arrived,
+      person,
+    };
+  });
+  const arrivedPeople = crewStatus.filter((item) => item.arrived).map((item) => item.person);
+  const notArrivedPeople = crewStatus.filter((item) => !item.arrived).map((item) => item.person);
+  const missingSafetyPeople = crewStatus.filter((item) => item.missingSafety).map((item) => item.person);
   return (
     <DetailOverlayShell title={`${project.name} Ticket`} onClose={onClose}>
       <div className="ticketHeaderCard">
@@ -6757,6 +6803,20 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
         <ProjectFact icon={Truck} label="Equipment" value={equipment.map((item) => item.name).join(", ") || "No equipment"} />
       </dl>
 
+      {people.length > 0 && (
+        <section className="crewArrivalCard">
+          <div className="panelSectionHeader">
+            <h3>Late Arrival / Partial Crew</h3>
+            <span>{arrivedPeople.length}/{people.length}</span>
+          </div>
+          <div className="crewArrivalGrid">
+            <CrewStatusGroup title="Arrived" tone="arrived" people={arrivedPeople} emptyText="No one marked arrived yet." />
+            <CrewStatusGroup title="Not arrived yet" tone="waiting" people={notArrivedPeople} emptyText="Everyone is on site." />
+            {safetyEnabled && <CrewStatusGroup title="Safety form missing" tone="missing" people={missingSafetyPeople} emptyText="All safety forms are signed." />}
+          </div>
+        </section>
+      )}
+
       <div className="ticketScopeGrid">
         <section>
           <h3>Project Work Description</h3>
@@ -6771,13 +6831,13 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
       {visit.status !== "completed" ? (
         <div className="visitActions wideActions">
           {visit.status === "planned" && (
-            <button type="button" onClick={onArrive}>
+            <button className="arrivedButton" type="button" onClick={onArrive}>
               <ClipboardCheck size={18} />
               Arrived
             </button>
           )}
           {visit.status === "on_site" && safetyLocked && (
-            <button type="button" onClick={onArrive}>
+            <button className="arrivedButton" type="button" onClick={onArrive}>
               <ClipboardCheck size={18} />
               Complete Safety Form
             </button>
@@ -8697,7 +8757,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
 
             {isToday && visit.status === "planned" && (
               <div className="visitActions wideActions">
-                <button type="button" onClick={() => onArrive(visit)}>
+                <button className="arrivedButton" type="button" onClick={() => onArrive(visit)}>
                   <ClipboardCheck size={18} />
                   Arrived
                 </button>
