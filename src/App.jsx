@@ -56,6 +56,7 @@ import { localGlobalSearch } from "./lib/search.js";
 import { getGoogleMapsUrl, getWeatherForAddress } from "./lib/weather.js";
 import { readCachedWorkspace, writeCachedWorkspace } from "./lib/localCache.js";
 import { loadPdfDocumentFromUrl } from "./lib/fileText.js";
+import { recordClientError } from "./lib/errorLog.js";
 import DocumentUploader from "./components/DocumentUploader.jsx";
 import { VoiceTextArea, VoiceTextInput } from "./components/VoiceDictation.jsx";
 
@@ -1143,6 +1144,7 @@ export default function App() {
   const [projectWeather, setProjectWeather] = useState({ status: "idle", address: "", data: null });
   const [modalType, setModalType] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [actionBusy, setActionBusy] = useState({});
   const [serverConnected, setServerConnected] = useState(Boolean(isSupabaseConfigured));
   const [activeEditLock, setActiveEditLock] = useState(null);
   const [editingProjectId, setEditingProjectId] = useState(null);
@@ -1190,6 +1192,15 @@ export default function App() {
   const currentUserName = profile?.full_name || session?.user?.email || "James Carter";
   const unreadNotifications = (data.notifications ?? []).filter((item) => !item.read_at);
   const dictationBusy = dictationBusyCount > 0;
+  const companySaving = Boolean(actionBusy.company);
+  const projectSaving = Boolean(actionBusy.project);
+  const visitSaving = Boolean(actionBusy.visit);
+  const siteVisitSaving = Boolean(actionBusy.siteVisit);
+  const changeOrderSaving = Boolean(actionBusy.changeOrder);
+  const safetyFormSaving = Boolean(actionBusy.safetyForm);
+  const beforePhotosSaving = Boolean(actionBusy.beforePhotos);
+  const completionSaving = Boolean(actionBusy.completion);
+  const visitNoteSaving = Boolean(actionBusy.visitNote);
   const handleDictationBusyChange = useCallback((isBusy) => {
     setDictationBusyCount((count) => Math.max(0, count + (isBusy ? 1 : -1)));
   }, []);
@@ -1205,6 +1216,55 @@ export default function App() {
     setNotice("Finish dictation before saving.");
     return true;
   }
+
+  function setActionPending(key, pending) {
+    setActionBusy((current) => {
+      if (Boolean(current[key]) === pending) return current;
+      if (!pending) {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      }
+      return { ...current, [key]: true };
+    });
+  }
+
+  const errorContextRef = useRef({});
+  useEffect(() => {
+    errorContextRef.current = {
+      companyId: profile?.company_id || data.companyId || "",
+      profileId: profile?.id || "",
+      role: profile?.role || "",
+    };
+  }, [data.companyId, profile]);
+
+  useEffect(() => {
+    function handleWindowError(event) {
+      recordClientError(event.error || event.message, {
+        ...errorContextRef.current,
+        source: "window.error",
+        metadata: {
+          colno: event.colno,
+          filename: event.filename,
+          lineno: event.lineno,
+        },
+      });
+    }
+
+    function handleUnhandledRejection(event) {
+      recordClientError(event.reason || "Unhandled promise rejection", {
+        ...errorContextRef.current,
+        source: "unhandledrejection",
+      });
+    }
+
+    window.addEventListener("error", handleWindowError);
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
+    return () => {
+      window.removeEventListener("error", handleWindowError);
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+    };
+  }, []);
 
   const refreshData = useCallback(async () => {
     if (!supabase || !session) return;
@@ -2223,6 +2283,7 @@ export default function App() {
     setLoading(false);
 
     if (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "sendPasswordReset" });
       setNotice(error.message);
       return;
     }
@@ -2251,6 +2312,7 @@ export default function App() {
     setLoading(false);
 
     if (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "saveRecoveredPassword" });
       setNotice(error.message);
       return;
     }
@@ -2282,11 +2344,12 @@ export default function App() {
     event.preventDefault();
     if (!supabase) return;
 
-    setLoading(true);
+    setActionPending("company", true);
     const { error } = await supabase.rpc("create_company_for_current_user", companyForm);
-    setLoading(false);
+    setActionPending("company", false);
 
     if (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "createCompany" });
       setNotice(error.message);
       return;
     }
@@ -2310,7 +2373,7 @@ export default function App() {
       return;
     }
 
-    setLoading(true);
+    setActionPending("project", true);
 
     const payload = {
       job_number: jobNumber,
@@ -2339,9 +2402,10 @@ export default function App() {
           .single();
 
     const { data: saved, error } = await query;
-    setLoading(false);
+    setActionPending("project", false);
 
     if (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "saveProject" });
       setNotice(error.code === "23505" ? `Project number ${jobNumber} already exists. Choose another number.` : error.message);
       return;
     }
@@ -2483,6 +2547,7 @@ export default function App() {
     setLoading(false);
 
     if (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "saveEquipment" });
       setNotice(error.message);
       return;
     }
@@ -2506,7 +2571,7 @@ export default function App() {
       return;
     }
 
-    setLoading(true);
+    setActionPending("visit", true);
     const baseVisitPayload = {
       project_id: visitForm.project_id,
       address: visitForm.address || primaryProjectAddress(rowsSource.projects.find((project) => project.id === visitForm.project_id)),
@@ -2519,14 +2584,14 @@ export default function App() {
     const workScopes = normalizeWorkScopes(visitForm.work_scopes, generatedDates.length, visitForm.work_scope).map((scope) => scope.trim());
 
     if (workScopes.some((scope) => !scope)) {
-      setLoading(false);
+      setActionPending("visit", false);
       setNotice("Add a Work Scope for every scheduled work day.");
       return;
     }
 
     const notAvailablePeople = rowsSource.people.filter((person) => visitForm.people_ids.includes(person.id) && person.availability_status === "not_available");
     if (notAvailablePeople.length) {
-      setLoading(false);
+      setActionPending("visit", false);
       setNotice(`Ticket not saved: ${notAvailablePeople.map((person) => profileDisplayName(person)).join(", ")} marked Not Available.`);
       return;
     }
@@ -2549,7 +2614,7 @@ export default function App() {
     );
 
     if (conflictMessages.length) {
-      setLoading(false);
+      setActionPending("visit", false);
       setNotice(`Ticket not saved: ${conflictMessages.slice(0, 3).join("; ")}.`);
       return;
     }
@@ -2599,7 +2664,7 @@ export default function App() {
         if (assignmentError) throw assignmentError;
       }
 
-      setLoading(false);
+      setActionPending("visit", false);
       const lockToRelease = activeEditLockRef.current;
       const resetProject = rowsSource.projects[0];
       setVisitForm({ ...emptyVisitForm, visit_date: selectedDate, project_id: resetProject?.id ?? "", address: primaryProjectAddress(resetProject) });
@@ -2639,7 +2704,8 @@ export default function App() {
       loadVisits();
     } catch (error) {
       if (!editingVisitId && createdVisitIds.length > 0) await supabase.from("visits").delete().in("id", createdVisitIds);
-      setLoading(false);
+      setActionPending("visit", false);
+      recordClientError(error, { ...errorContextRef.current, source: "saveVisit" });
       setNotice(error.message);
       loadVisits();
     }
@@ -2659,7 +2725,7 @@ export default function App() {
       return;
     }
 
-    setLoading(true);
+    setActionPending("siteVisit", true);
     setNotice("Saving Site Inspection...");
     try {
       const completedNow = new Date();
@@ -2710,9 +2776,10 @@ export default function App() {
       setNotice(editingSiteVisitId ? "Site Inspection changes saved." : "Site Inspection saved.");
       await Promise.all([loadSiteVisits(), loadFiles(), loadActivities()]);
     } catch (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "saveSiteVisit" });
       setNotice(error.message);
     } finally {
-      setLoading(false);
+      setActionPending("siteVisit", false);
       setUploadProgress(null);
     }
   }
@@ -2736,7 +2803,7 @@ export default function App() {
       return;
     }
 
-    setLoading(true);
+    setActionPending("changeOrder", true);
     setNotice("Saving Change Order...");
     try {
       const createdNow = new Date();
@@ -2804,9 +2871,10 @@ export default function App() {
       setNotice(editingChangeOrderId ? "Change Order changes saved." : "Change Order saved.");
       await Promise.all([loadChangeOrders(), loadFiles(), loadActivities()]);
     } catch (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "saveChangeOrder" });
       setNotice(error.message);
     } finally {
-      setLoading(false);
+      setActionPending("changeOrder", false);
       setUploadProgress(null);
     }
   }
@@ -3236,6 +3304,7 @@ export default function App() {
       triggerSoftPulse();
       setNotice("Password updated.");
     } catch (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "savePasswordSettings" });
       setNotice(error.message);
     } finally {
       setLoading(false);
@@ -3597,7 +3666,7 @@ export default function App() {
       return;
     }
 
-    setLoading(true);
+    setActionPending("visitNote", true);
     setNotice(visitNoteForm.id ? "Saving ticket note..." : "Adding ticket note...");
     try {
       const payload = {
@@ -3642,9 +3711,10 @@ export default function App() {
       setNotice("Ticket note saved.");
       await Promise.all([loadVisitNotes(), loadFiles(), loadActivities()]);
     } catch (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "saveVisitNote" });
       setNotice(error.message);
     } finally {
-      setLoading(false);
+      setActionPending("visitNote", false);
       setUploadProgress(null);
     }
   }
@@ -3669,7 +3739,7 @@ export default function App() {
       return;
     }
 
-    setLoading(true);
+    setActionPending("safetyForm", true);
     try {
       const { jsPDF } = await import("jspdf");
       const names = team.map((person) => person.full_name || person.email || "Team member");
@@ -3790,9 +3860,10 @@ export default function App() {
       loadFiles();
       loadActivities();
     } catch (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "saveSafetyForm" });
       setNotice(error.message);
     } finally {
-      setLoading(false);
+      setActionPending("safetyForm", false);
     }
   }
 
@@ -3810,7 +3881,7 @@ export default function App() {
       return;
     }
 
-    setLoading(true);
+    setActionPending("beforePhotos", true);
     try {
       setNotice(`Uploading ${photoStep.files.length} before photo${photoStep.files.length === 1 ? "" : "s"}...`);
       setUploadProgress({ current: 0, total: photoStep.files.length, label: "Before photos" });
@@ -3839,10 +3910,11 @@ export default function App() {
       loadActivities();
       loadFiles();
     } catch (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "saveBeforePhotos" });
       setNotice(error.message);
     } finally {
       setUploadProgress(null);
-      setLoading(false);
+      setActionPending("beforePhotos", false);
     }
   }
 
@@ -3860,7 +3932,7 @@ export default function App() {
       return;
     }
 
-    setLoading(true);
+    setActionPending("completion", true);
     try {
       if (completionForm.files.length > 0) {
         setNotice(`Uploading ${completionForm.files.length} after photo${completionForm.files.length === 1 ? "" : "s"}...`);
@@ -3893,10 +3965,11 @@ export default function App() {
       loadActivities();
       loadFiles();
     } catch (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "saveCompletion" });
       setNotice(error.message);
     } finally {
       setUploadProgress(null);
-      setLoading(false);
+      setActionPending("completion", false);
     }
   }
 
@@ -5953,9 +6026,9 @@ export default function App() {
                 <input value={companyForm.phone} onChange={(event) => setCompanyForm({ ...companyForm, phone: event.target.value })} />
               </FormField>
               <div className="formActions">
-                <button className="addButton" type="submit" disabled={loading || dictationBusy}>
+                <button className="addButton" type="submit" disabled={companySaving || dictationBusy}>
                   <Save size={18} />
-                  Save company
+                  {companySaving ? "Saving..." : "Save company"}
                 </button>
               </div>
             </form>
@@ -6011,9 +6084,9 @@ export default function App() {
                 <VoiceTextArea dictation={dictation} value={projectForm.description} onChange={(value) => setProjectForm({ ...projectForm, description: value })} />
               </FormField>
               <div className="formActions wide">
-                <button className="addButton" type="submit" disabled={loading || dictationBusy}>
+                <button className="addButton" type="submit" disabled={projectSaving || dictationBusy}>
                   <Save size={18} />
-                  {editingProjectId ? "Save changes" : "Save project"}
+                  {projectSaving ? "Saving..." : editingProjectId ? "Save changes" : "Save project"}
                 </button>
               </div>
             </form>
@@ -6145,9 +6218,9 @@ export default function App() {
               <GroupedPickerList groups={groupedVisitPickerPeople} selected={visitForm.people_ids} onToggle={(id) => toggleVisitArray("people_ids", id)} title="People by Trade" />
               <PickerList title="Equipment" items={visitPickerEquipment} selected={visitForm.equipment_ids} labelKey="name" onToggle={(id) => toggleVisitArray("equipment_ids", id)} />
               <div className="formActions wide">
-                <button className="addButton" type="submit" disabled={loading || dictationBusy || !visitForm.project_id}>
+                <button className="addButton" type="submit" disabled={visitSaving || dictationBusy || !visitForm.project_id}>
                   <Save size={18} />
-                  {editingVisitId ? "Save changes" : "Save visit"}
+                  {visitSaving ? "Saving..." : editingVisitId ? "Save changes" : "Save visit"}
                 </button>
               </div>
             </form>
@@ -6156,13 +6229,13 @@ export default function App() {
 
         {activeFeatureFlags.siteInspections && modalType === "siteVisit" && (
           <AppModal title={editingSiteVisitId ? "Edit Site Inspection" : "Create Site Inspection"} onClose={() => closeModalWithConfirmation(fieldReportFormHasDraft(siteVisitForm))} wide>
-            <SiteVisitForm dictation={dictation} dictationBusy={dictationBusy} form={siteVisitForm} loading={loading} onChange={setSiteVisitForm} onSubmit={saveSiteVisit} projects={rowsSource.projects} />
+            <SiteVisitForm dictation={dictation} dictationBusy={dictationBusy} form={siteVisitForm} loading={siteVisitSaving} onChange={setSiteVisitForm} onSubmit={saveSiteVisit} projects={rowsSource.projects} />
           </AppModal>
         )}
 
         {activeFeatureFlags.changeOrders && modalType === "changeOrder" && (
           <AppModal title={editingChangeOrderId ? "Edit Change Order" : "Create Change Order"} onClose={() => closeModalWithConfirmation(fieldReportFormHasDraft(changeOrderForm))} wide>
-            <ChangeOrderForm changeOrders={rowsSource.changeOrders ?? []} dictation={dictation} dictationBusy={dictationBusy} form={changeOrderForm} loading={loading} onChange={setChangeOrderForm} onSubmit={saveChangeOrder} projects={rowsSource.projects} />
+            <ChangeOrderForm changeOrders={rowsSource.changeOrders ?? []} dictation={dictation} dictationBusy={dictationBusy} form={changeOrderForm} loading={changeOrderSaving} onChange={setChangeOrderForm} onSubmit={saveChangeOrder} projects={rowsSource.projects} />
           </AppModal>
         )}
 
@@ -6173,7 +6246,7 @@ export default function App() {
               dictationBusy={dictationBusy}
               form={safetyForm}
               hazards={hazardOptions}
-              loading={loading}
+              loading={safetyFormSaving}
               onChange={setSafetyForm}
               onSubmit={saveSafetyForm}
               project={workflowProject}
@@ -6191,7 +6264,7 @@ export default function App() {
               dictationBusy={dictationBusy}
               files={photoStep.files}
               label="Upload at least one photo before work starts."
-              loading={loading}
+              loading={beforePhotosSaving}
               onCaption={(key, value) => setPhotoStep((current) => ({ ...current, captions: { ...current.captions, [key]: value } }))}
               onFiles={(files) => setPhotoStep({ kind: "before", visitId: workflowVisit.id, files, captions: {} })}
               onSubmit={saveBeforePhotos}
@@ -6201,13 +6274,13 @@ export default function App() {
 
         {modalType === "completeVisit" && workflowVisit && workflowProject && (
           <AppModal confirmOnClose={completionHasDraft} title="Complete Work" onClose={() => closeModalWithConfirmation(completionHasDraft)}>
-            <CompleteVisitModal dictation={dictation} dictationBusy={dictationBusy} form={completionForm} loading={loading} onChange={setCompletionForm} onSubmit={saveCompletion} requirePhotos={activeFeatureFlags.beforeAfterPhotos} />
+            <CompleteVisitModal dictation={dictation} dictationBusy={dictationBusy} form={completionForm} loading={completionSaving} onChange={setCompletionForm} onSubmit={saveCompletion} requirePhotos={activeFeatureFlags.beforeAfterPhotos} />
           </AppModal>
         )}
 
         {modalType === "visitNote" && workflowVisit && workflowProject && (
           <AppModal title={visitNoteForm.id ? "Edit Ticket Note" : "Add Ticket Note"} onClose={() => closeModalWithConfirmation(Boolean(visitNoteForm.note_text.trim()) || visitNoteForm.files.length > 0)}>
-            <VisitNoteModal dictation={dictation} dictationBusy={dictationBusy} form={visitNoteForm} loading={loading} onChange={setVisitNoteForm} onSubmit={saveVisitNote} />
+            <VisitNoteModal dictation={dictation} dictationBusy={dictationBusy} form={visitNoteForm} loading={visitNoteSaving} onChange={setVisitNoteForm} onSubmit={saveVisitNote} />
           </AppModal>
         )}
 
@@ -7251,7 +7324,7 @@ function SafetyFormModal({ dictation, dictationBusy = false, form, hazards, load
       <div className="formActions wide">
         <button className="addButton" type="submit" disabled={loading || dictationBusy || !canSubmit}>
           <Save size={18} />
-          Save Safety PDF
+          {loading ? "Saving PDF..." : "Save Safety PDF"}
         </button>
       </div>
     </form>
@@ -7359,7 +7432,7 @@ function PhotoStepModal({ captions = {}, dictation, dictationBusy = false, files
       <div className="formActions wide">
         <button className="addButton" type="submit" disabled={loading || dictationBusy || selectedFiles.length === 0}>
           <Upload size={18} />
-          Save Photos
+          {loading ? "Uploading..." : "Save Photos"}
         </button>
       </div>
     </form>
@@ -7406,7 +7479,7 @@ function CompleteVisitModal({ dictation, dictationBusy = false, form, loading, o
       <div className="formActions wide">
         <button className="addButton completeWorkButton" type="submit" disabled={loading || dictationBusy || (requirePhotos && form.files.length === 0)}>
           <CheckCircle2 size={18} />
-          Finish Work
+          {loading ? "Finishing..." : "Finish Work"}
         </button>
       </div>
     </form>
@@ -7444,7 +7517,7 @@ function VisitNoteModal({ dictation, dictationBusy = false, form, loading, onCha
       <div className="formActions wide">
         <button className="addButton" type="submit" disabled={loading || dictationBusy || (!form.note_text.trim() && selectedFiles.length === 0)}>
           <Save size={18} />
-          Save Note
+          {loading ? "Saving..." : "Save Note"}
         </button>
       </div>
     </form>
@@ -7500,7 +7573,7 @@ function SiteVisitForm({ dictation, dictationBusy = false, form, loading, onChan
       <div className="formActions wide">
         <button className="addButton" type="submit" disabled={loading || dictationBusy || !form.project_id}>
           <Save size={18} />
-          Save Site Inspection
+          {loading ? "Saving..." : "Save Site Inspection"}
         </button>
       </div>
     </form>
@@ -7564,7 +7637,7 @@ function ChangeOrderForm({ changeOrders = [], dictation, dictationBusy = false, 
       <div className="formActions wide">
         <button className="addButton" type="submit" disabled={loading || dictationBusy || !form.project_id || (isApproved && (!form.approved_by.trim() || !form.approval_signature))}>
           <Save size={18} />
-          Save Change Order
+          {loading ? "Saving..." : "Save Change Order"}
         </button>
       </div>
     </form>
