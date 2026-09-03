@@ -1294,7 +1294,7 @@ function ProjectSearchSelect({ onChange, projects = [], value }) {
   }, [value]);
 
   return (
-    <div className="projectSearchSelect" ref={wrapRef}>
+    <div className={isOpen ? "projectSearchSelect open" : "projectSearchSelect"} ref={wrapRef}>
       <div className="projectSearchInputWrap">
         <Search size={17} />
         <input
@@ -1308,7 +1308,7 @@ function ProjectSearchSelect({ onChange, projects = [], value }) {
           }}
           onFocus={() => setIsOpen(true)}
         />
-        <button aria-label="Show project search" type="button" onClick={() => setIsOpen((current) => !current)}>
+        <button aria-expanded={isOpen} aria-label="Show project search" type="button" onClick={() => setIsOpen((current) => !current)}>
           <ChevronDown size={16} />
         </button>
       </div>
