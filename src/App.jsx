@@ -1542,6 +1542,7 @@ export default function App() {
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
   const [isSidebarSuppressed, setIsSidebarSuppressed] = useState(false);
   const [avatarUrls, setAvatarUrls] = useState({});
+  const sidebarRef = useRef(null);
   const accountMenuRef = useRef(null);
   const authRedirectHandledRef = useRef(false);
   const offlineQueueProcessingRef = useRef(false);
@@ -2001,10 +2002,26 @@ export default function App() {
     function handlePointerDown(event) {
       if (accountMenuRef.current?.contains(event.target)) return;
       closeAccountMenuAnimated();
+      collapseSidebar();
     }
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [isAccountMenuOpen]);
+
+  useEffect(() => {
+    if (!isSidebarExpanded || isAccountMenuOpen) return undefined;
+    function handlePointerDown(event) {
+      if (sidebarRef.current?.contains(event.target)) return;
+      setIsSidebarExpanded(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isAccountMenuOpen, isSidebarExpanded]);
+
+  function collapseSidebar({ suppressHover = false } = {}) {
+    setIsSidebarExpanded(false);
+    if (suppressHover) setIsSidebarSuppressed(true);
+  }
 
   function closeAccountMenuAnimated() {
     if (!isAccountMenuOpen) return 0;
@@ -2016,6 +2033,7 @@ export default function App() {
 
   function closeMenusThen(action) {
     const accountDelay = closeAccountMenuAnimated();
+    collapseSidebar({ suppressHover: true });
     window.setTimeout(() => {
       const drawerDelay = isMobileMenuOpen ? 330 : 0;
       setIsMobileMenuOpen(false);
@@ -6626,6 +6644,7 @@ function toggleVisitArray(key, value) {
       <div className="mobileDrawerBackdrop" onClick={() => setIsMobileMenuOpen(false)} />
       <aside
         className={sidebarExpanded ? "sidebar expanded" : "sidebar"}
+        ref={sidebarRef}
         onMouseEnter={() => {
           if (!isSidebarSuppressed) setIsSidebarExpanded(true);
         }}
@@ -6633,7 +6652,6 @@ function toggleVisitArray(key, value) {
           setIsSidebarExpanded(false);
           setIsSidebarSuppressed(false);
         }}
-        onFocus={() => setIsSidebarExpanded(true)}
       >
         <div className="brand">
           <div className="brandMark">B</div>
@@ -6654,8 +6672,7 @@ function toggleVisitArray(key, value) {
                 type="button"
                 onClick={() => {
                   setActiveNav(item.id);
-                  setIsSidebarExpanded(false);
-                  setIsSidebarSuppressed(true);
+                  collapseSidebar({ suppressHover: true });
                   setIsMobileMenuOpen(false);
                 }}
               >
