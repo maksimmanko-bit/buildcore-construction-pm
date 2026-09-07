@@ -11032,6 +11032,7 @@ html {
 }
 
 .scheduleSubcontractorCard {
+  position: relative;
   display: inline-grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -11046,6 +11047,77 @@ html {
   color: #0f172a;
 }
 
+.subcontractorTooltip {
+  pointer-events: none;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 9px);
+  z-index: 80;
+  display: grid;
+  gap: 2px;
+  min-width: 150px;
+  max-width: 220px;
+  padding: 9px 11px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 18px 34px rgba(15, 23, 42, 0.18);
+  color: #0f172a;
+  opacity: 0;
+  text-align: left;
+  transform: translate(-50%, 6px) scale(0.96);
+  transition:
+    opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+.subcontractorTooltip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.72);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.94);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.scheduleSubcontractorCard:hover .subcontractorTooltip,
+.scheduleSubcontractorCard:focus-within .subcontractorTooltip {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.scheduleSubcontractorCard .subcontractorTooltip strong {
+  color: #111827;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.scheduleSubcontractorCard .subcontractorTooltip small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.resourceRow:has(.scheduleSubcontractorCard:hover),
+.rowTrack:has(.scheduleSubcontractorCard:hover),
+.scheduleBlock:has(.scheduleSubcontractorCard:hover),
+.scheduleBlock:has(.scheduleSubcontractorCard:hover) .assignmentResources,
+.scheduleBlock:has(.scheduleSubcontractorCard:hover) .assignmentResourceRow,
+.scheduleBlock:has(.scheduleSubcontractorCard:hover) .assignmentResourceItems,
+.scheduleBlock:has(.scheduleSubcontractorCard:hover) .subcontractorResourceItems {
+  z-index: 30;
+  overflow: visible;
+}
+
 .scheduleSubcontractorCard svg {
   color: #334155;
 }
@@ -11057,7 +11129,9 @@ html {
 }
 
 .scheduleSubcontractorCard strong,
-.scheduleSubcontractorCard small {
+.scheduleSubcontractorCard small,
+.subcontractorTooltip strong,
+.subcontractorTooltip small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

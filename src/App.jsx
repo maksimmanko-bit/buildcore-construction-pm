@@ -11848,13 +11848,17 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
               <span className="assignmentResourceLabel">Subs</span>
               <div className="assignmentResourceItems subcontractorResourceItems">
                 {assignment.subcontractors.map((item) => (
-                  <span className={`scheduleSubcontractorCard ${normalizeSubcontractorStatus(item.status)}`} key={item.subcontractor_id || item.id} title={`${subcontractorDisplayName(item)} / ${item.trade || "Subcontractor"} / ${subcontractorStatusLabel(item.status)}`}>
+                  <span className={`scheduleSubcontractorCard ${normalizeSubcontractorStatus(item.status)}`} key={item.subcontractor_id || item.id} aria-label={`${subcontractorDisplayName(item)} / ${item.trade || "Subcontractor"} / ${subcontractorStatusLabel(item.status)}`}>
                     <Construction size={14} />
                     <span>
                       <strong>{item.trade || "Subcontractor"}</strong>
                       <small>{subcontractorDisplayName(item)}</small>
                     </span>
                     <em>{subcontractorStatusLabel(item.status)}</em>
+                    <span className="subcontractorTooltip">
+                      <strong>{subcontractorDisplayName(item)}</strong>
+                      <small>{item.trade || "Subcontractor"} / {subcontractorStatusLabel(item.status)}</small>
+                    </span>
                   </span>
                 ))}
               </div>
