@@ -11804,7 +11804,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
           )}
           {assignment.subcontractors?.length > 0 && (
             <div className="assignmentResourceRow subcontractorRow">
-              <span className="assignmentResourceLabel">Subcontractors</span>
+              <span className="assignmentResourceLabel">Subs</span>
               <div className="assignmentResourceItems subcontractorResourceItems">
                 {assignment.subcontractors.map((item) => (
                   <span className={`scheduleSubcontractorCard ${normalizeSubcontractorStatus(item.status)}`} key={item.subcontractor_id || item.id} title={`${subcontractorDisplayName(item)} / ${item.trade || "Subcontractor"} / ${subcontractorStatusLabel(item.status)}`}>

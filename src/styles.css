@@ -12112,7 +12112,8 @@ html {
   grid-template-columns: minmax(0, 1fr) auto;
   grid-auto-rows: min-content;
   align-items: start;
-  gap: 3px 8px;
+  gap: 4px 8px;
+  flex: 0 0 auto;
   min-height: 0;
 }
 
@@ -12121,8 +12122,13 @@ html {
 .scheduleBlock.tightBlock .scheduleBlockTop strong {
   grid-column: 1;
   grid-row: 1 / span 2;
+  display: block;
   min-width: 0;
   padding-right: 2px;
+  overflow: hidden;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .resourceRow .scheduleBlock .scheduleBlockType,
@@ -12149,7 +12155,7 @@ html {
   position: relative;
   z-index: 2;
   flex: 0 0 auto;
-  margin-top: 2px;
+  margin-top: 0;
   margin-right: auto;
   max-width: min(100%, 178px);
 }
@@ -12157,6 +12163,70 @@ html {
 .scheduleBlock.tightBlock,
 .scheduleBlock.shortBlock {
   gap: 5px;
+}
+
+.resourceRow .scheduleBlock,
+.scheduleBlock {
+  overflow: hidden;
+}
+
+.scheduleBlock .assignmentResources {
+  gap: 5px;
+  overflow: hidden;
+}
+
+.scheduleBlock .assignmentResourceRow {
+  grid-template-columns: 50px minmax(0, 1fr);
+  min-height: 28px;
+  gap: 7px;
+  padding: 2px 5px;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.scheduleBlock .assignmentResourceLabel {
+  max-width: 50px;
+  padding: 3px 6px;
+}
+
+.scheduleBlock .subcontractorRow {
+  min-height: 26px;
+}
+
+.scheduleBlock .subcontractorResourceItems {
+  gap: 6px;
+  overflow: hidden;
+}
+
+.scheduleBlock .scheduleSubcontractorCard {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 24px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 5px;
+  padding: 4px 6px;
+  border-radius: 11px;
+}
+
+.scheduleBlock .scheduleSubcontractorCard svg {
+  width: 12px;
+  height: 12px;
+}
+
+.scheduleBlock .scheduleSubcontractorCard strong {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.scheduleBlock .scheduleSubcontractorCard small {
+  font-size: 9px;
+  line-height: 1;
+}
+
+.scheduleBlock .scheduleSubcontractorCard em {
+  min-height: 18px;
+  padding: 3px 6px;
+  font-size: 8px;
 }
 
 .scheduleBlock.tightBlock .scheduleBlockType,
