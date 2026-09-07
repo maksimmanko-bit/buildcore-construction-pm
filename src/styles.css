@@ -3984,7 +3984,7 @@ h1 {
   position: absolute;
   left: 50%;
   bottom: calc(100% + 9px);
-  z-index: 12;
+  z-index: 80;
   display: grid;
   gap: 2px;
   min-width: 132px;
@@ -4045,6 +4045,25 @@ h1 {
 .crewAvatarButton:focus-visible .crewAvatarTooltip {
   opacity: 1;
   transform: translate(-50%, 0) scale(1);
+}
+
+.resourceRow:has(.crewAvatarButton:hover),
+.resourceRow:has(.crewAvatarButton:focus-visible),
+.rowTrack:has(.crewAvatarButton:hover),
+.rowTrack:has(.crewAvatarButton:focus-visible),
+.scheduleBlock:has(.crewAvatarButton:hover),
+.scheduleBlock:has(.crewAvatarButton:focus-visible) {
+  z-index: 30;
+  overflow: visible;
+}
+
+.scheduleBlock:has(.crewAvatarButton:hover) .assignmentResources,
+.scheduleBlock:has(.crewAvatarButton:focus-visible) .assignmentResources,
+.scheduleBlock:has(.crewAvatarButton:hover) .assignmentResourceRow,
+.scheduleBlock:has(.crewAvatarButton:focus-visible) .assignmentResourceRow,
+.scheduleBlock:has(.crewAvatarButton:hover) .assignmentResourceItems,
+.scheduleBlock:has(.crewAvatarButton:focus-visible) .assignmentResourceItems {
+  overflow: visible;
 }
 
 .crewAvatarButton .avatar,

@@ -1438,11 +1438,11 @@ function getEquipmentAvatarOption(item = {}) {
   return equipmentAvatarOptions.find((option) => option.key === key) ?? equipmentAvatarOptions[0];
 }
 
-function EquipmentAvatar({ item, small = false }) {
+function EquipmentAvatar({ item, showTitle = true, small = false }) {
   const option = getEquipmentAvatarOption(item);
   const Icon = option.Icon;
   return (
-    <div className={`equipmentAvatar ${option.key} ${small ? "small" : ""}`} title={option.label}>
+    <div className={`equipmentAvatar ${option.key} ${small ? "small" : ""}`} title={showTitle ? option.label : undefined}>
       <Icon size={small ? 17 : 21} />
     </div>
   );
@@ -11772,7 +11772,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
                     draggable
                     key={person.id}
                     type="button"
-                    title={`Open ${profileDisplayName(person)}. Drag to Available to remove from ticket.`}
+                    aria-label={`Open ${profileDisplayName(person)}. Drag to Available to remove from ticket.`}
                     onClick={(event) => {
                       event.stopPropagation();
                       onOpenPerson?.(person);
@@ -11803,7 +11803,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
                     draggable
                     key={item.id}
                     type="button"
-                    title={`Drag ${item.name} to Available equipment to remove from ticket.`}
+                    aria-label={`Drag ${item.name} to Available equipment to remove from ticket.`}
                     onClick={(event) => {
                       event.stopPropagation();
                     }}
@@ -11813,7 +11813,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
                       event.dataTransfer.setData("application/x-buildcore-assigned-equipment", JSON.stringify({ equipmentId: item.id, visitId: assignment.visitId }));
                     }}
                   >
-                    <EquipmentAvatar item={item} small />
+                    <EquipmentAvatar item={item} showTitle={false} small />
                     <span className="crewAvatarTooltip">
                       <strong>{item.name}</strong>
                       <small>{item.unit_number || item.type || "Equipment"}</small>
