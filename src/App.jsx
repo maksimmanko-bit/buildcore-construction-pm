@@ -399,6 +399,20 @@ const timeLabels = ["7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "
 const colors = ["blue", "green", "yellow", "purple", "orange"];
 const scheduleStartHour = 7;
 const scheduleEndHour = 22;
+const SHOP_PROJECT_ID = "__shop__";
+const shopProject = {
+  id: SHOP_PROJECT_ID,
+  name: "Shop",
+  full_name: "Shop",
+  job_number: "Shop",
+  address: "",
+  addresses: [],
+  contact_name: "",
+  contact_phone: "",
+  contact_email: "",
+  description: "Internal shop work, preparation, cleaning, inventory, and other non-project tasks.",
+  status: "shop",
+};
 const defaultFeatureFlags = {
   safetyForm: true,
   beforeAfterPhotos: true,
@@ -534,6 +548,7 @@ const emptyProjectForm = {
 const emptyEquipmentForm = { name: "", type: "", unit_number: "", notes: "", avatar_key: "excavator" };
 const emptySubcontractorForm = { company_name: "", contact_person: "", phone: "", email: "", trade: "Electrical", notes: "" };
 const emptyVisitForm = {
+  ticket_kind: "project",
   project_id: "",
   address: "",
   visit_date: getWinnipegDateValue(),
@@ -608,7 +623,21 @@ function getProjectAddressOptions(projectOrForm = {}) {
   });
 }
 
+function isShopProjectId(value) {
+  return value === SHOP_PROJECT_ID;
+}
+
+function isShopVisit(visit = {}) {
+  return isShopProjectId(visit.project_id) || String(visit.ticket_kind || "").toLowerCase() === "shop";
+}
+
+function getVisitProject(visit, projects = []) {
+  if (isShopVisit(visit)) return shopProject;
+  return projects.find((project) => project.id === visit?.project_id) ?? null;
+}
+
 function getVisitAddress(visit, project) {
+  if (isShopVisit(visit)) return "";
   return visit?.address || primaryProjectAddress(project);
 }
 
@@ -717,6 +746,7 @@ function serializeVisitEditorForm(form) {
       .map((item) => ({ id: item.subcontractor_id, status: normalizeSubcontractorStatus(item.status) }))
       .sort((a, b) => String(a.id).localeCompare(String(b.id))),
     project_id: form.project_id ?? "",
+    ticket_kind: form.ticket_kind ?? "project",
     start_time: String(form.start_time ?? "07:00").slice(0, 5),
     visit_date: form.visit_date ?? "",
     work_scope: form.work_scope ?? "",
@@ -815,7 +845,7 @@ function getPersonWorkStatus({ date, person, personId, projects = [], visits = [
   const activeVisit = dayVisits.find((visit) => visit.status === "on_site");
   const plannedVisit = dayVisits.find((visit) => visit.status === "planned");
   const visit = activeVisit || plannedVisit;
-  const project = visit ? projects.find((item) => item.id === visit.project_id) : null;
+  const project = visit ? getVisitProject(visit, projects) : null;
 
   if (activeVisit) return { label: "Active", tone: "active", detail: project?.name || "On site" };
   if (person?.availability_status === "not_available") return { label: "Not Available", tone: "notAvailable", detail: "Manually unavailable" };
@@ -1243,7 +1273,7 @@ function describeVisitConflict({ candidate, visits = [], projects = [], people =
     if (visit.visit_date !== candidate.visit_date || visit.status === "cancelled") return;
     if (!overlaps(candidate.start_time, candidate.end_time, String(visit.start_time).slice(0, 5), String(visit.end_time).slice(0, 5))) return;
 
-    const project = projects.find((item) => item.id === visit.project_id);
+    const project = getVisitProject(visit, projects);
     const busyPeople = people.filter((person) => selectedPeople.has(person.id) && visit.people_ids?.includes(person.id));
     const busyEquipment = equipment.filter((item) => selectedEquipment.has(item.id) && visit.equipment_ids?.includes(item.id));
 
@@ -1316,15 +1346,16 @@ function DateField({ label, onChange, value }) {
   );
 }
 
-function ProjectSearchSelect({ onChange, projects = [], value }) {
+function ProjectSearchSelect({ includeShop = false, onChange, projects = [], value }) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const wrapRef = useRef(null);
-  const selectedProject = useMemo(() => projects.find((project) => project.id === value) ?? null, [projects, value]);
+  const options = useMemo(() => (includeShop ? [shopProject, ...projects] : projects), [includeShop, projects]);
+  const selectedProject = useMemo(() => options.find((project) => project.id === value) ?? null, [options, value]);
   const filteredProjects = useMemo(() => {
     const normalizedQuery = normalizeProjectSearch(query);
     if (!normalizedQuery) return [];
-    const ranked = projects
+    const ranked = options
       .map((project, index) => {
         const name = normalizeProjectSearch(project.name);
         const jobNumber = normalizeProjectSearch(project.job_number);
@@ -1341,7 +1372,7 @@ function ProjectSearchSelect({ onChange, projects = [], value }) {
       .sort((a, b) => b.score - a.score || a.index - b.index);
 
     return ranked.slice(0, normalizedQuery ? 12 : 8).map((item) => item.project);
-  }, [projects, query]);
+  }, [options, query]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -1364,7 +1395,7 @@ function ProjectSearchSelect({ onChange, projects = [], value }) {
         <Search size={17} />
         <input
           autoComplete="off"
-          placeholder={selectedProject ? `${selectedProject.name}${selectedProject.job_number ? ` / ${selectedProject.job_number}` : ""}` : "Search project or job number"}
+          placeholder={selectedProject ? `${selectedProject.name}${selectedProject.job_number ? ` / ${selectedProject.job_number}` : ""}` : includeShop ? "Search project, job number, or Shop" : "Search project or job number"}
           type="search"
           value={query}
           onChange={(event) => {
@@ -1384,6 +1415,15 @@ function ProjectSearchSelect({ onChange, projects = [], value }) {
           <em>{selectedProject.job_number || "No job number"}</em>
         </div>
       )}
+      {includeShop && !isShopProjectId(value) && (
+        <button className="shopQuickSelect" type="button" onClick={() => onChange(SHOP_PROJECT_ID)}>
+          <span className="shopQuickIcon">SH</span>
+          <span>
+            <strong>Shop task</strong>
+            <em>Internal work without project photos or safety form</em>
+          </span>
+        </button>
+      )}
       {isOpen && (
         <div className="projectSearchPopover" role="listbox">
           {query.trim() ? (
@@ -1391,7 +1431,7 @@ function ProjectSearchSelect({ onChange, projects = [], value }) {
               filteredProjects.map((project) => (
                 <button
                   aria-selected={project.id === value}
-                  className={project.id === value ? "projectSearchOption active" : "projectSearchOption"}
+                  className={`projectSearchOption ${isShopProjectId(project.id) ? "shopOption" : ""} ${project.id === value ? "active" : ""}`}
                   key={project.id}
                   type="button"
                   onClick={() => onChange(project.id)}
@@ -1407,7 +1447,7 @@ function ProjectSearchSelect({ onChange, projects = [], value }) {
               <div className="projectSearchEmpty">No projects found</div>
             )
           ) : (
-            <div className="projectSearchEmpty">Start typing a project name or job number</div>
+          <div className="projectSearchEmpty">{includeShop ? "Start typing a project name, job number, or Shop" : "Start typing a project name or job number"}</div>
           )}
         </div>
       )}
@@ -1929,7 +1969,7 @@ export default function App() {
       setServerConnected(true);
       scheduleWorkspaceCacheWrite(session.user.id, { profile: nextProfile, data: nextData });
 
-      if (selectedProjectId && !nextProjects.some((project) => project.id === selectedProjectId)) setSelectedProjectId("");
+      if (selectedProjectId && !isShopProjectId(selectedProjectId) && !nextProjects.some((project) => project.id === selectedProjectId)) setSelectedProjectId("");
     } catch (error) {
       setServerConnected(false);
       setNotice(error.message);
@@ -2196,10 +2236,11 @@ export default function App() {
     return (data.visits ?? [])
       .filter((visit) => visit.visit_date === selectedDate)
       .flatMap((visit) => {
-      const project = projectLookup.get(visit.project_id);
+      const project = isShopVisit(visit) ? shopProject : projectLookup.get(visit.project_id);
       const base = {
         visitId: visit.id,
-        projectId: visit.project_id,
+        projectId: isShopVisit(visit) ? SHOP_PROJECT_ID : visit.project_id,
+        recordType: isShopVisit(visit) ? "shopVisit" : "visit",
         title: project?.name ?? "Project visit",
         subtitle: visit.work_scope || normalizeVisitStatus(visit.status),
         start: toHour(visit.start_time),
@@ -2207,7 +2248,7 @@ export default function App() {
         timeText: formatTimeRange(visit.start_time, visit.end_time),
         status: visit.status,
         isFirstVisit: visit.is_first_visit,
-        color: project?.color ?? "blue",
+        color: isShopVisit(visit) ? "shop" : project?.color ?? "blue",
       };
 
       return [
@@ -2335,13 +2376,13 @@ export default function App() {
     return grouped;
   }, [assignmentsSource]);
   const getProfileName = useCallback((id, fallback = "Not set") => profileDisplayName(profileById.get(id), fallback), [profileById]);
-  const selectedProject = useMemo(() => (selectedProjectId ? projectById.get(selectedProjectId) ?? null : null), [projectById, selectedProjectId]);
+  const selectedProject = useMemo(() => (isShopProjectId(selectedProjectId) ? shopProject : selectedProjectId ? projectById.get(selectedProjectId) ?? null : null), [projectById, selectedProjectId]);
   const selectedAssignment = useMemo(() => assignmentsSource.find((item) => item.id === selectedAssignmentId) ?? null, [assignmentsSource, selectedAssignmentId]);
   const selectedProjectVisits = useMemo(
     () =>
       selectedProject
         ? (rowsSource.visits ?? [])
-            .filter((visit) => visit.project_id === selectedProject.id)
+            .filter((visit) => (isShopProjectId(selectedProject.id) ? isShopVisit(visit) : visit.project_id === selectedProject.id))
             .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`))
         : [],
     [rowsSource.visits, selectedProject],
@@ -2364,7 +2405,7 @@ export default function App() {
         : [],
     [activeFeatureFlags.changeOrders, rowsSource.changeOrders, selectedProject],
   );
-  const selectedVisit = useMemo(() => (selectedVisitId ? selectedProjectVisits.find((visit) => visit.id === selectedVisitId) ?? null : null), [selectedProjectVisits, selectedVisitId]);
+  const selectedVisit = useMemo(() => (selectedVisitId ? (rowsSource.visits ?? []).find((visit) => visit.id === selectedVisitId) ?? null : null), [rowsSource.visits, selectedVisitId]);
   const selectedSiteVisit = useMemo(() => (selectedSiteVisitId ? (rowsSource.siteVisits ?? []).find((item) => item.id === selectedSiteVisitId) ?? null : null), [rowsSource.siteVisits, selectedSiteVisitId]);
   const selectedChangeOrder = useMemo(() => (selectedChangeOrderId ? (rowsSource.changeOrders ?? []).find((item) => item.id === selectedChangeOrderId) ?? null : null), [rowsSource.changeOrders, selectedChangeOrderId]);
   const currentVisit = selectedVisit ?? selectedProjectVisits[0] ?? null;
@@ -2377,7 +2418,7 @@ export default function App() {
   const currentVisitSubcontractors = useMemo(() => (currentVisit ? normalizeVisitSubcontractorAssignments(currentVisit, subcontractorById) : []), [currentVisit, subcontractorById]);
   const selectedProjectActivities = useMemo(() => (selectedProject ? (rowsSource.activities ?? []).filter((item) => item.project_id === selectedProject.id) : []), [rowsSource.activities, selectedProject]);
   const workflowVisit = useMemo(() => (workflowVisitId ? (rowsSource.visits ?? []).find((visit) => visit.id === workflowVisitId) ?? currentVisit : currentVisit), [currentVisit, rowsSource.visits, workflowVisitId]);
-  const workflowProject = useMemo(() => (workflowVisit ? projectById.get(workflowVisit.project_id) ?? selectedProject : selectedProject), [projectById, selectedProject, workflowVisit]);
+  const workflowProject = useMemo(() => (workflowVisit ? getVisitProject(workflowVisit, rowsSource.projects) ?? selectedProject : selectedProject), [rowsSource.projects, selectedProject, workflowVisit]);
   const workflowPeople = useMemo(() => (workflowVisit ? (workflowVisit.people_ids ?? []).map((id) => profileById.get(id)).filter(Boolean) : currentVisitPeople), [currentVisitPeople, profileById, workflowVisit]);
   const selectedPerson = useMemo(() => (selectedPersonId ? [...(rowsSource.people ?? []), ...(rowsSource.pendingPeople ?? [])].find((person) => person.id === selectedPersonId) : null), [rowsSource.pendingPeople, rowsSource.people, selectedPersonId]);
   const todayValue = getWinnipegDateValue();
@@ -2480,11 +2521,11 @@ export default function App() {
     [assignmentsByEquipment, rowsSource.equipment, rowsSource.projects, rowsSource.visits, selectedDate],
   );
   const projectRows = useMemo(
-    () =>
-      rowsSource.projects
+    () => {
+      const regularProjectRows = rowsSource.projects
         .map((project, index) => {
           const projectVisits = (rowsSource.visits ?? [])
-            .filter((visit) => visit.project_id === project.id && visit.visit_date === selectedDate && visit.status !== "cancelled")
+            .filter((visit) => !isShopVisit(visit) && visit.project_id === project.id && visit.visit_date === selectedDate && visit.status !== "cancelled")
             .sort((a, b) => `${a.start_time} ${a.end_time}`.localeCompare(`${b.start_time} ${b.end_time}`));
           const projectSiteVisits = (rowsSource.siteVisits ?? [])
             .filter((item) => activeFeatureFlags.siteInspections && item.project_id === project.id && item.visit_date === selectedDate && item.status !== "cancelled")
@@ -2530,7 +2571,43 @@ export default function App() {
             }),
           };
         })
-        .filter((project) => project.assignments.length > 0),
+        .filter((project) => project.assignments.length > 0);
+      const shopVisits = (rowsSource.visits ?? [])
+        .filter((visit) => isShopVisit(visit) && visit.visit_date === selectedDate && visit.status !== "cancelled")
+        .sort((a, b) => `${a.start_time} ${a.end_time}`.localeCompare(`${b.start_time} ${b.end_time}`));
+      if (shopVisits.length === 0) return regularProjectRows;
+
+      const shopLanes = packVisitLanes(shopVisits);
+      const shopRow = {
+        ...shopProject,
+        kind: "shop",
+        subtitle: "Internal tasks",
+        color: "shop",
+        laneCount: shopLanes.laneCount,
+        assignments: shopVisits.map((visit) => ({
+          id: `visit-${visit.id}`,
+          visitId: visit.id,
+          projectId: SHOP_PROJECT_ID,
+          recordId: visit.id,
+          recordType: "shopVisit",
+          title: "Shop",
+          subtitle: visit.work_scope || "Shop task",
+          start: toHour(visit.start_time),
+          end: toHour(visit.end_time),
+          timeText: formatTimeRange(visit.start_time, visit.end_time),
+          status: "shop",
+          isFirstVisit: false,
+          color: "shop",
+          people: (visit.people_ids ?? []).map((id) => profileById.get(id)).filter(Boolean),
+          equipment: [],
+          subcontractors: [],
+          laneIndex: shopLanes.laneByVisitId.get(visit.id) ?? 0,
+          laneCount: shopLanes.laneCount,
+        })),
+      };
+
+      return [shopRow, ...regularProjectRows];
+    },
     [activeFeatureFlags.siteInspections, equipmentById, profileById, rowsSource.projects, rowsSource.siteVisits, rowsSource.visits, selectedDate, subcontractorById],
   );
   const availableTodayPeople = useMemo(
@@ -2563,6 +2640,7 @@ export default function App() {
   );
   const visitFormProject = useMemo(() => projectById.get(visitForm.project_id) ?? null, [projectById, visitForm.project_id]);
   const visitProjectAddressOptions = useMemo(() => getProjectAddressOptions(visitFormProject), [visitFormProject]);
+  const visitFormIsShop = isShopProjectId(visitForm.project_id) || visitForm.ticket_kind === "shop";
   const groupedVisitPickerPeople = useMemo(
     () =>
       tradeGroups
@@ -3407,10 +3485,21 @@ export default function App() {
       return;
     }
 
+    const isShopTask = isShopProjectId(visitForm.project_id) || visitForm.ticket_kind === "shop";
+    const selectedVisitProject = rowsSource.projects.find((project) => project.id === visitForm.project_id);
+    if (!isShopTask && !selectedVisitProject) {
+      setNotice("Select a project before saving the ticket.");
+      return;
+    }
+    const ticketPeopleIds = visitForm.people_ids ?? [];
+    const ticketEquipmentIds = isShopTask ? [] : visitForm.equipment_ids ?? [];
+    const ticketSubcontractors = isShopTask ? [] : visitForm.subcontractors ?? [];
+
     setActionPending("visit", true);
     const baseVisitPayload = {
-      project_id: visitForm.project_id,
-      address: visitForm.address || primaryProjectAddress(rowsSource.projects.find((project) => project.id === visitForm.project_id)),
+      ticket_kind: isShopTask ? "shop" : "project",
+      project_id: isShopTask ? null : visitForm.project_id,
+      address: isShopTask ? null : visitForm.address || primaryProjectAddress(selectedVisitProject),
       start_time: visitForm.start_time,
       end_time: visitForm.end_time,
     };
@@ -3425,7 +3514,7 @@ export default function App() {
       return;
     }
 
-    const notAvailablePeople = rowsSource.people.filter((person) => visitForm.people_ids.includes(person.id) && person.availability_status === "not_available");
+    const notAvailablePeople = rowsSource.people.filter((person) => ticketPeopleIds.includes(person.id) && person.availability_status === "not_available");
     if (notAvailablePeople.length) {
       setActionPending("visit", false);
       setNotice(`Ticket not saved: ${notAvailablePeople.map((person) => profileDisplayName(person)).join(", ")} marked Not Available.`);
@@ -3438,8 +3527,8 @@ export default function App() {
           visit_date: visitDate,
           start_time: visitForm.start_time,
           end_time: visitForm.end_time,
-          people_ids: visitForm.people_ids,
-          equipment_ids: visitForm.equipment_ids,
+          people_ids: ticketPeopleIds,
+          equipment_ids: ticketEquipmentIds,
         },
         visits: rowsSource.visits ?? [],
         projects: rowsSource.projects,
@@ -3483,7 +3572,7 @@ export default function App() {
         const { data: visit, error: visitError } = await visitQuery;
         if (visitError) throw visitError;
         if (!firstVisit) firstVisit = visit;
-        savedVisits.push({ ...visit, people_ids: visitForm.people_ids, equipment_ids: visitForm.equipment_ids, subcontractors: visitForm.subcontractors });
+        savedVisits.push({ ...visit, people_ids: ticketPeopleIds, equipment_ids: ticketEquipmentIds, subcontractors: ticketSubcontractors });
         if (!editingVisitId) createdVisitIds.push(visit.id);
 
         if (editingVisitId) {
@@ -3493,9 +3582,9 @@ export default function App() {
           if (clearPeople.error || clearEquipment.error || (clearSubcontractors.error && clearSubcontractors.error.code !== "42P01")) throw clearPeople.error || clearEquipment.error || clearSubcontractors.error;
         }
 
-        const peopleRowsToInsert = visitForm.people_ids.map((profileId) => ({ visit_id: visit.id, profile_id: profileId }));
-        const equipmentRowsToInsert = visitForm.equipment_ids.map((equipmentId) => ({ visit_id: visit.id, equipment_id: equipmentId }));
-        const subcontractorRowsToInsert = (visitForm.subcontractors ?? []).map((item) => ({
+        const peopleRowsToInsert = ticketPeopleIds.map((profileId) => ({ visit_id: visit.id, profile_id: profileId }));
+        const equipmentRowsToInsert = ticketEquipmentIds.map((equipmentId) => ({ visit_id: visit.id, equipment_id: equipmentId }));
+        const subcontractorRowsToInsert = ticketSubcontractors.map((item) => ({
           visit_id: visit.id,
           subcontractor_id: item.subcontractor_id,
           status: normalizeSubcontractorStatus(item.status),
@@ -3526,19 +3615,19 @@ export default function App() {
         };
       });
       setSelectedDate(firstVisit.visit_date);
-      setSelectedProjectId(firstVisit.project_id);
+      setSelectedProjectId(isShopVisit(firstVisit) ? SHOP_PROJECT_ID : firstVisit.project_id);
       setSelectedVisitId(firstVisit.id);
       void createNotifications({
-        builderIds: visitForm.people_ids,
+        builderIds: ticketPeopleIds,
         message: editingVisitId
-          ? `${currentUserName} updated your ticket on ${formatDateLabel(firstVisit.visit_date)}.`
-          : `${currentUserName} assigned you to a new ticket on ${formatDateLabel(firstVisit.visit_date)}.`,
-        projectId: firstVisit.project_id,
-        title: editingVisitId ? "Ticket updated" : "New ticket assigned",
+          ? `${currentUserName} updated your ${isShopTask ? "Shop task" : "ticket"} on ${formatDateLabel(firstVisit.visit_date)}.`
+          : `${currentUserName} assigned you to a new ${isShopTask ? "Shop task" : "ticket"} on ${formatDateLabel(firstVisit.visit_date)}.`,
+        projectId: firstVisit.project_id ?? null,
+        title: editingVisitId ? (isShopTask ? "Shop task updated" : "Ticket updated") : isShopTask ? "New Shop task assigned" : "New ticket assigned",
         type: editingVisitId ? "ticket_updated" : "ticket_assigned",
         visitId: firstVisit.id,
       });
-      const plannedSubcontractors = (visitForm.subcontractors ?? [])
+      const plannedSubcontractors = ticketSubcontractors
         .filter((item) => normalizeSubcontractorStatus(item.status) === "planned")
         .map((item) => subcontractorById.get(item.subcontractor_id))
         .filter(Boolean);
@@ -4089,6 +4178,7 @@ export default function App() {
   }
 
   function visitActionsBlockedBySafety(visit) {
+    if (isShopVisit(visit)) return false;
     return Boolean(activeFeatureFlags.safetyForm && visit?.status === "on_site" && visit?.people_ids?.includes(profile?.id) && !profileHasSafetyForVisit(visit, profile));
   }
 
@@ -4098,8 +4188,8 @@ export default function App() {
 
   async function logVisitActivity(visit, activityType, message, metadata = {}) {
     if (!supabase || !profile || !visit?.id) return;
-    const projectId = visit.project_id ?? selectedProject?.id;
-    if (!projectId || !rowsSource.companyId) return;
+    const projectId = isShopVisit(visit) ? null : visit.project_id ?? selectedProject?.id;
+    if (!rowsSource.companyId || (!projectId && !isShopVisit(visit))) return;
 
     const { error } = await supabase.from("visit_activity").insert({
       company_id: rowsSource.companyId,
@@ -4297,7 +4387,7 @@ export default function App() {
 
   function openVisitOverlay(visit) {
     if (!visit) return;
-    setSelectedProjectId(visit.project_id);
+    setSelectedProjectId(isShopVisit(visit) ? SHOP_PROJECT_ID : visit.project_id);
     setSelectedVisitId(visit.id);
     setSelectedDate(visit.visit_date);
     showDetailOverlay("visit");
@@ -4442,8 +4532,22 @@ export default function App() {
     const hasBefore = files.some((file) => file.file_type === "before_photo");
 
     setWorkflowVisitId(visit.id);
-    setSelectedProjectId(visit.project_id);
+    setSelectedProjectId(isShopVisit(visit) ? SHOP_PROJECT_ID : visit.project_id);
     setSelectedVisitId(visit.id);
+
+    if (isShopVisit(visit)) {
+      updateVisitStatusById(visit.id, "on_site").then((updated) => {
+        if (!updated) return;
+        logVisitActivity(visit, "arrived", `${currentUserName} started the Shop task.`, {
+          arrivedAt: new Date().toISOString(),
+          skippedSafetyForm: true,
+          skippedBeforePhotos: true,
+          shopTask: true,
+        });
+        setNotice("Shop task started.");
+      });
+      return;
+    }
 
     if (activeFeatureFlags.safetyForm && !hasSafety) {
       const assignedTeam = rowsSource.people.filter((person) => visit.people_ids?.includes(person.id));
@@ -4493,14 +4597,31 @@ export default function App() {
       return;
     }
 
-    setSelectedProjectId(visit.project_id);
+    setSelectedProjectId(isShopVisit(visit) ? SHOP_PROJECT_ID : visit.project_id);
     setSelectedVisitId(visit.id);
     setWorkflowVisitId(visit.id);
+    if (isShopVisit(visit)) {
+      updateVisitStatusById(visit.id, "completed", { completion_notes: "" }).then((updated) => {
+        if (!updated) return;
+        logVisitActivity(visit, "completed", `${currentUserName} completed the Shop task.`, {
+          completedAt: new Date().toISOString(),
+          skippedAfterPhotos: true,
+          shopTask: true,
+        });
+        triggerSoftPulse();
+        setNotice("Shop task completed.");
+      });
+      return;
+    }
     setCompletionForm({ notes: "", files: [], captions: {} });
     setModalType("completeVisit");
   }
 
   function openVisitNoteModal(visit = currentVisit, note = null) {
+    if (isShopVisit(visit)) {
+      setNotice("Shop tasks use the task description only. Notes and photos are not required.");
+      return;
+    }
     if (!visit?.id || visit.status !== "on_site") {
       setNotice("Ticket notes are available only while the ticket is Active.");
       return;
@@ -4972,7 +5093,7 @@ export default function App() {
       return;
     }
 
-    const project = rowsSource.projects.find((item) => item.id === visitToDelete.project_id) ?? selectedProject;
+    const project = getVisitProject(visitToDelete, rowsSource.projects) ?? selectedProject;
     const confirmed = await confirmAction({
       title: "Remove ticket?",
       message: `Remove ticket for "${project?.name ?? "Project"}" on ${formatDateLabel(visitToDelete.visit_date)}? This will also remove its Activity Feed history.`,
@@ -5690,16 +5811,18 @@ export default function App() {
     if (!(await acquireEditLock({ mode: "create", resourceType: "visit" }))) return;
 
     setEditingVisitId(null);
-    const project = rowsSource.projects.find((item) => item.id === projectId);
+    const isShopTask = isShopProjectId(projectId) || defaults.ticket_kind === "shop";
+    const project = isShopTask ? shopProject : rowsSource.projects.find((item) => item.id === projectId);
     const nextVisitForm = {
       ...emptyVisitForm,
-      visit_date: selectedDate,
-      project_id: projectId ?? "",
-      address: primaryProjectAddress(project),
       ...defaults,
+      ticket_kind: isShopTask ? "shop" : "project",
+      visit_date: selectedDate,
+      project_id: isShopTask ? SHOP_PROJECT_ID : projectId ?? "",
+      address: isShopTask ? "" : primaryProjectAddress(project),
       people_ids: defaults.people_ids ?? [],
-      equipment_ids: defaults.equipment_ids ?? [],
-      subcontractors: defaults.subcontractors ?? [],
+      equipment_ids: isShopTask ? [] : defaults.equipment_ids ?? [],
+      subcontractors: isShopTask ? [] : defaults.subcontractors ?? [],
       work_scopes: defaults.work_scopes ?? [defaults.work_scope ?? ""],
     };
     setVisitForm(nextVisitForm);
@@ -5753,6 +5876,10 @@ export default function App() {
     }
     if (visit.status !== "on_site") {
       setNotice("Change Order from Overview is available only for an Active ticket.");
+      return;
+    }
+    if (isShopVisit(visit)) {
+      setNotice("Shop tasks are internal and cannot create Change Orders.");
       return;
     }
     if (visitActionsBlockedBySafety(visit)) {
@@ -5847,20 +5974,22 @@ export default function App() {
     if (!(await acquireEditLock({ mode: "edit", resourceId: visit.id, resourceType: "visit" }))) return;
 
     setEditingVisitId(visit.id);
-    const visitProject = rowsSource.projects.find((project) => project.id === visit.project_id) ?? selectedProject;
+    const isShopTask = isShopVisit(visit);
+    const visitProject = isShopTask ? shopProject : rowsSource.projects.find((project) => project.id === visit.project_id) ?? selectedProject;
     const nextVisitForm = {
-      project_id: visit.project_id ?? selectedProject?.id ?? "",
-      address: getVisitAddress(visit, visitProject),
+      ticket_kind: isShopTask ? "shop" : "project",
+      project_id: isShopTask ? SHOP_PROJECT_ID : visit.project_id ?? selectedProject?.id ?? "",
+      address: isShopTask ? "" : getVisitAddress(visit, visitProject),
       visit_date: visit.visit_date ?? selectedDate,
       duration_days: "1",
       start_time: String(visit.start_time ?? "07:00").slice(0, 5),
       end_time: String(visit.end_time ?? "17:00").slice(0, 5),
       work_scope: visit.work_scope ?? "",
       work_scopes: [visit.work_scope ?? ""],
-      is_first_visit: Boolean(visit.is_first_visit),
+      is_first_visit: !isShopTask && Boolean(visit.is_first_visit),
       people_ids: visit.people_ids ?? [],
-      equipment_ids: visit.equipment_ids ?? [],
-      subcontractors: normalizeVisitSubcontractorAssignments(visit, subcontractorById).map((item) => ({
+      equipment_ids: isShopTask ? [] : visit.equipment_ids ?? [],
+      subcontractors: isShopTask ? [] : normalizeVisitSubcontractorAssignments(visit, subcontractorById).map((item) => ({
         subcontractor_id: item.subcontractor_id || item.id,
         status: normalizeSubcontractorStatus(item.status),
       })),
@@ -6099,7 +6228,7 @@ export default function App() {
 
   async function exportCurrentVisitPdf(visit = currentVisit) {
     if (!visit) return;
-    const project = rowsSource.projects.find((item) => item.id === visit.project_id) ?? selectedProject;
+    const project = getVisitProject(visit, rowsSource.projects) ?? selectedProject;
     setLoading(true);
     setNotice("Preparing ticket PDF...");
     try {
@@ -6333,8 +6462,17 @@ function toggleVisitArray(key, value) {
   }
 
   function updateVisitProject(projectId) {
+    const isShopTask = isShopProjectId(projectId);
     const project = rowsSource.projects.find((item) => item.id === projectId);
-    setVisitForm((current) => ({ ...current, project_id: projectId, address: primaryProjectAddress(project) }));
+    setVisitForm((current) => ({
+      ...current,
+      ticket_kind: isShopTask ? "shop" : "project",
+      project_id: projectId,
+      address: isShopTask ? "" : primaryProjectAddress(project),
+      equipment_ids: isShopTask ? [] : current.equipment_ids,
+      subcontractors: isShopTask ? [] : current.subcontractors,
+      is_first_visit: isShopTask ? false : current.is_first_visit,
+    }));
   }
 
   function updateProjectAddress(index, patch) {
@@ -7347,9 +7485,9 @@ function toggleVisitArray(key, value) {
           <AppModal title={editingVisitId ? "Edit visit" : "Schedule visit"} onClose={closeEditorModal} wide>
             <form className="stackForm twoColumns" onSubmit={saveVisit}>
               <FormField label="Project">
-                <ProjectSearchSelect projects={rowsSource.projects} value={visitForm.project_id} onChange={updateVisitProject} />
+                <ProjectSearchSelect includeShop projects={rowsSource.projects} value={visitForm.project_id} onChange={updateVisitProject} />
               </FormField>
-              {visitForm.project_id && (
+              {visitForm.project_id && !visitFormIsShop && (
                 <FormField label="Ticket address">
                   <select required value={visitForm.address} onChange={(event) => setVisitForm({ ...visitForm, address: event.target.value })}>
                     <option value="">Select address</option>
@@ -7404,21 +7542,27 @@ function toggleVisitArray(key, value) {
                   {visitFormDates.join(", ")}
                 </div>
               )}
-              <label className="checkLine switchLine">
-                <input type="checkbox" checked={visitForm.is_first_visit} onChange={(event) => setVisitForm({ ...visitForm, is_first_visit: event.target.checked })} />
-                <span className="switchTrack" aria-hidden="true">
-                  <span />
-                </span>
-                First site visit
-              </label>
+              {!visitFormIsShop && (
+                <label className="checkLine switchLine">
+                  <input type="checkbox" checked={visitForm.is_first_visit} onChange={(event) => setVisitForm({ ...visitForm, is_first_visit: event.target.checked })} />
+                  <span className="switchTrack" aria-hidden="true">
+                    <span />
+                  </span>
+                  First site visit
+                </label>
+              )}
               <GroupedPickerList groups={groupedVisitPickerPeople} selected={visitForm.people_ids} onToggle={(id) => toggleVisitArray("people_ids", id)} title="People by Trade" />
-              <PickerList title="Equipment" items={visitPickerEquipment} selected={visitForm.equipment_ids} labelKey="name" onToggle={(id) => toggleVisitArray("equipment_ids", id)} />
-              <SubcontractorPickerList
-                items={visitPickerSubcontractors}
-                selected={visitForm.subcontractors}
-                onStatusChange={updateVisitSubcontractorStatusDraft}
-                onToggle={toggleVisitSubcontractor}
-              />
+              {!visitFormIsShop && (
+                <>
+                  <PickerList title="Equipment" items={visitPickerEquipment} selected={visitForm.equipment_ids} labelKey="name" onToggle={(id) => toggleVisitArray("equipment_ids", id)} />
+                  <SubcontractorPickerList
+                    items={visitPickerSubcontractors}
+                    selected={visitForm.subcontractors}
+                    onStatusChange={updateVisitSubcontractorStatusDraft}
+                    onToggle={toggleVisitSubcontractor}
+                  />
+                </>
+              )}
               <div className="formActions wide">
                 <button className="addButton" type="submit" disabled={visitSaving || dictationBusy || !visitForm.project_id}>
                   <Save size={18} />
@@ -7975,8 +8119,9 @@ function SubcontractorContactLinks({ item, compact = false }) {
 }
 
 function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationBusy = false, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onDownloadArchive, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onSubcontractorStatus, onUploaded, people, profileId, profiles, project, safetyLocked = false, subcontractors = [], today = getWinnipegDateValue(), visit }) {
+  const isShopTask = isShopVisit(visit);
   const ticketAddress = getVisitAddress(visit, project);
-  const safetyEnabled = normalizeFeatureFlags(featureFlags).safetyForm;
+  const safetyEnabled = !isShopTask && normalizeFeatureFlags(featureFlags).safetyForm;
   const dateRelation = compareDateValue(visit.visit_date, today);
   const isPastVisit = dateRelation < 0;
   const isFutureVisit = dateRelation > 0;
@@ -7995,10 +8140,10 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
   const notArrivedPeople = crewStatus.filter((item) => !item.arrived).map((item) => item.person);
   const missingSafetyPeople = crewStatus.filter((item) => item.missingSafety).map((item) => item.person);
   return (
-    <DetailOverlayShell title={`${project.name} Ticket`} onClose={onClose}>
+    <DetailOverlayShell title={isShopTask ? "Shop Task" : `${project.name} Ticket`} onClose={onClose}>
       <div className="ticketHeaderCard">
         <div>
-          <span className={`ticketStatus ${visit.status}`}>{normalizeVisitStatus(visit.status)}</span>
+          <span className={`ticketStatus ${isShopTask ? "shop" : visit.status}`}>{isShopTask ? "Shop" : normalizeVisitStatus(visit.status)}</span>
           <h3>{visit.work_scope || "Scheduled work"}</h3>
           <p>{formatDateLabel(visit.visit_date)} · {formatTimeRange(visit.start_time, visit.end_time)}</p>
         </div>
@@ -8024,15 +8169,15 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
         <ProjectFact icon={Calendar} label="Scheduled" value={formatTimeRange(visit.start_time, visit.end_time)} />
         <ProjectFact icon={CheckCircle2} label="Actual start" value={visit.arrived_at ? formatDateTimeLabel(visit.arrived_at) : "Not started"} />
         <ProjectFact icon={ClipboardCheck} label="Actual finish" value={visit.completed_at ? formatDateTimeLabel(visit.completed_at) : "Not finished"} />
-        <ProjectFact icon={MapPin} label="Address" value={ticketAddress || "Not set"} />
-        <ProjectFact icon={UserRound} label="Contact" value={`${project.contact_name || "Not set"} ${project.contact_phone || ""}`} />
+        {!isShopTask && <ProjectFact icon={MapPin} label="Address" value={ticketAddress || "Not set"} />}
+        {!isShopTask && <ProjectFact icon={UserRound} label="Contact" value={`${project.contact_name || "Not set"} ${project.contact_phone || ""}`} />}
         <ProjectFact icon={ClipboardCheck} label="Assigned by" value={getProfileName(visit.assigned_by ?? visit.created_by)} />
         <ProjectFact icon={UsersRound} label="Team" value={people.map((person) => person.full_name || person.email).join(", ") || "No team assigned"} />
-        <ProjectFact icon={Truck} label="Equipment" value={equipment.map((item) => item.name).join(", ") || "No equipment"} />
-        <ProjectFact icon={Construction} label="Subcontractors" value={subcontractors.map((item) => `${subcontractorDisplayName(item)} (${subcontractorStatusLabel(item.status)})`).join(", ") || "No subcontractors"} />
+        {!isShopTask && <ProjectFact icon={Truck} label="Equipment" value={equipment.map((item) => item.name).join(", ") || "No equipment"} />}
+        {!isShopTask && <ProjectFact icon={Construction} label="Subcontractors" value={subcontractors.map((item) => `${subcontractorDisplayName(item)} (${subcontractorStatusLabel(item.status)})`).join(", ") || "No subcontractors"} />}
       </dl>
 
-      {people.length > 0 && (
+      {!isShopTask && people.length > 0 && (
         <section className="crewArrivalCard">
           <div className="panelSectionHeader">
             <h3>Late Arrival / Partial Crew</h3>
@@ -8046,7 +8191,7 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
         </section>
       )}
 
-      {subcontractors.length > 0 && (
+      {!isShopTask && subcontractors.length > 0 && (
         <section className="subcontractorTicketCard">
           <div className="panelSectionHeader">
             <h3>Subcontractors</h3>
@@ -8086,13 +8231,15 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
       )}
 
       <div className="ticketScopeGrid">
+        {!isShopTask && (
+          <section>
+            <h3>Project Work Description</h3>
+            <p>{project.description || "No project work description yet."}</p>
+          </section>
+        )}
         <section>
-          <h3>Project Work Description</h3>
-          <p>{project.description || "No project work description yet."}</p>
-        </section>
-        <section>
-          <h3>Today Work Scope</h3>
-          <p>{visit.work_scope || "No work scope for this ticket."}</p>
+          <h3>{isShopTask ? "Shop task description" : "Today Work Scope"}</h3>
+          <p>{visit.work_scope || (isShopTask ? "No Shop task description." : "No work scope for this ticket.")}</p>
         </section>
       </div>
 
@@ -8116,7 +8263,7 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
               {officeOverrideAvailable ? "Office Close" : "Complete"}
             </button>
           )}
-          {canFinishVisit && !safetyLocked && (
+          {!isShopTask && canFinishVisit && !safetyLocked && (
             <button type="button" onClick={() => onOpenNote?.(visit)}>
               <MessageSquarePlus size={18} />
               Add Note
@@ -8136,26 +8283,28 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
         <div className="thanksBox">Thank you. This ticket is Done.</div>
       )}
 
-      <VisitNotesSection files={files} getProfileName={getProfileName} notes={notes} onEdit={(note) => onOpenNote?.(visit, note)} onOpenAttachment={onOpenAttachment} profiles={profiles} visit={visit} />
+      {!isShopTask && <VisitNotesSection files={files} getProfileName={getProfileName} notes={notes} onEdit={(note) => onOpenNote?.(visit, note)} onOpenAttachment={onOpenAttachment} profiles={profiles} visit={visit} />}
 
-      <AttachmentSections
-        featureFlags={featureFlags}
-        files={files}
-        onDownloadArchive={onDownloadArchive}
-        onOpen={onOpenAttachment}
-        profiles={profiles}
-        uploader={{
-          attachments: files,
-          companyId,
-          dictation,
-          dictationBusy,
-          profileId,
-          projectId: project.id,
-          visitId: visit.id,
-          onOpen: onOpenAttachment,
-          onUploaded,
-        }}
-      />
+      {!isShopTask && (
+        <AttachmentSections
+          featureFlags={featureFlags}
+          files={files}
+          onDownloadArchive={onDownloadArchive}
+          onOpen={onOpenAttachment}
+          profiles={profiles}
+          uploader={{
+            attachments: files,
+            companyId,
+            dictation,
+            dictationBusy,
+            profileId,
+            projectId: project.id,
+            visitId: visit.id,
+            onOpen: onOpenAttachment,
+            onUploaded,
+          }}
+        />
+      )}
 
     </DetailOverlayShell>
   );
@@ -10012,13 +10161,14 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
   const calendarWrapRef = useRef(null);
   const assignedVisits = visits ?? [];
   const firstVisit = assignedVisits[0];
-  const firstProject = firstVisit ? projects.find((project) => project.id === firstVisit.project_id) : null;
+  const firstProject = firstVisit ? getVisitProject(firstVisit, projects) : null;
   const firstAddress = getVisitAddress(firstVisit, firstProject);
   const isToday = selectedDate === today;
   const setOverviewDate = (date) => onDateChange?.(date);
   const flags = normalizeFeatureFlags(data.featureFlags);
 
   function currentUserHasSafety(files, visit) {
+    if (isShopVisit(visit)) return true;
     if (!flags.safetyForm) return true;
     if (!visit?.people_ids?.includes(profile?.id)) return true;
     return personHasSafetyFile(profile, files);
@@ -10100,7 +10250,8 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
 
       {assignedVisits.length === 0 && <div className="emptyState">{isToday ? "No visits assigned to you today." : `No visits assigned to you on ${formatDateLabel(selectedDate)}.`}</div>}
       {assignedVisits.map((visit) => {
-        const project = projects.find((item) => item.id === visit.project_id);
+        const isShopTask = isShopVisit(visit);
+        const project = getVisitProject(visit, projects);
         const files = getVisitFiles(visit);
         const hasCurrentUserSafety = currentUserHasSafety(files, visit);
         const dateRelation = compareDateValue(visit.visit_date, today);
@@ -10111,7 +10262,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
         const safetyLocked = canFinishVisit && !hasCurrentUserSafety;
         const hasBefore = files.some((file) => file.file_type === "before_photo");
         const hasAfter = files.some((file) => file.file_type === "completion_photo");
-        const sitePhone = project?.contact_phone || "";
+        const sitePhone = isShopTask ? "" : project?.contact_phone || "";
         const callablePhone = sitePhone.replace(/[^\d+]/g, "");
         const assignedPeople = (data.people ?? []).filter((person) => visit.people_ids?.includes(person.id));
         const assignedEquipment = (data.equipment ?? []).filter((item) => visit.equipment_ids?.includes(item.id));
@@ -10122,25 +10273,28 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
         return (
           <section className="todayTicket" key={visit.id}>
             <div className="ticketTopLine">
-              <span className={`ticketStatus ${visit.status}`}>{normalizeVisitStatus(visit.status)}</span>
+              <span className={`ticketStatus ${isShopTask ? "shop" : visit.status}`}>{isShopTask ? "Shop" : normalizeVisitStatus(visit.status)}</span>
               <button className="outlineButton" type="button" onClick={() => onOpenVisit(visit)}>
                 View Ticket
               </button>
             </div>
-            <h2>{project?.name || "Project visit"}</h2>
+            <h2>{isShopTask ? "Shop" : project?.name || "Project visit"}</h2>
             <div className="overviewScopeGrid">
+              {!isShopTask && (
+                <section>
+                  <span>Project work description</span>
+                  <p>{project?.description || "No project description saved yet."}</p>
+                </section>
+              )}
               <section>
-                <span>Project work description</span>
-                <p>{project?.description || "No project description saved yet."}</p>
-              </section>
-              <section>
-                <span>Today's work scope</span>
-                <p>{visit.work_scope || "Today's scheduled work"}</p>
+                <span>{isShopTask ? "Shop task description" : "Today's work scope"}</span>
+                <p>{visit.work_scope || (isShopTask ? "Today's Shop task" : "Today's scheduled work")}</p>
               </section>
             </div>
 
             <dl className="detailFacts compact">
               <ProjectFact icon={Calendar} label="Ticket Date" value={formatDateLabel(visit.visit_date)} />
+              {!isShopTask && (
               <ProjectFact
                 icon={MapPin}
                 label="Address"
@@ -10158,7 +10312,9 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                   )
                 }
               />
-              <ProjectFact icon={CloudSun} label="Weather" value={weather.status === "ready" ? `${weather.data.temperature}°C, ${weather.data.condition}` : weather.status === "loading" ? "Loading..." : "Not available"} />
+              )}
+              {!isShopTask && <ProjectFact icon={CloudSun} label="Weather" value={weather.status === "ready" ? `${weather.data.temperature}°C, ${weather.data.condition}` : weather.status === "loading" ? "Loading..." : "Not available"} />}
+              {!isShopTask && (
               <ProjectFact
                 icon={UserRound}
                 label="Site Contact"
@@ -10174,8 +10330,9 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                   </span>
                 }
               />
+              )}
               <ProjectFact icon={ClipboardCheck} label="Assigned by" value={getProfileName(visit.assigned_by ?? visit.created_by)} />
-              <ProjectFact icon={ClipboardCheck} label="Checklist" value={`Safety ${hasCurrentUserSafety ? "done" : "needed"} / Before ${hasBefore ? "done" : "needed"} / After ${hasAfter ? "done" : "needed"}`} />
+              {!isShopTask && <ProjectFact icon={ClipboardCheck} label="Checklist" value={`Safety ${hasCurrentUserSafety ? "done" : "needed"} / Before ${hasBefore ? "done" : "needed"} / After ${hasAfter ? "done" : "needed"}`} />}
             </dl>
 
             <div className="overviewAssignmentGrid">
@@ -10191,6 +10348,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                   <p>No people assigned.</p>
                 )}
               </section>
+              {!isShopTask && (
               <section>
                 <h3>Equipment</h3>
                 {assignedEquipment.length ? (
@@ -10203,6 +10361,8 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                   <p>No equipment assigned.</p>
                 )}
               </section>
+              )}
+              {!isShopTask && (
               <section>
                 <h3>Subcontractors</h3>
                 {assignedSubcontractors.length ? (
@@ -10222,6 +10382,7 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                   <p>No subcontractors assigned.</p>
                 )}
               </section>
+              )}
             </div>
 
             {canStartVisit && (
@@ -10243,14 +10404,18 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
             )}
             {canFinishVisit && !safetyLocked && (
               <div className="visitActions wideActions">
-                <button type="button" onClick={() => onOpenNote?.(visit)}>
-                  <MessageSquarePlus size={18} />
-                  Add Note
-                </button>
-                <button type="button" onClick={() => onCreateChangeOrder?.(visit)}>
-                  <FileBarChart2 size={18} />
-                  Create Change Order
-                </button>
+                {!isShopTask && (
+                  <button type="button" onClick={() => onOpenNote?.(visit)}>
+                    <MessageSquarePlus size={18} />
+                    Add Note
+                  </button>
+                )}
+                {!isShopTask && (
+                  <button type="button" onClick={() => onCreateChangeOrder?.(visit)}>
+                    <FileBarChart2 size={18} />
+                    Create Change Order
+                  </button>
+                )}
                 <button className="completeWorkButton" type="button" onClick={() => onComplete(visit)}>
                   <CheckCircle2 size={18} />
                   Complete Work
@@ -11406,6 +11571,8 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleG
               <Avatar profile={row} url={avatarUrls[row.id]} />
             ) : row.kind === "project" ? (
               <div className={`equipmentAvatar projectAvatar ${row.color ?? "blue"}`}>{makeInitials(row.name, "PR")}</div>
+            ) : row.kind === "shop" ? (
+              <div className="equipmentAvatar projectAvatar shop">SH</div>
             ) : (
               <EquipmentAvatar item={row} />
             )}
@@ -11677,7 +11844,8 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
   const isTightBlock = width < 24;
   const laneCount = Math.max(1, assignment.laneCount ?? 1);
   const laneIndex = Math.min(laneCount - 1, Math.max(0, assignment.laneIndex ?? 0));
-  const typeLabel = assignment.recordType === "siteVisit" ? "Inspection" : "Work Ticket";
+  const isShopAssignment = assignment.recordType === "shopVisit";
+  const typeLabel = isShopAssignment ? "Shop" : assignment.recordType === "siteVisit" ? "Inspection" : "Work Ticket";
   const resourceRowCount = Number(assignment.people?.length > 0) + Number(assignment.equipment?.length > 0) + Number(assignment.subcontractors?.length > 0);
   const hasSubcontractors = assignment.subcontractors?.length > 0;
   const verticalStyle =
@@ -11709,14 +11877,15 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
       }}
       onDragOver={(event) => {
         if (!assignment.visitId) return;
-        if (
+        const isPersonDrag =
           event.dataTransfer.types.includes("application/x-buildcore-person") ||
           event.dataTransfer.types.includes("application/x-buildcore-person-group") ||
-          event.dataTransfer.types.includes("application/x-buildcore-assigned-person") ||
+          event.dataTransfer.types.includes("application/x-buildcore-assigned-person");
+        const isEquipmentOrSubDrag =
           event.dataTransfer.types.includes("application/x-buildcore-equipment") ||
           event.dataTransfer.types.includes("application/x-buildcore-assigned-equipment") ||
-          event.dataTransfer.types.includes("application/x-buildcore-subcontractor")
-        ) {
+          event.dataTransfer.types.includes("application/x-buildcore-subcontractor");
+        if ((isPersonDrag || isEquipmentOrSubDrag) && (!isShopAssignment || isPersonDrag)) {
           event.preventDefault();
           event.stopPropagation();
           event.dataTransfer.dropEffect = "copy";
@@ -11761,6 +11930,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
         const subcontractorId = event.dataTransfer.getData("application/x-buildcore-subcontractor");
         const hasPeopleGroupDrag = Boolean(peopleGroupDrag && event.dataTransfer.types.includes("application/x-buildcore-person-group"));
         if (!personId && !personGroupRaw && !hasPeopleGroupDrag && !assignedPersonRaw && !equipmentId && !assignedEquipmentRaw && !subcontractorId) return;
+        if (isShopAssignment && (equipmentId || assignedEquipmentRaw || subcontractorId)) return;
         event.preventDefault();
         event.stopPropagation();
         setDropHint(null);
@@ -11814,7 +11984,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
       <span className="scheduleBlockTop">
         <strong>{assignment.title}</strong>
         <em className="scheduleBlockType">{typeLabel}</em>
-        {assignment.status && <em className="scheduleBlockStatus">{assignment.recordType === "siteVisit" && assignment.status === "completed" ? "Done" : normalizeVisitStatus(assignment.status)}</em>}
+        {assignment.status && !isShopAssignment && <em className="scheduleBlockStatus">{assignment.recordType === "siteVisit" && assignment.status === "completed" ? "Done" : normalizeVisitStatus(assignment.status)}</em>}
       </span>
       {assignment.timeText && <small className="scheduleBlockTime">{assignment.timeText}</small>}
       {(assignment.people?.length > 0 || assignment.equipment?.length > 0 || assignment.subcontractors?.length > 0) && (
