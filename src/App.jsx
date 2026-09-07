@@ -2685,6 +2685,13 @@ export default function App() {
     const options = timePickerOptions.filter((option) => option.value > visitForm.start_time);
     return options.length ? options : timePickerOptions.slice(-1);
   }, [visitForm.start_time]);
+  useEffect(() => {
+    if (modalType !== "visit") return;
+    setVisitForm((current) => {
+      const normalized = normalizeVisitTimeDraft(current);
+      return normalized.start_time === current.start_time && normalized.end_time === current.end_time ? current : normalized;
+    });
+  }, [editingVisitId, minimumVisitStartTime, modalType, visitForm.visit_date, visitForm.start_time, visitForm.end_time]);
   const safetyFormHasDraft =
     Object.values(safetyForm.responses ?? {}).some((value) => JSON.stringify(value ?? "").replace(/[{}\[\]":,]/g, "").trim().length > 0) ||
     Object.values(safetyForm.signatures ?? {}).some((signature) => String(signature ?? "").trim().length > 0);

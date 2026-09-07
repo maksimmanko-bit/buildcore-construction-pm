@@ -2,7 +2,7 @@ create or replace function public.visit_effective_end_time(
   visit_date date,
   start_time time,
   end_time time,
-  status text,
+  status public.visit_status,
   completed_at timestamptz
 )
 returns time
