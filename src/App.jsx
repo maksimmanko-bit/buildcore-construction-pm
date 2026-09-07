@@ -1312,7 +1312,7 @@ function ProjectSearchSelect({ onChange, projects = [], value }) {
           <ChevronDown size={16} />
         </button>
       </div>
-      {selectedProject && (
+      {selectedProject && !isOpen && (
         <div className="selectedProjectPreview">
           <span>Selected</span>
           <strong>{selectedProject.name}</strong>

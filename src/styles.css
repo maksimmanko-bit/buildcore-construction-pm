@@ -5813,13 +5813,9 @@ canvas {
   }
 
   .projectSearchPopover {
-    position: fixed;
     z-index: 10040;
-    top: auto;
-    right: max(14px, env(safe-area-inset-right));
-    bottom: max(18px, env(safe-area-inset-bottom));
-    left: max(14px, env(safe-area-inset-left));
-    max-height: min(46dvh, 340px);
+    top: calc(46px + 8px);
+    max-height: min(36dvh, 286px);
     padding: 10px;
     border-radius: 22px;
     background:
@@ -10723,6 +10719,12 @@ html {
     width: 100%;
     max-width: 100%;
     overflow: hidden;
+  }
+
+  .formField:has(.projectSearchSelect.open) {
+    position: relative;
+    z-index: 10020;
+    overflow: visible;
   }
 
   .formField input,
