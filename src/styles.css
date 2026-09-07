@@ -560,6 +560,7 @@ button:disabled {
 
 .sidebarUserWrap {
   position: relative;
+  display: grid;
   margin-top: auto;
 }
 
@@ -581,8 +582,19 @@ button:disabled {
 }
 
 .sidebar:not(.expanded) .sidebarUser {
-  grid-template-columns: 52px 0 0;
-  justify-content: center;
+  grid-template-columns: 1fr;
+  justify-self: center;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+}
+
+.sidebar:not(.expanded) .sidebarUser > span,
+.sidebar:not(.expanded) .sidebarUser > svg {
+  position: absolute;
+  width: 1px;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .sidebarUser:hover,
@@ -7202,6 +7214,10 @@ canvas {
   .sidebar:not(.expanded) .sidebarUser {
     grid-template-columns: 46px minmax(0, 1fr) 18px;
     justify-content: stretch;
+    justify-self: stretch;
+    place-items: initial;
+    width: 100%;
+    height: auto;
   }
 
   .brand {
