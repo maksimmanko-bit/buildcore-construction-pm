@@ -12995,3 +12995,60 @@ html {
     font-size: 13px;
   }
 }
+
+@media (max-width: 860px) {
+  .sidebar .sideNavItem,
+  .sidebar:not(.expanded) .sideNavItem,
+  .sidebar.expanded .sideNavItem {
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 18px;
+    width: 100%;
+    min-height: 52px;
+    place-items: initial;
+    padding: 0 17px;
+    border-radius: 14px;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+    transition: none;
+  }
+
+  .sidebar .sideNavItem:hover,
+  .sidebar:not(.expanded) .sideNavItem:hover,
+  .sidebar.expanded .sideNavItem:hover {
+    transform: none;
+  }
+
+  .sidebar .sideNavItem.active,
+  .sidebar:not(.expanded) .sideNavItem.active,
+  .sidebar.expanded .sideNavItem.active {
+    color: var(--brand-red);
+    background: color-mix(in srgb, var(--brand-red) 10%, transparent);
+    box-shadow: none;
+  }
+
+  .sidebar .sideNavItem svg,
+  .sidebar:not(.expanded) .sideNavItem svg,
+  .sidebar.expanded .sideNavItem svg,
+  .sidebar .sideNavItem.active svg,
+  .sidebar:not(.expanded) .sideNavItem.active svg,
+  .sidebar.expanded .sideNavItem.active svg {
+    box-sizing: border-box;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+    transition: none;
+  }
+
+  .sidebar:not(.expanded) .sideNavItem span,
+  .sidebar.expanded .sideNavItem span {
+    position: static;
+    width: auto;
+    opacity: 1;
+    overflow: visible;
+    pointer-events: auto;
+    transform: none;
+  }
+}
