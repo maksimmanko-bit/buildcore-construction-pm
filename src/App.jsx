@@ -1415,15 +1415,6 @@ function ProjectSearchSelect({ includeShop = false, onChange, projects = [], val
           <em>{selectedProject.job_number || "No job number"}</em>
         </div>
       )}
-      {includeShop && !isShopProjectId(value) && (
-        <button className="shopQuickSelect" type="button" onClick={() => onChange(SHOP_PROJECT_ID)}>
-          <span className="shopQuickIcon">SH</span>
-          <span>
-            <strong>Shop task</strong>
-            <em>Internal work without project photos or safety form</em>
-          </span>
-        </button>
-      )}
       {isOpen && (
         <div className="projectSearchPopover" role="listbox">
           {query.trim() ? (
@@ -7483,7 +7474,7 @@ function toggleVisitArray(key, value) {
 
         {modalType === "visit" && (
           <AppModal title={editingVisitId ? "Edit visit" : "Schedule visit"} onClose={closeEditorModal} wide>
-            <form className="stackForm twoColumns" onSubmit={saveVisit}>
+            <form className="stackForm twoColumns visitForm" onSubmit={saveVisit}>
               <FormField label="Project">
                 <ProjectSearchSelect includeShop projects={rowsSource.projects} value={visitForm.project_id} onChange={updateVisitProject} />
               </FormField>
