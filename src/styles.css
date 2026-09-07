@@ -3459,7 +3459,7 @@ h1 {
 }
 
 .resourceRow:has(.scheduleBlock.stackedResources) {
-  min-height: max(186px, calc(var(--lane-count, 1) * 182px));
+  min-height: max(220px, calc(var(--lane-count, 1) * 216px));
 }
 
 .resourceRow:last-child {
@@ -12434,9 +12434,9 @@ html {
 }
 
 .scheduleBlock.hasSubcontractors {
-  gap: 4px;
-  padding-top: 8px;
-  padding-bottom: 7px;
+  gap: 7px;
+  padding-top: 12px;
+  padding-bottom: 11px;
 }
 
 .scheduleBlock.hasSubcontractors .scheduleBlockTop {
@@ -12460,46 +12460,49 @@ html {
 }
 
 .scheduleBlock.stackedResources .assignmentResources {
-  gap: 5px;
+  gap: 8px;
 }
 
 .scheduleBlock.stackedResources .assignmentResourceRow {
-  grid-template-columns: 48px minmax(0, 1fr);
-  min-height: 32px;
+  grid-template-columns: 58px minmax(0, 1fr);
+  min-height: 40px;
   align-items: center;
-  padding: 3px 6px;
+  gap: 9px;
+  padding: 5px 8px;
   overflow: visible;
+  border-radius: 13px;
 }
 
 .scheduleBlock.stackedResources .assignmentResourceLabel {
-  max-width: 48px;
-  padding: 3px 5px;
-  font-size: 8px;
+  max-width: 58px;
+  min-height: 21px;
+  padding: 4px 7px;
+  font-size: 9px;
 }
 
 .scheduleBlock.stackedResources .assignmentResources .avatar,
 .scheduleBlock.stackedResources .assignmentResources .equipmentAvatar.small {
-  width: 28px;
-  height: 28px;
-}
-
-.scheduleBlock.stackedResources .assignmentResources .crewAvatarButton {
-  width: 36px;
+  width: 32px;
   height: 32px;
 }
 
 .scheduleBlock.stackedResources .assignmentResources .crewAvatarButton {
-  flex-basis: 36px;
+  width: 42px;
+  height: 36px;
+}
+
+.scheduleBlock.stackedResources .assignmentResources .crewAvatarButton {
+  flex-basis: 42px;
 }
 
 .scheduleBlock.stackedResources .assignmentResources .equipmentCrewButton,
 .scheduleBlock.stackedResources .assignmentResources .equipmentCrewButton .equipmentAvatar.small {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
 }
 
 .scheduleBlock.stackedResources .assignmentResources .equipmentCrewButton {
-  flex-basis: 30px;
+  flex-basis: 32px;
 }
 
 .scheduleBlock.stackedResources .avatar.face.emoji {
@@ -12517,12 +12520,12 @@ html {
 }
 
 .scheduleBlock.stackedResources .subcontractorRow {
-  min-height: 32px;
+  min-height: 40px;
 }
 
 .scheduleBlock.stackedResources .scheduleSubcontractorCard {
-  min-height: 26px;
-  padding: 4px 7px;
+  min-height: 30px;
+  padding: 5px 8px;
 }
 
 .scheduleBlock.stackedResources .scheduleSubcontractorCard small {
