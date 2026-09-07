@@ -54,6 +54,7 @@ import {
 import { overlaps } from "./lib/schedule.js";
 import { isSupabaseConfigured, supabase } from "./lib/supabase.js";
 import { createAttachmentUrls, createProfileAvatarUrl, deleteVisitFile, replaceVisitPhotoWithAnnotation, uploadProfileAvatar, uploadVisitAttachment, uploadVisitGeneratedFile, uploadVisitPhoto } from "./lib/storage.js";
+import { exportFieldReportPdf, exportProjectPdf, exportProjectTicketsXlsx, exportProjectsXlsx, exportVisitPdf } from "./lib/exporters.js";
 import { localGlobalSearch } from "./lib/search.js";
 import { getGoogleMapsUrl, getWeatherForAddress } from "./lib/weather.js";
 import { readCachedWorkspace, scheduleWorkspaceCacheWrite } from "./lib/localCache.js";
@@ -5718,7 +5719,6 @@ export default function App() {
     setLoading(true);
     setNotice("Preparing project PDF...");
     try {
-      const { exportProjectPdf } = await import("./lib/exporters.js");
       const visits = (rowsSource.visits ?? [])
         .filter((visit) => visit.project_id === project.id)
         .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`));
@@ -5739,7 +5739,6 @@ export default function App() {
     setLoading(true);
     setNotice("Preparing ticket PDF...");
     try {
-      const { exportVisitPdf } = await import("./lib/exporters.js");
       const files = await hydrateExportFiles((rowsSource.files ?? []).filter((file) => file.visit_id === visit.id));
       const activities = (rowsSource.activities ?? []).filter((item) => item.visit_id === visit.id);
       await exportVisitPdf({
@@ -5765,7 +5764,6 @@ export default function App() {
     setLoading(true);
     setNotice("Preparing Site Inspection PDF...");
     try {
-      const { exportFieldReportPdf } = await import("./lib/exporters.js");
       const files = await hydrateExportFiles(getSiteVisitFiles(item));
       await exportFieldReportPdf({
         type: "siteVisit",
@@ -5788,7 +5786,6 @@ export default function App() {
     setLoading(true);
     setNotice("Preparing Change Order PDF...");
     try {
-      const { exportFieldReportPdf } = await import("./lib/exporters.js");
       const files = await hydrateExportFiles(getChangeOrderFiles(item));
       await exportFieldReportPdf({
         type: "changeOrder",
@@ -5819,7 +5816,6 @@ export default function App() {
     setLoading(true);
     setNotice("Preparing Change Order email...");
     try {
-      const { exportFieldReportPdf } = await import("./lib/exporters.js");
       const files = await hydrateExportFiles(getChangeOrderFiles(item));
       await exportFieldReportPdf({
         type: "changeOrder",
@@ -5842,7 +5838,6 @@ export default function App() {
     setLoading(true);
     setNotice("Preparing projects Excel...");
     try {
-      const { exportProjectsXlsx } = await import("./lib/exporters.js");
       exportProjectsXlsx(rowsSource.projects, getProfileName);
       setNotice("Projects Excel exported.");
     } catch (error) {
@@ -5857,7 +5852,6 @@ export default function App() {
     setLoading(true);
     setNotice("Preparing tickets Excel...");
     try {
-      const { exportProjectTicketsXlsx } = await import("./lib/exporters.js");
       const visits = (rowsSource.visits ?? [])
         .filter((visit) => visit.project_id === project.id)
         .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`));
