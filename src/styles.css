@@ -3713,7 +3713,7 @@ h1 {
 
 .assignmentResources {
   display: grid;
-  gap: 6px;
+  gap: 9px;
   min-width: 0;
   max-width: 100%;
   overflow: visible;
@@ -3724,9 +3724,14 @@ h1 {
   display: grid;
   grid-template-columns: 70px minmax(0, 1fr);
   align-items: center;
-  gap: 7px;
+  gap: 10px;
+  min-height: 38px;
   min-width: 0;
+  padding: 3px 6px;
   overflow: visible;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .assignmentResourceLabel {
@@ -3755,11 +3760,15 @@ h1 {
   color: rgba(30, 64, 175, 0.78);
 }
 
+.equipmentRow {
+  background: rgba(239, 246, 255, 0.2);
+}
+
 .assignmentResourceItems {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   min-width: 0;
   overflow: visible;
 }
@@ -10592,7 +10601,7 @@ html {
 }
 
 .resourceRow {
-  min-height: max(174px, calc(var(--lane-count, 1) * 174px));
+  min-height: max(188px, calc(var(--lane-count, 1) * 188px));
 }
 
 .resourceRow .scheduleBlock {
@@ -10639,7 +10648,7 @@ html {
 
 .scheduleBlock .assignmentResources {
   display: grid;
-  gap: 5px;
+  gap: 9px;
   overflow: visible;
 }
 
@@ -10663,6 +10672,11 @@ html {
   max-width: 58px;
   padding-inline: 6px;
   font-size: 8px;
+}
+
+.scheduleBlock.tightBlock .assignmentResourceItems,
+.scheduleBlock.shortBlock .assignmentResourceItems {
+  gap: 6px;
 }
 
 .scheduleBlock.shortBlock {
