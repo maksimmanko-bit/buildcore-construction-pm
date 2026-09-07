@@ -12273,23 +12273,42 @@ html {
 }
 
 .scheduleBlock.stackedResources .assignmentResources .avatar,
-.scheduleBlock.stackedResources .assignmentResources .crewAvatarButton {
-  width: 24px;
-  height: 24px;
+.scheduleBlock.stackedResources .assignmentResources .equipmentAvatar.small {
+  width: 26px;
+  height: 26px;
 }
 
 .scheduleBlock.stackedResources .assignmentResources .crewAvatarButton {
-  flex-basis: 24px;
+  width: 34px;
+  height: 30px;
+}
+
+.scheduleBlock.stackedResources .assignmentResources .crewAvatarButton {
+  flex-basis: 34px;
 }
 
 .scheduleBlock.stackedResources .assignmentResources .equipmentCrewButton,
 .scheduleBlock.stackedResources .assignmentResources .equipmentCrewButton .equipmentAvatar.small {
-  width: 24px;
-  height: 24px;
+  width: 30px;
+  height: 30px;
 }
 
 .scheduleBlock.stackedResources .assignmentResources .equipmentCrewButton {
-  flex-basis: 24px;
+  flex-basis: 30px;
+}
+
+.scheduleBlock.stackedResources .avatar.face.emoji {
+  display: grid;
+  place-items: center;
+}
+
+.scheduleBlock.stackedResources .avatar.face.emoji .avatarEmoji {
+  width: 30px;
+  height: 30px;
+  font-size: 26px;
+  line-height: 30px;
+  text-align: center;
+  transform: translateY(-1px);
 }
 
 .scheduleBlock.stackedResources .subcontractorRow {
