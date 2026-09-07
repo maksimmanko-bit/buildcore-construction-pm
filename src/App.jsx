@@ -11602,6 +11602,8 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
   const laneCount = Math.max(1, assignment.laneCount ?? 1);
   const laneIndex = Math.min(laneCount - 1, Math.max(0, assignment.laneIndex ?? 0));
   const typeLabel = assignment.recordType === "siteVisit" ? "Inspection" : "Work Ticket";
+  const resourceRowCount = Number(assignment.people?.length > 0) + Number(assignment.equipment?.length > 0) + Number(assignment.subcontractors?.length > 0);
+  const hasSubcontractors = assignment.subcontractors?.length > 0;
   const verticalStyle =
     laneCount > 1
       ? {
@@ -11614,7 +11616,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
 
   return (
     <div
-      className={`scheduleBlock ${assignment.recordType ?? "visit"} ${assignment.color} ${assignment.status ?? ""} ${dropHint ? "showDropHint" : ""} ${isShortBlock ? "shortBlock" : ""} ${isTightBlock ? "tightBlock" : ""}`}
+      className={`scheduleBlock ${assignment.recordType ?? "visit"} ${assignment.color} ${assignment.status ?? ""} ${dropHint ? "showDropHint" : ""} ${isShortBlock ? "shortBlock" : ""} ${isTightBlock ? "tightBlock" : ""} ${hasSubcontractors ? "hasSubcontractors" : ""} ${resourceRowCount >= 3 ? "stackedResources" : ""}`}
       draggable={Boolean(assignment.visitId)}
       role="button"
       style={{ left: `${left}%`, width: `${width}%`, ...verticalStyle }}

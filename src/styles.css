@@ -12230,6 +12230,81 @@ html {
   font-size: 8px;
 }
 
+.scheduleBlock.hasSubcontractors {
+  gap: 4px;
+  padding-top: 8px;
+  padding-bottom: 7px;
+}
+
+.scheduleBlock.hasSubcontractors .scheduleBlockTop {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.scheduleBlock.hasSubcontractors .scheduleBlockTop strong {
+  grid-row: 1;
+}
+
+.scheduleBlock.hasSubcontractors .scheduleBlockType {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.scheduleBlock.hasSubcontractors .scheduleBlockStatus {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.scheduleBlock.stackedResources .assignmentResources {
+  gap: 4px;
+}
+
+.scheduleBlock.stackedResources .assignmentResourceRow {
+  grid-template-columns: 46px minmax(0, 1fr);
+  min-height: 24px;
+  padding: 1px 5px;
+}
+
+.scheduleBlock.stackedResources .assignmentResourceLabel {
+  max-width: 46px;
+  padding: 3px 5px;
+  font-size: 8px;
+}
+
+.scheduleBlock.stackedResources .assignmentResources .avatar,
+.scheduleBlock.stackedResources .assignmentResources .crewAvatarButton {
+  width: 24px;
+  height: 24px;
+}
+
+.scheduleBlock.stackedResources .assignmentResources .crewAvatarButton {
+  flex-basis: 24px;
+}
+
+.scheduleBlock.stackedResources .assignmentResources .equipmentCrewButton,
+.scheduleBlock.stackedResources .assignmentResources .equipmentCrewButton .equipmentAvatar.small {
+  width: 24px;
+  height: 24px;
+}
+
+.scheduleBlock.stackedResources .assignmentResources .equipmentCrewButton {
+  flex-basis: 24px;
+}
+
+.scheduleBlock.stackedResources .subcontractorRow {
+  min-height: 24px;
+}
+
+.scheduleBlock.stackedResources .scheduleSubcontractorCard {
+  min-height: 22px;
+  padding: 3px 6px;
+}
+
+.scheduleBlock.stackedResources .scheduleSubcontractorCard small {
+  display: none;
+}
+
 .scheduleBlock.tightBlock .scheduleBlockType,
 .scheduleBlock.tightBlock .scheduleBlockStatus,
 .scheduleBlock.shortBlock .scheduleBlockType,
