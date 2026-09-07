@@ -1478,6 +1478,7 @@ export default function App() {
   const [selectedSiteVisitId, setSelectedSiteVisitId] = useState("");
   const [selectedChangeOrderId, setSelectedChangeOrderId] = useState("");
   const [selectedPersonId, setSelectedPersonId] = useState("");
+  const [personOverlaySource, setPersonOverlaySource] = useState("directory");
   const [detailOverlay, setDetailOverlay] = useState("");
   const [detailOverlayStack, setDetailOverlayStack] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -4340,6 +4341,7 @@ export default function App() {
 
   function openPersonOverlay(person) {
     if (!person?.id) return;
+    setPersonOverlaySource("directory");
     setSelectedPersonId(person.id);
     showDetailOverlay("person");
   }
@@ -4347,6 +4349,7 @@ export default function App() {
   function openMyProfile() {
     if (!profile?.id) return;
     closeMenusThen(() => {
+      setPersonOverlaySource("account");
       setSelectedPersonId(profile.id);
       showDetailOverlay("person");
     });
@@ -7123,7 +7126,7 @@ function toggleVisitArray(key, value) {
             canEdit={canManage || selectedPerson.id === profile?.id}
             isSelf={selectedPerson.id === profile?.id}
             onChangePassword={openPasswordChange}
-            onEdit={() => (selectedPerson.id === profile?.id ? editMyProfile() : editPerson(selectedPerson))}
+            onEdit={() => (selectedPerson.id === profile?.id && personOverlaySource === "account" ? editMyProfile() : editPerson(selectedPerson))}
             onClose={closeDetailOverlay}
             person={selectedPerson}
           />
