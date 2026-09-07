@@ -3773,6 +3773,10 @@ h1 {
   overflow: visible;
 }
 
+.peopleRow .assignmentResourceItems {
+  gap: 14px;
+}
+
 .assignmentCrew .avatar {
   width: 34px;
   height: 34px;
@@ -10676,7 +10680,12 @@ html {
 
 .scheduleBlock.tightBlock .assignmentResourceItems,
 .scheduleBlock.shortBlock .assignmentResourceItems {
-  gap: 6px;
+  gap: 8px;
+}
+
+.scheduleBlock.tightBlock .peopleRow .assignmentResourceItems,
+.scheduleBlock.shortBlock .peopleRow .assignmentResourceItems {
+  gap: 12px;
 }
 
 .scheduleBlock.shortBlock {
