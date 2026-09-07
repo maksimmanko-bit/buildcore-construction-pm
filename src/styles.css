@@ -10592,7 +10592,7 @@ html {
 }
 
 .resourceRow {
-  min-height: max(148px, calc(var(--lane-count, 1) * 156px));
+  min-height: max(174px, calc(var(--lane-count, 1) * 174px));
 }
 
 .resourceRow .scheduleBlock {
@@ -10639,12 +10639,18 @@ html {
 
 .scheduleBlock .assignmentResources {
   display: grid;
-  gap: 6px;
+  gap: 5px;
   overflow: visible;
 }
 
 .scheduleBlock .assignmentResourceRow {
   grid-template-columns: 70px minmax(0, 1fr);
+}
+
+.scheduleBlock .assignmentResourceLabel {
+  font-size: 9px;
+  font-weight: 950;
+  line-height: 1;
 }
 
 .scheduleBlock.tightBlock .assignmentResourceRow,
@@ -10679,27 +10685,27 @@ html {
 
 .scheduleBlock .assignmentResources .avatar,
 .scheduleBlock .assignmentResources .crewAvatarButton {
-  width: 42px;
-  height: 42px;
+  width: 32px;
+  height: 32px;
 }
 
 .scheduleBlock .assignmentResources .crewAvatarButton {
-  flex-basis: 42px;
+  flex-basis: 32px;
   place-items: center;
 }
 
 .scheduleBlock .assignmentResources .equipmentCrewButton,
 .scheduleBlock .assignmentResources .equipmentCrewButton .equipmentAvatar.small {
-  width: 38px;
-  height: 38px;
+  width: 30px;
+  height: 30px;
 }
 
 .scheduleBlock .assignmentResources .equipmentCrewButton {
-  flex-basis: 38px;
+  flex-basis: 30px;
 }
 
 .scheduleBlock .assignmentResources .equipmentCrewButton .equipmentAvatar.small {
-  border-radius: 13px;
+  border-radius: 11px;
 }
 
 .crewAvatarButton + .crewAvatarButton {
@@ -10839,7 +10845,7 @@ html {
 
   .resourceRow {
     grid-template-columns: 1fr;
-    min-height: max(260px, calc(var(--lane-count, 1) * 164px + 104px));
+    min-height: max(284px, calc(var(--lane-count, 1) * 188px + 104px));
   }
 
   .resourceIdentity {
@@ -10848,7 +10854,7 @@ html {
   }
 
   .rowTrack {
-    min-height: max(154px, calc(var(--lane-count, 1) * 156px));
+    min-height: max(178px, calc(var(--lane-count, 1) * 180px));
     overflow: hidden;
   }
 

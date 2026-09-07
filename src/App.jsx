@@ -2406,7 +2406,7 @@ export default function App() {
                 isFirstVisit: item.is_first_visit,
                 color: isSiteVisit ? "green" : colors[index % colors.length],
                 people: isSiteVisit ? [profileById.get(item.created_by)].filter(Boolean) : (item.people_ids ?? []).map((id) => profileById.get(id)).filter(Boolean),
-                equipment: [],
+                equipment: isSiteVisit ? [] : (item.equipment_ids ?? []).map((id) => equipmentById.get(id)).filter(Boolean),
                 laneIndex: visitLanes.laneByVisitId.get(item.id) ?? 0,
                 laneCount: visitLanes.laneCount,
               };
@@ -2414,7 +2414,7 @@ export default function App() {
           };
         })
         .filter((project) => project.assignments.length > 0),
-    [activeFeatureFlags.siteInspections, profileById, rowsSource.projects, rowsSource.siteVisits, rowsSource.visits, selectedDate],
+    [activeFeatureFlags.siteInspections, equipmentById, profileById, rowsSource.projects, rowsSource.siteVisits, rowsSource.visits, selectedDate],
   );
   const availableTodayPeople = useMemo(
     () => rowsSource.people.filter((person) => getPersonWorkStatus({ date: selectedDate, person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }).tone === "available"),
