@@ -6328,7 +6328,7 @@ canvas {
 
 .helpCenter {
   gap: 18px;
-  width: min(860px, 100%);
+  width: min(1160px, 100%);
   margin: 0 auto;
   scroll-behavior: smooth;
 }
@@ -6338,7 +6338,7 @@ canvas {
   gap: 14px;
   overflow: hidden;
   position: relative;
-  padding: 28px;
+  padding: clamp(28px, 4vw, 46px);
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 28px;
   background:
@@ -6371,7 +6371,7 @@ canvas {
 }
 
 .helpHero p {
-  max-width: 720px;
+  max-width: 840px;
   color: #475569;
   font-size: 16px;
   font-weight: 750;
@@ -6467,7 +6467,7 @@ canvas {
 }
 
 .helpSectionIntro p {
-  max-width: 720px;
+  max-width: 920px;
   color: #475569;
   font-size: 14px;
   font-weight: 800;
@@ -6476,6 +6476,7 @@ canvas {
 
 .helpCardGrid {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -12651,6 +12652,10 @@ html {
 @media (max-width: 860px) {
   .helpCenter {
     width: 100%;
+  }
+
+  .helpCardGrid {
+    grid-template-columns: 1fr;
   }
 
   .helpHero {
