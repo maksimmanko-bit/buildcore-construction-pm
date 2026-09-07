@@ -3459,7 +3459,7 @@ h1 {
 }
 
 .resourceRow:has(.scheduleBlock.stackedResources) {
-  min-height: max(220px, calc(var(--lane-count, 1) * 216px));
+  min-height: max(264px, calc(var(--lane-count, 1) * 258px));
 }
 
 .resourceRow:last-child {
