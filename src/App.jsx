@@ -869,14 +869,15 @@ function getEquipmentWorkStatus({ date, equipment, equipmentId, projects = [], v
 function getOverlappingPersonIds({ personIds = [], targetVisit, visits = [] }) {
   if (!targetVisit || personIds.length === 0) return new Set();
   const targetStart = String(targetVisit.start_time).slice(0, 5);
-  const targetEnd = String(targetVisit.end_time).slice(0, 5);
+  const targetEnd = getVisitEffectiveEndTime(targetVisit);
 
   return new Set(
     personIds.filter((personId) =>
       visits.some((visit) => {
         if (visit.id === targetVisit.id || visit.status === "cancelled") return false;
         if (visit.visit_date !== targetVisit.visit_date || !visit.people_ids?.includes(personId)) return false;
-        return overlaps(targetStart, targetEnd, String(visit.start_time).slice(0, 5), String(visit.end_time).slice(0, 5));
+        const otherRange = getVisitEffectiveTimeRange(visit);
+        return overlaps(targetStart, targetEnd, otherRange.start_time, otherRange.end_time);
       }),
     ),
   );
@@ -909,7 +910,7 @@ function packVisitLanes(visits = []) {
 
   sortedVisits.forEach((visit) => {
     const start = toHour(visit.start_time);
-    const end = Math.max(start + 0.25, toHour(visit.end_time));
+    const end = Math.max(start + 0.25, toHour(getVisitEffectiveEndTime(visit)));
     const laneIndex = laneEnds.findIndex((laneEnd) => laneEnd <= start);
     const nextLaneIndex = laneIndex === -1 ? laneEnds.length : laneIndex;
     laneEnds[nextLaneIndex] = end;
@@ -944,6 +945,32 @@ function formatTimeRange(start, end) {
 function addHoursToTime(value, hoursToAdd = 1) {
   const base = toHour(value);
   return toTimeValue(Math.min(23.75, base + hoursToAdd));
+}
+
+function roundTimeUpToQuarter(value = getWinnipegTimeValue()) {
+  return toTimeValue(Math.ceil(toHour(value) * 4) / 4);
+}
+
+function getVisitEffectiveEndTime(visit) {
+  const plannedEnd = String(visit?.end_time || "17:00").slice(0, 5);
+  const start = String(visit?.start_time || "07:00").slice(0, 5);
+  if (visit?.status !== "completed" || !visit.completed_at) return plannedEnd;
+  if (getWinnipegDateValue(new Date(visit.completed_at)) !== visit.visit_date) return plannedEnd;
+
+  const actualEnd = getWinnipegTimeValue(new Date(visit.completed_at));
+  return toTimeValue(Math.max(toHour(start) + 0.25, toHour(actualEnd)));
+}
+
+function getVisitEffectiveTimeRange(visit) {
+  return {
+    start_time: String(visit?.start_time || "07:00").slice(0, 5),
+    end_time: getVisitEffectiveEndTime(visit),
+  };
+}
+
+function formatVisitEffectiveTimeRange(visit) {
+  const range = getVisitEffectiveTimeRange(visit);
+  return formatTimeRange(range.start_time, range.end_time);
 }
 
 function formatDateTimeLabel(value) {
@@ -1271,7 +1298,8 @@ function describeVisitConflict({ candidate, visits = [], projects = [], people =
   visits.forEach((visit) => {
     if (editingVisitId && visit.id === editingVisitId) return;
     if (visit.visit_date !== candidate.visit_date || visit.status === "cancelled") return;
-    if (!overlaps(candidate.start_time, candidate.end_time, String(visit.start_time).slice(0, 5), String(visit.end_time).slice(0, 5))) return;
+    const visitRange = getVisitEffectiveTimeRange(visit);
+    if (!overlaps(candidate.start_time, candidate.end_time, visitRange.start_time, visitRange.end_time)) return;
 
     const project = getVisitProject(visit, projects);
     const busyPeople = people.filter((person) => selectedPeople.has(person.id) && visit.people_ids?.includes(person.id));
@@ -2228,15 +2256,16 @@ export default function App() {
       .filter((visit) => visit.visit_date === selectedDate)
       .flatMap((visit) => {
       const project = isShopVisit(visit) ? shopProject : projectLookup.get(visit.project_id);
+      const effectiveRange = getVisitEffectiveTimeRange(visit);
       const base = {
         visitId: visit.id,
         projectId: isShopVisit(visit) ? SHOP_PROJECT_ID : visit.project_id,
         recordType: isShopVisit(visit) ? "shopVisit" : "visit",
         title: project?.name ?? "Project visit",
         subtitle: visit.work_scope || normalizeVisitStatus(visit.status),
-        start: toHour(visit.start_time),
-        end: toHour(visit.end_time),
-        timeText: formatTimeRange(visit.start_time, visit.end_time),
+        start: toHour(effectiveRange.start_time),
+        end: toHour(effectiveRange.end_time),
+        timeText: formatTimeRange(effectiveRange.start_time, effectiveRange.end_time),
         status: visit.status,
         isFirstVisit: visit.is_first_visit,
         color: isShopVisit(visit) ? "shop" : project?.color ?? "blue",
@@ -2539,6 +2568,7 @@ export default function App() {
             laneCount: visitLanes.laneCount,
             assignments: projectScheduleItems.map((item) => {
               const isSiteVisit = item.sourceType === "siteVisit";
+              const effectiveRange = isSiteVisit ? { start_time: item.start_time, end_time: item.end_time } : getVisitEffectiveTimeRange(item);
               return {
                 id: isSiteVisit ? item.id : `visit-${item.id}`,
                 visitId: isSiteVisit ? "" : item.id,
@@ -2547,9 +2577,9 @@ export default function App() {
                 recordType: item.sourceType ?? "visit",
                 title: project.name,
                 subtitle: isSiteVisit ? getFieldReportLabel("siteVisit") : item.work_scope || normalizeVisitStatus(item.status),
-                start: toHour(item.start_time),
-                end: toHour(item.end_time),
-                timeText: formatTimeRange(item.start_time, item.end_time),
+                start: toHour(effectiveRange.start_time),
+                end: toHour(effectiveRange.end_time),
+                timeText: formatTimeRange(effectiveRange.start_time, effectiveRange.end_time),
                 status: item.status,
                 isFirstVisit: item.is_first_visit,
                 color: isSiteVisit ? "green" : colors[index % colors.length],
@@ -2575,26 +2605,29 @@ export default function App() {
         subtitle: "Internal tasks",
         color: "shop",
         laneCount: shopLanes.laneCount,
-        assignments: shopVisits.map((visit) => ({
-          id: `visit-${visit.id}`,
-          visitId: visit.id,
-          projectId: SHOP_PROJECT_ID,
-          recordId: visit.id,
-          recordType: "shopVisit",
-          title: "Shop",
-          subtitle: visit.work_scope || "Shop task",
-          start: toHour(visit.start_time),
-          end: toHour(visit.end_time),
-          timeText: formatTimeRange(visit.start_time, visit.end_time),
-          status: "shop",
-          isFirstVisit: false,
-          color: "shop",
-          people: (visit.people_ids ?? []).map((id) => profileById.get(id)).filter(Boolean),
-          equipment: [],
-          subcontractors: [],
-          laneIndex: shopLanes.laneByVisitId.get(visit.id) ?? 0,
-          laneCount: shopLanes.laneCount,
-        })),
+        assignments: shopVisits.map((visit) => {
+          const effectiveRange = getVisitEffectiveTimeRange(visit);
+          return {
+            id: `visit-${visit.id}`,
+            visitId: visit.id,
+            projectId: SHOP_PROJECT_ID,
+            recordId: visit.id,
+            recordType: "shopVisit",
+            title: "Shop",
+            subtitle: visit.work_scope || "Shop task",
+            start: toHour(effectiveRange.start_time),
+            end: toHour(effectiveRange.end_time),
+            timeText: formatTimeRange(effectiveRange.start_time, effectiveRange.end_time),
+            status: "shop",
+            isFirstVisit: false,
+            color: "shop",
+            people: (visit.people_ids ?? []).map((id) => profileById.get(id)).filter(Boolean),
+            equipment: [],
+            subcontractors: [],
+            laneIndex: shopLanes.laneByVisitId.get(visit.id) ?? 0,
+            laneCount: shopLanes.laneCount,
+          };
+        }),
       };
 
       return [shopRow, ...regularProjectRows];
@@ -2642,6 +2675,16 @@ export default function App() {
   );
   const visitFormDates = useMemo(() => (editingVisitId ? [visitForm.visit_date] : collectVisitDates(visitForm.visit_date, Math.max(1, parseWorkDayCount(visitForm.duration_days)))), [editingVisitId, visitForm.duration_days, visitForm.visit_date]);
   const visitWorkScopes = useMemo(() => normalizeWorkScopes(visitForm.work_scopes, visitFormDates.length, visitForm.work_scope), [visitForm.work_scope, visitForm.work_scopes, visitFormDates.length]);
+  const minimumVisitStartTime = !editingVisitId && compareDateValue(visitForm.visit_date, todayValue) === 0 ? roundTimeUpToQuarter() : "";
+  const visitStartTimeOptions = useMemo(() => {
+    if (!minimumVisitStartTime) return timePickerOptions.filter((option) => option.value < "23:45");
+    const options = timePickerOptions.filter((option) => option.value >= minimumVisitStartTime && option.value < "23:45");
+    return options.length ? options : timePickerOptions.slice(-2, -1);
+  }, [minimumVisitStartTime]);
+  const visitEndTimeOptions = useMemo(() => {
+    const options = timePickerOptions.filter((option) => option.value > visitForm.start_time);
+    return options.length ? options : timePickerOptions.slice(-1);
+  }, [visitForm.start_time]);
   const safetyFormHasDraft =
     Object.values(safetyForm.responses ?? {}).some((value) => JSON.stringify(value ?? "").replace(/[{}\[\]":,]/g, "").trim().length > 0) ||
     Object.values(safetyForm.signatures ?? {}).some((signature) => String(signature ?? "").trim().length > 0);
@@ -3485,6 +3528,15 @@ export default function App() {
     const ticketPeopleIds = visitForm.people_ids ?? [];
     const ticketEquipmentIds = isShopTask ? [] : visitForm.equipment_ids ?? [];
     const ticketSubcontractors = isShopTask ? [] : visitForm.subcontractors ?? [];
+    const minimumStartTime = getMinimumVisitStartTimeForDate(visitForm.visit_date);
+    if (minimumStartTime && visitForm.start_time < minimumStartTime) {
+      setNotice(`Ticket not saved: choose a start time at or after ${formatTimeLabel(minimumStartTime)} Winnipeg time.`);
+      return;
+    }
+    if (visitForm.start_time >= visitForm.end_time) {
+      setNotice("Ticket not saved: End time must be after Start time.");
+      return;
+    }
 
     setActionPending("visit", true);
     const baseVisitPayload = {
@@ -5268,17 +5320,19 @@ export default function App() {
     const conflicts = (rowsSource.visits ?? []).filter((item) => {
       if (item.id === visitId || item.status === "cancelled") return false;
       if (item.visit_date !== visit.visit_date || !item.people_ids?.includes(personId)) return false;
+      const visitRange = getVisitEffectiveTimeRange(visit);
+      const itemRange = getVisitEffectiveTimeRange(item);
       return overlaps(
-        String(visit.start_time).slice(0, 5),
-        String(visit.end_time).slice(0, 5),
-        String(item.start_time).slice(0, 5),
-        String(item.end_time).slice(0, 5),
+        visitRange.start_time,
+        visitRange.end_time,
+        itemRange.start_time,
+        itemRange.end_time,
       );
     });
     const conflictsText = conflicts
       .map((item) => {
         const project = rowsSource.projects.find((projectItem) => projectItem.id === item.project_id);
-        return `${project?.name || "another project"} (${formatTimeRange(item.start_time, item.end_time)})`;
+        return `${project?.name || "another project"} (${formatVisitEffectiveTimeRange(item)})`;
       })
       .join(", ");
     if (conflicts.length > 0 && !sourceVisitId) {
@@ -5425,17 +5479,19 @@ export default function App() {
     const conflicts = (rowsSource.visits ?? []).filter((item) => {
       if (item.id === visitId || item.status === "cancelled") return false;
       if (item.visit_date !== visit.visit_date || !item.equipment_ids?.includes(equipmentId)) return false;
+      const visitRange = getVisitEffectiveTimeRange(visit);
+      const itemRange = getVisitEffectiveTimeRange(item);
       return overlaps(
-        String(visit.start_time).slice(0, 5),
-        String(visit.end_time).slice(0, 5),
-        String(item.start_time).slice(0, 5),
-        String(item.end_time).slice(0, 5),
+        visitRange.start_time,
+        visitRange.end_time,
+        itemRange.start_time,
+        itemRange.end_time,
       );
     });
     const conflictsText = conflicts
       .map((item) => {
         const project = rowsSource.projects.find((projectItem) => projectItem.id === item.project_id);
-        return `${project?.name || "another project"} (${formatTimeRange(item.start_time, item.end_time)})`;
+        return `${project?.name || "another project"} (${formatVisitEffectiveTimeRange(item)})`;
       })
       .join(", ");
 
@@ -5804,7 +5860,7 @@ export default function App() {
     setEditingVisitId(null);
     const isShopTask = isShopProjectId(projectId) || defaults.ticket_kind === "shop";
     const project = isShopTask ? shopProject : rowsSource.projects.find((item) => item.id === projectId);
-    const nextVisitForm = {
+    const nextVisitForm = normalizeVisitTimeDraft({
       ...emptyVisitForm,
       ...defaults,
       ticket_kind: isShopTask ? "shop" : "project",
@@ -5815,7 +5871,7 @@ export default function App() {
       equipment_ids: isShopTask ? [] : defaults.equipment_ids ?? [],
       subcontractors: isShopTask ? [] : defaults.subcontractors ?? [],
       work_scopes: defaults.work_scopes ?? [defaults.work_scope ?? ""],
-    };
+    });
     setVisitForm(nextVisitForm);
     editorInitialSnapshotRef.current.visit = serializeVisitEditorForm(nextVisitForm);
     setModalType("visit");
@@ -6455,15 +6511,44 @@ function toggleVisitArray(key, value) {
   function updateVisitProject(projectId) {
     const isShopTask = isShopProjectId(projectId);
     const project = rowsSource.projects.find((item) => item.id === projectId);
-    setVisitForm((current) => ({
-      ...current,
-      ticket_kind: isShopTask ? "shop" : "project",
-      project_id: projectId,
-      address: isShopTask ? "" : primaryProjectAddress(project),
-      equipment_ids: isShopTask ? [] : current.equipment_ids,
-      subcontractors: isShopTask ? [] : current.subcontractors,
-      is_first_visit: isShopTask ? false : current.is_first_visit,
-    }));
+    setVisitForm((current) =>
+      normalizeVisitTimeDraft({
+        ...current,
+        ticket_kind: isShopTask ? "shop" : "project",
+        project_id: projectId,
+        address: isShopTask ? "" : primaryProjectAddress(project),
+        equipment_ids: isShopTask ? [] : current.equipment_ids,
+        subcontractors: isShopTask ? [] : current.subcontractors,
+        is_first_visit: isShopTask ? false : current.is_first_visit,
+      }),
+    );
+  }
+
+  function getMinimumVisitStartTimeForDate(dateValue) {
+    if (editingVisitId || compareDateValue(dateValue, todayValue) !== 0) return "";
+    return roundTimeUpToQuarter();
+  }
+
+  function normalizeVisitTimeDraft(draft) {
+    const minimumStart = getMinimumVisitStartTimeForDate(draft.visit_date);
+    const lastStart = "23:30";
+    let startTime = String(draft.start_time || "07:00").slice(0, 5);
+    if (minimumStart && startTime < minimumStart) startTime = minimumStart;
+    if (startTime >= "23:45") startTime = lastStart;
+
+    let endTime = String(draft.end_time || "17:00").slice(0, 5);
+    if (endTime <= startTime) endTime = addHoursToTime(startTime, 1);
+    if (endTime <= startTime) endTime = "23:45";
+
+    return { ...draft, start_time: startTime, end_time: endTime };
+  }
+
+  function updateVisitStartTime(value) {
+    setVisitForm((current) => normalizeVisitTimeDraft({ ...current, start_time: value }));
+  }
+
+  function updateVisitEndTime(value) {
+    setVisitForm((current) => normalizeVisitTimeDraft({ ...current, end_time: value }));
   }
 
   function updateProjectAddress(index, patch) {
@@ -6494,11 +6579,11 @@ function toggleVisitArray(key, value) {
     setVisitForm((current) => {
       const nextDuration = Math.max(1, parseWorkDayCount(current.duration_days));
       const nextDates = editingVisitId ? [value] : collectVisitDates(value, nextDuration);
-      return {
+      return normalizeVisitTimeDraft({
         ...current,
         visit_date: value,
         work_scopes: normalizeWorkScopes(current.work_scopes, nextDates.length, current.work_scope),
-      };
+      });
     });
   }
 
@@ -7503,8 +7588,8 @@ function toggleVisitArray(key, value) {
                 />
               </FormField>
               <FormField label="Start time">
-                <select required value={visitForm.start_time} onChange={(event) => setVisitForm({ ...visitForm, start_time: event.target.value })}>
-                  {timePickerOptions.map((option) => (
+                <select required value={visitForm.start_time} onChange={(event) => updateVisitStartTime(event.target.value)}>
+                  {visitStartTimeOptions.map((option) => (
                     <option value={option.value} key={option.value}>
                       {option.label}
                     </option>
@@ -7512,8 +7597,8 @@ function toggleVisitArray(key, value) {
                 </select>
               </FormField>
               <FormField label="End time">
-                <select required value={visitForm.end_time} onChange={(event) => setVisitForm({ ...visitForm, end_time: event.target.value })}>
-                  {timePickerOptions.map((option) => (
+                <select required value={visitForm.end_time} onChange={(event) => updateVisitEndTime(event.target.value)}>
+                  {visitEndTimeOptions.map((option) => (
                     <option value={option.value} key={option.value}>
                       {option.label}
                     </option>
