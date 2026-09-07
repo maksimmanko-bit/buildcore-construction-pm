@@ -1538,6 +1538,8 @@ export default function App() {
   const [developerForm, setDeveloperForm] = useState({ ...defaultFeatureFlags, botCount: "10" });
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isAccountMenuClosing, setIsAccountMenuClosing] = useState(false);
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
+  const [isSidebarSuppressed, setIsSidebarSuppressed] = useState(false);
   const [avatarUrls, setAvatarUrls] = useState({});
   const accountMenuRef = useRef(null);
   const authRedirectHandledRef = useRef(false);
@@ -1572,6 +1574,7 @@ export default function App() {
   const beforePhotosSaving = Boolean(actionBusy.beforePhotos);
   const completionSaving = Boolean(actionBusy.completion);
   const visitNoteSaving = Boolean(actionBusy.visitNote);
+  const sidebarExpanded = isSidebarExpanded || isAccountMenuOpen || isAccountMenuClosing;
   const handleDictationBusyChange = useCallback((isBusy) => {
     setDictationBusyCount((count) => Math.max(0, count + (isBusy ? 1 : -1)));
   }, []);
@@ -6618,7 +6621,17 @@ function toggleVisitArray(key, value) {
   return (
     <div className={`dashboardShell${isMobileMenuOpen ? " mobileMenuOpen" : ""}${isRefreshingWorkspace ? " refreshingData" : ""}`}>
       <div className="mobileDrawerBackdrop" onClick={() => setIsMobileMenuOpen(false)} />
-      <aside className="sidebar">
+      <aside
+        className={sidebarExpanded ? "sidebar expanded" : "sidebar"}
+        onMouseEnter={() => {
+          if (!isSidebarSuppressed) setIsSidebarExpanded(true);
+        }}
+        onMouseLeave={() => {
+          setIsSidebarExpanded(false);
+          setIsSidebarSuppressed(false);
+        }}
+        onFocus={() => setIsSidebarExpanded(true)}
+      >
         <div className="brand">
           <div className="brandMark">B</div>
           <div>
@@ -6638,6 +6651,8 @@ function toggleVisitArray(key, value) {
                 type="button"
                 onClick={() => {
                   setActiveNav(item.id);
+                  setIsSidebarExpanded(false);
+                  setIsSidebarSuppressed(true);
                   setIsMobileMenuOpen(false);
                 }}
               >
@@ -6674,6 +6689,8 @@ function toggleVisitArray(key, value) {
             title={`${currentUserName} / ${profile ? roleLabel(profile.role) : "Project Manager"}`}
             type="button"
             onClick={() => {
+              setIsSidebarExpanded(true);
+              setIsSidebarSuppressed(false);
               if (isAccountMenuOpen) closeAccountMenuAnimated();
               else setIsAccountMenuOpen(true);
             }}
