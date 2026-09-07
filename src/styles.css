@@ -3426,6 +3426,10 @@ h1 {
   border-bottom: 1px solid var(--line);
 }
 
+.resourceRow:has(.scheduleBlock.stackedResources) {
+  min-height: max(186px, calc(var(--lane-count, 1) * 182px));
+}
+
 .resourceRow:last-child {
   border-bottom: 0;
 }
@@ -12388,34 +12392,36 @@ html {
 }
 
 .scheduleBlock.stackedResources .assignmentResources {
-  gap: 4px;
+  gap: 5px;
 }
 
 .scheduleBlock.stackedResources .assignmentResourceRow {
-  grid-template-columns: 46px minmax(0, 1fr);
-  min-height: 24px;
-  padding: 1px 5px;
+  grid-template-columns: 48px minmax(0, 1fr);
+  min-height: 32px;
+  align-items: center;
+  padding: 3px 6px;
+  overflow: visible;
 }
 
 .scheduleBlock.stackedResources .assignmentResourceLabel {
-  max-width: 46px;
+  max-width: 48px;
   padding: 3px 5px;
   font-size: 8px;
 }
 
 .scheduleBlock.stackedResources .assignmentResources .avatar,
 .scheduleBlock.stackedResources .assignmentResources .equipmentAvatar.small {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
 }
 
 .scheduleBlock.stackedResources .assignmentResources .crewAvatarButton {
-  width: 34px;
-  height: 30px;
+  width: 36px;
+  height: 32px;
 }
 
 .scheduleBlock.stackedResources .assignmentResources .crewAvatarButton {
-  flex-basis: 34px;
+  flex-basis: 36px;
 }
 
 .scheduleBlock.stackedResources .assignmentResources .equipmentCrewButton,
@@ -12434,21 +12440,21 @@ html {
 }
 
 .scheduleBlock.stackedResources .avatar.face.emoji .avatarEmoji {
-  width: 30px;
-  height: 30px;
-  font-size: 26px;
-  line-height: 30px;
+  width: 32px;
+  height: 32px;
+  font-size: 28px;
+  line-height: 32px;
   text-align: center;
   transform: translateY(-1px);
 }
 
 .scheduleBlock.stackedResources .subcontractorRow {
-  min-height: 24px;
+  min-height: 32px;
 }
 
 .scheduleBlock.stackedResources .scheduleSubcontractorCard {
-  min-height: 22px;
-  padding: 3px 6px;
+  min-height: 26px;
+  padding: 4px 7px;
 }
 
 .scheduleBlock.stackedResources .scheduleSubcontractorCard small {
