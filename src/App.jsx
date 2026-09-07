@@ -6634,6 +6634,7 @@ function toggleVisitArray(key, value) {
               <button
                 className={activeNav === item.id ? "sideNavItem active" : "sideNavItem"}
                 key={item.id}
+                title={item.label}
                 type="button"
                 onClick={() => {
                   setActiveNav(item.id);
@@ -6670,6 +6671,7 @@ function toggleVisitArray(key, value) {
           )}
           <button
             className={isAccountMenuOpen ? "sidebarUser active" : "sidebarUser"}
+            title={`${currentUserName} / ${profile ? roleLabel(profile.role) : "Project Manager"}`}
             type="button"
             onClick={() => {
               if (isAccountMenuOpen) closeAccountMenuAnimated();

@@ -71,7 +71,7 @@ button:disabled {
 
 .dashboardShell {
   display: grid;
-  grid-template-columns: 284px minmax(0, 1fr);
+  grid-template-columns: 76px minmax(0, 1fr);
   min-height: 100vh;
   overflow: visible;
 }
@@ -376,20 +376,36 @@ button:disabled {
 .sidebar {
   position: sticky;
   top: 0;
+  z-index: 70;
   display: flex;
   flex-direction: column;
+  width: 76px;
   height: 100vh;
-  padding: 38px 26px 28px;
+  padding: 34px 12px 24px;
+  overflow: hidden;
   border-right: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(24px);
+  transition:
+    width 0.26s cubic-bezier(0.16, 1, 0.3, 1),
+    padding 0.26s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.26s ease,
+    background-color 0.26s ease;
+}
+
+.sidebar:hover,
+.sidebar:focus-within {
+  width: 258px;
+  padding: 38px 26px 28px;
+  box-shadow: 18px 0 48px rgba(15, 23, 42, 0.12);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   margin-bottom: 48px;
+  min-width: 0;
 }
 
 .brandMark {
@@ -413,6 +429,29 @@ button:disabled {
   font-weight: 850;
 }
 
+.brand > div:last-child,
+.sideNavItem span,
+.sidebarUser > span,
+.sidebarUser > svg {
+  opacity: 0;
+  transform: translateX(-8px);
+  transition:
+    opacity 0.18s ease,
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sidebar:hover .brand > div:last-child,
+.sidebar:focus-within .brand > div:last-child,
+.sidebar:hover .sideNavItem span,
+.sidebar:focus-within .sideNavItem span,
+.sidebar:hover .sidebarUser > span,
+.sidebar:focus-within .sidebarUser > span,
+.sidebar:hover .sidebarUser > svg,
+.sidebar:focus-within .sidebarUser > svg {
+  opacity: 1;
+  transform: translateX(0);
+}
+
 .brand span {
   display: block;
   margin-top: 3px;
@@ -430,18 +469,28 @@ button:disabled {
 
 .sideNavItem {
   display: grid;
-  grid-template-columns: 24px 1fr;
+  grid-template-columns: 36px minmax(0, 1fr);
   align-items: center;
-  gap: 18px;
+  gap: 12px;
   width: 100%;
   min-height: 58px;
-  padding: 0 17px;
+  padding: 0;
   border: 0;
   border-radius: 12px;
   background: transparent;
   color: #111827;
+  overflow: hidden;
   text-align: left;
   font-weight: 650;
+}
+
+.sideNavItem svg {
+  justify-self: center;
+}
+
+.sidebar:hover .sideNavItem,
+.sidebar:focus-within .sideNavItem {
+  padding: 0 17px;
 }
 
 .sideNavItem.active {
@@ -462,7 +511,7 @@ button:disabled {
   display: grid;
   grid-template-columns: 46px minmax(0, 1fr) 18px;
   align-items: center;
-  gap: 13px;
+  gap: 10px;
   width: 100%;
   padding: 0;
   border: 0;
@@ -473,6 +522,11 @@ button:disabled {
   transition:
     transform 0.24s cubic-bezier(0.16, 1, 0.3, 1),
     filter 0.24s ease;
+}
+
+.sidebar:not(:hover):not(:focus-within) .sidebarUser {
+  grid-template-columns: 52px 0 0;
+  justify-content: center;
 }
 
 .sidebarUser:hover,
@@ -6956,7 +7010,7 @@ canvas {
   }
 
   .dashboardShell {
-    grid-template-columns: 236px minmax(0, 1fr);
+    grid-template-columns: 76px minmax(0, 1fr);
   }
 
   .contentGrid {
@@ -7061,6 +7115,25 @@ canvas {
     box-shadow: 28px 0 70px rgba(15, 23, 42, 0.22);
   }
 
+  .sidebar:hover,
+  .sidebar:focus-within {
+    width: min(318px, calc(100vw - 42px));
+    padding: max(22px, env(safe-area-inset-top)) 18px max(22px, env(safe-area-inset-bottom));
+  }
+
+  .brand > div:last-child,
+  .sideNavItem span,
+  .sidebarUser > span,
+  .sidebarUser > svg {
+    opacity: 1;
+    transform: none;
+  }
+
+  .sidebar:not(:hover):not(:focus-within) .sidebarUser {
+    grid-template-columns: 46px minmax(0, 1fr) 18px;
+    justify-content: stretch;
+  }
+
   .brand {
     margin-bottom: 18px;
   }
@@ -7075,6 +7148,9 @@ canvas {
   .sideNavItem {
     min-width: 0;
     min-height: 52px;
+    grid-template-columns: 24px 1fr;
+    gap: 18px;
+    padding: 0 17px;
     border-radius: 14px;
   }
 
