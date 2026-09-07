@@ -11193,14 +11193,21 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
         <button
           className="scheduleDeleteButton"
           type="button"
+          aria-label="Remove ticket"
           title="Remove ticket"
           draggable={false}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
           onClick={(event) => {
             event.stopPropagation();
             onRemove?.();
           }}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+          }}
         >
-          <Trash2 size={14} />
+          <Trash2 size={16} />
         </button>
       )}
     </div>
