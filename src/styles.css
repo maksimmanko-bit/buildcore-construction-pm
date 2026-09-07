@@ -3712,14 +3712,56 @@ h1 {
 }
 
 .assignmentResources {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  display: grid;
   gap: 6px;
   min-width: 0;
   max-width: 100%;
   overflow: visible;
   padding-top: 1px;
+}
+
+.assignmentResourceRow {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: visible;
+}
+
+.assignmentResourceLabel {
+  display: inline-flex;
+  min-width: 0;
+  width: fit-content;
+  max-width: 70px;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 7px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.54);
+  color: rgba(51, 65, 85, 0.76);
+  font-size: 9px;
+  font-weight: 950;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.equipmentRow .assignmentResourceLabel {
+  border-color: rgba(37, 99, 235, 0.14);
+  background: rgba(239, 246, 255, 0.64);
+  color: rgba(30, 64, 175, 0.78);
+}
+
+.assignmentResourceItems {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: visible;
 }
 
 .assignmentCrew .avatar {
@@ -10596,11 +10638,25 @@ html {
 }
 
 .scheduleBlock .assignmentResources {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  display: grid;
   gap: 6px;
   overflow: visible;
+}
+
+.scheduleBlock .assignmentResourceRow {
+  grid-template-columns: 70px minmax(0, 1fr);
+}
+
+.scheduleBlock.tightBlock .assignmentResourceRow,
+.scheduleBlock.shortBlock .assignmentResourceRow {
+  grid-template-columns: 58px minmax(0, 1fr);
+}
+
+.scheduleBlock.tightBlock .assignmentResourceLabel,
+.scheduleBlock.shortBlock .assignmentResourceLabel {
+  max-width: 58px;
+  padding-inline: 6px;
+  font-size: 8px;
 }
 
 .scheduleBlock.shortBlock {

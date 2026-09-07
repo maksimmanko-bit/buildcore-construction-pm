@@ -11140,53 +11140,67 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
       {assignment.timeText && <small className="scheduleBlockTime">{assignment.timeText}</small>}
       {(assignment.people?.length > 0 || assignment.equipment?.length > 0) && (
         <div className="assignmentResources">
-          {assignment.people?.map((person) => (
-              <button
-                className="crewAvatarButton"
-                draggable
-                key={person.id}
-                type="button"
-                title={`Open ${profileDisplayName(person)}. Drag to Available to remove from ticket.`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onOpenPerson?.(person);
-                }}
-                onDragStart={(event) => {
-                  event.stopPropagation();
-                  event.dataTransfer.effectAllowed = "move";
-                  event.dataTransfer.setData("application/x-buildcore-assigned-person", JSON.stringify({ personId: person.id, visitId: assignment.visitId }));
-                }}
-              >
-                <Avatar profile={person} url={avatarUrls[person.id]} />
-                <span className="crewAvatarTooltip">
-                  <strong>{profileDisplayName(person)}</strong>
-                  <small>{person.trade || roleLabel(person.role)}</small>
-                </span>
-              </button>
-          ))}
-          {assignment.equipment?.map((item) => (
-              <button
-                className="crewAvatarButton equipmentCrewButton"
-                draggable
-                key={item.id}
-                type="button"
-                title={`Drag ${item.name} to Available equipment to remove from ticket.`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                }}
-                onDragStart={(event) => {
-                  event.stopPropagation();
-                  event.dataTransfer.effectAllowed = "move";
-                  event.dataTransfer.setData("application/x-buildcore-assigned-equipment", JSON.stringify({ equipmentId: item.id, visitId: assignment.visitId }));
-                }}
-              >
-                <EquipmentAvatar item={item} small />
-                <span className="crewAvatarTooltip">
-                  <strong>{item.name}</strong>
-                  <small>{item.unit_number || item.type || "Equipment"}</small>
-                </span>
-              </button>
-          ))}
+          {assignment.people?.length > 0 && (
+            <div className="assignmentResourceRow peopleRow">
+              <span className="assignmentResourceLabel">People</span>
+              <div className="assignmentResourceItems">
+                {assignment.people.map((person) => (
+                  <button
+                    className="crewAvatarButton"
+                    draggable
+                    key={person.id}
+                    type="button"
+                    title={`Open ${profileDisplayName(person)}. Drag to Available to remove from ticket.`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenPerson?.(person);
+                    }}
+                    onDragStart={(event) => {
+                      event.stopPropagation();
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("application/x-buildcore-assigned-person", JSON.stringify({ personId: person.id, visitId: assignment.visitId }));
+                    }}
+                  >
+                    <Avatar profile={person} url={avatarUrls[person.id]} />
+                    <span className="crewAvatarTooltip">
+                      <strong>{profileDisplayName(person)}</strong>
+                      <small>{person.trade || roleLabel(person.role)}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {assignment.equipment?.length > 0 && (
+            <div className="assignmentResourceRow equipmentRow">
+              <span className="assignmentResourceLabel">Equipment</span>
+              <div className="assignmentResourceItems">
+                {assignment.equipment.map((item) => (
+                  <button
+                    className="crewAvatarButton equipmentCrewButton"
+                    draggable
+                    key={item.id}
+                    type="button"
+                    title={`Drag ${item.name} to Available equipment to remove from ticket.`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                    }}
+                    onDragStart={(event) => {
+                      event.stopPropagation();
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("application/x-buildcore-assigned-equipment", JSON.stringify({ equipmentId: item.id, visitId: assignment.visitId }));
+                    }}
+                  >
+                    <EquipmentAvatar item={item} small />
+                    <span className="crewAvatarTooltip">
+                      <strong>{item.name}</strong>
+                      <small>{item.unit_number || item.type || "Equipment"}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
       {canDeleteTickets && assignment.visitId && (
