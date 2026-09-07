@@ -1491,7 +1491,7 @@ h1 {
   gap: 7px;
 }
 
-.overviewChipList span {
+.overviewChipList > span {
   min-height: 28px;
   padding: 6px 9px;
   border: 1px solid rgba(148, 163, 184, 0.18);
@@ -11314,6 +11314,12 @@ html {
   border-radius: 18px;
 }
 
+.subcontractorTicketItem > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
 .subcontractorTicketItem strong,
 .subcontractorTicketItem small {
   display: block;
@@ -11334,28 +11340,134 @@ html {
   font-weight: 800;
 }
 
+.subcontractorContactLinks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.subcontractorContactLinks a {
+  display: inline-flex;
+  min-height: 30px;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 999px;
+  background: rgba(239, 246, 255, 0.76);
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.subcontractorContactLinks a:hover {
+  border-color: rgba(37, 99, 235, 0.32);
+  background: #eff6ff;
+  text-decoration: none;
+}
+
+.subcontractorContactLinks.compact a {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.subcontractorContactPerson,
+.subcontractorContactEmpty {
+  flex: 1 1 100%;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .subcontractorStatusActions {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
-.subcontractorOverviewChips span {
-  border: 1px solid rgba(148, 163, 184, 0.2);
+.subcontractorOverviewChips {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
 }
 
-.subcontractorOverviewChips .planned {
+.subcontractorOverviewCard {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.subcontractorOverviewCard > span {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.subcontractorOverviewCard strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subcontractorOverviewCard > small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.subcontractorOverviewCard em {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.subcontractorOverviewCard.planned {
   background: #fef3c7;
   color: #92400e;
 }
 
-.subcontractorOverviewChips .confirmed {
+.subcontractorOverviewCard.confirmed {
   background: #dcfce7;
   color: #166534;
 }
 
-.subcontractorOverviewChips .completed {
+.subcontractorOverviewCard.completed {
   background: #e2e8f0;
+  color: #334155;
+}
+
+.subcontractorOverviewCard.planned em {
+  background: rgba(254, 243, 199, 0.9);
+  color: #92400e;
+}
+
+.subcontractorOverviewCard.confirmed em {
+  background: rgba(220, 252, 231, 0.92);
+  color: #166534;
+}
+
+.subcontractorOverviewCard.completed em {
+  background: rgba(226, 232, 240, 0.92);
   color: #334155;
 }
 

@@ -1121,6 +1121,11 @@ function subcontractorDisplayName(item, fallback = "Subcontractor") {
   return item?.company_name || item?.name || fallback;
 }
 
+function phoneHref(value = "") {
+  const cleaned = String(value || "").replace(/[^\d+]/g, "");
+  return cleaned ? `tel:${cleaned}` : "";
+}
+
 function normalizeVisitSubcontractorAssignments(visit = {}, subcontractorById = new Map()) {
   const rawAssignments = Array.isArray(visit.subcontractors) ? visit.subcontractors : [];
   const fromJson = rawAssignments
@@ -7942,6 +7947,33 @@ function CrewStatusGroup({ emptyText, people = [], title, tone }) {
   );
 }
 
+function SubcontractorContactLinks({ item, compact = false }) {
+  const phone = item?.phone || "";
+  const email = item?.email || "";
+  const contactPerson = item?.contact_person || "";
+  const href = phoneHref(phone);
+
+  if (!contactPerson && !phone && !email) return <small className="subcontractorContactEmpty">No contact saved.</small>;
+
+  return (
+    <div className={compact ? "subcontractorContactLinks compact" : "subcontractorContactLinks"}>
+      {contactPerson && <small className="subcontractorContactPerson">{contactPerson}</small>}
+      {phone && (
+        <a href={href} onClick={(event) => event.stopPropagation()}>
+          <Phone size={14} />
+          {phone}
+        </a>
+      )}
+      {email && (
+        <a href={`mailto:${email}`} onClick={(event) => event.stopPropagation()}>
+          <Mail size={14} />
+          {email}
+        </a>
+      )}
+    </div>
+  );
+}
+
 function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationBusy = false, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onDownloadArchive, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onSubcontractorStatus, onUploaded, people, profileId, profiles, project, safetyLocked = false, subcontractors = [], today = getWinnipegDateValue(), visit }) {
   const ticketAddress = getVisitAddress(visit, project);
   const safetyEnabled = normalizeFeatureFlags(featureFlags).safetyForm;
@@ -8030,8 +8062,8 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
                   </span>
                   <div>
                     <strong>{subcontractorDisplayName(item)}</strong>
-                    <small>{item.trade || "Subcontractor"}{item.contact_person ? ` / ${item.contact_person}` : ""}</small>
-                    {(item.phone || item.email) && <small>{[item.phone, item.email].filter(Boolean).join(" / ")}</small>}
+                    <small>{item.trade || "Subcontractor"}</small>
+                    <SubcontractorContactLinks item={item} />
                   </div>
                   <em className={`subcontractorStatusBadge ${status}`}>{subcontractorStatusLabel(status)}</em>
                   {canDeleteTickets && status !== "completed" && (
@@ -10176,9 +10208,14 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                 {assignedSubcontractors.length ? (
                   <div className="overviewChipList subcontractorOverviewChips">
                     {assignedSubcontractors.map((item) => (
-                      <span className={normalizeSubcontractorStatus(item.status)} key={item.subcontractor_id || item.id}>
-                        {subcontractorDisplayName(item)} / {subcontractorStatusLabel(item.status)}
-                      </span>
+                      <article className={`subcontractorOverviewCard ${normalizeSubcontractorStatus(item.status)}`} key={item.subcontractor_id || item.id}>
+                        <span>
+                          <strong>{subcontractorDisplayName(item)}</strong>
+                          <em>{subcontractorStatusLabel(item.status)}</em>
+                        </span>
+                        <small>{item.trade || "Subcontractor"}</small>
+                        <SubcontractorContactLinks item={item} compact />
+                      </article>
                     ))}
                   </div>
                 ) : (
