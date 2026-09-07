@@ -97,6 +97,12 @@ function getWinnipegTimeValue(date = new Date()) {
 
 const tradeGroups = ["Demo/Asbestos", "Drywall/Mud/Taping/Flooring", "General Construction", "Management", "Shop/Trucking"];
 const unassignedTradeLabel = "Unassigned";
+const subcontractorTradeOptions = ["Electrical", "Plumbing", "HVAC", "Drywall", "Flooring", "Painting", "Roofing", "Concrete", "Fire Protection", "Other"];
+const subcontractorStatusOptions = [
+  { value: "planned", label: "Planned" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "completed", label: "Completed" },
+];
 const equipmentAvatarOptions = [
   { key: "excavator", label: "Excavator", Icon: Tractor },
   { key: "trailer", label: "Trailer", Icon: Truck },
@@ -285,6 +291,9 @@ const demo = {
     { id: "eq-3", name: "Pickup Truck #12", type: "Truck", unit_number: "TR-12", icon: "truck", avatar_key: "truck" },
     { id: "eq-4", name: "Boom Lift 45ft", type: "Lift", unit_number: "BL-45", icon: "lift", avatar_key: "lift" },
   ],
+  subcontractors: [
+    { id: "sub-1", company_name: "Northline Electrical", contact_person: "Chris Morgan", phone: "(204) 555-0190", email: "dispatch@northline.example", trade: "Electrical", notes: "Demo panel disconnects and rough-in coordination." },
+  ],
   visitNotes: [],
   siteVisits: [],
   changeOrders: [],
@@ -315,10 +324,11 @@ const navItems = [
   { id: "changeOrders", label: "Change Order", icon: FileBarChart2 },
   { id: "people", label: "People", icon: UsersRound },
   { id: "equipment", label: "Equipment", icon: Truck },
+  { id: "subcontractors", label: "Subcontractors", icon: Construction },
   { id: "documents", label: "Documents", icon: FileText },
   { id: "safetyReports", label: "Safety Reports", icon: FileBarChart2 },
 ];
-const settingsNavIds = ["people", "equipment", "documents", "safetyReports"];
+const settingsNavIds = ["people", "equipment", "subcontractors", "documents", "safetyReports"];
 
 const roleOptions = ["owner", "project_manager", "office_manager", "builder"];
 const projectStatusMap = {
@@ -340,6 +350,14 @@ function normalizeChangeOrderStatus(status) {
 
 function changeOrderStatusLabel(status) {
   return normalizeChangeOrderStatus(status) === "approved" ? "Approved" : "Requested";
+}
+
+function normalizeSubcontractorStatus(status) {
+  return subcontractorStatusOptions.some((option) => option.value === status) ? status : "planned";
+}
+
+function subcontractorStatusLabel(status) {
+  return subcontractorStatusOptions.find((option) => option.value === normalizeSubcontractorStatus(status))?.label ?? "Planned";
 }
 
 const safetyTemplateObjectTypes = [
@@ -514,6 +532,7 @@ const emptyProjectForm = {
   status: "planning",
 };
 const emptyEquipmentForm = { name: "", type: "", unit_number: "", notes: "", avatar_key: "excavator" };
+const emptySubcontractorForm = { company_name: "", contact_person: "", phone: "", email: "", trade: "Electrical", notes: "" };
 const emptyVisitForm = {
   project_id: "",
   address: "",
@@ -526,6 +545,7 @@ const emptyVisitForm = {
   is_first_visit: false,
   people_ids: [],
   equipment_ids: [],
+  subcontractors: [],
 };
 const emptyPhotoFolder = { id: "folder-1", name: "", description: "", files: [], captions: {} };
 const emptySiteVisitForm = {
@@ -693,6 +713,9 @@ function serializeVisitEditorForm(form) {
     equipment_ids: [...(form.equipment_ids ?? [])].sort(),
     is_first_visit: Boolean(form.is_first_visit),
     people_ids: [...(form.people_ids ?? [])].sort(),
+    subcontractors: [...(form.subcontractors ?? [])]
+      .map((item) => ({ id: item.subcontractor_id, status: normalizeSubcontractorStatus(item.status) }))
+      .sort((a, b) => String(a.id).localeCompare(String(b.id))),
     project_id: form.project_id ?? "",
     start_time: String(form.start_time ?? "07:00").slice(0, 5),
     visit_date: form.visit_date ?? "",
@@ -1094,6 +1117,42 @@ function cleanDownloadFileName(value, fallback = "buildcore-files") {
   );
 }
 
+function subcontractorDisplayName(item, fallback = "Subcontractor") {
+  return item?.company_name || item?.name || fallback;
+}
+
+function normalizeVisitSubcontractorAssignments(visit = {}, subcontractorById = new Map()) {
+  const rawAssignments = Array.isArray(visit.subcontractors) ? visit.subcontractors : [];
+  const fromJson = rawAssignments
+    .map((item) => {
+      const id = item?.subcontractor_id || item?.id;
+      if (!id) return null;
+      const saved = subcontractorById.get(id) ?? {};
+      return {
+        ...saved,
+        ...item,
+        id,
+        subcontractor_id: id,
+        company_name: item.company_name || saved.company_name || saved.name || "Subcontractor",
+        contact_person: item.contact_person || saved.contact_person || "",
+        email: item.email || saved.email || "",
+        notes: item.notes || saved.notes || "",
+        phone: item.phone || saved.phone || "",
+        status: normalizeSubcontractorStatus(item.status),
+        trade: item.trade || saved.trade || "Other",
+      };
+    })
+    .filter(Boolean);
+  if (fromJson.length > 0) return fromJson;
+  return (visit.subcontractor_ids ?? [])
+    .map((id) => {
+      const saved = subcontractorById.get(id);
+      if (!saved) return null;
+      return { ...saved, id, subcontractor_id: id, status: "planned" };
+    })
+    .filter(Boolean);
+}
+
 function highlightText(value, query) {
   const raw = cleanSearchText(value);
   const terms = String(query ?? "")
@@ -1454,12 +1513,14 @@ export default function App() {
   const [activeEditLock, setActiveEditLock] = useState(null);
   const [editingProjectId, setEditingProjectId] = useState(null);
   const [editingEquipmentId, setEditingEquipmentId] = useState(null);
+  const [editingSubcontractorId, setEditingSubcontractorId] = useState(null);
   const [editingVisitId, setEditingVisitId] = useState(null);
   const [editingSiteVisitId, setEditingSiteVisitId] = useState(null);
   const [editingChangeOrderId, setEditingChangeOrderId] = useState(null);
   const [companyForm, setCompanyForm] = useState({ company_name: "BuildCore Construction", full_name: "", phone: "" });
   const [projectForm, setProjectForm] = useState(emptyProjectForm);
   const [equipmentForm, setEquipmentForm] = useState(emptyEquipmentForm);
+  const [subcontractorForm, setSubcontractorForm] = useState(emptySubcontractorForm);
   const [visitForm, setVisitForm] = useState(emptyVisitForm);
   const [siteVisitForm, setSiteVisitForm] = useState(emptySiteVisitForm);
   const [changeOrderForm, setChangeOrderForm] = useState(emptyChangeOrderForm);
@@ -1482,6 +1543,7 @@ export default function App() {
   const authRedirectHandledRef = useRef(false);
   const offlineQueueProcessingRef = useRef(false);
   const reminderCheckRef = useRef("");
+  const subcontractorReminderCheckRef = useRef("");
 
   const isLive = Boolean(session && profile?.is_active);
   const canManage = Boolean(profile?.is_active && ["owner", "project_manager", "office_manager"].includes(profile?.role));
@@ -1690,6 +1752,20 @@ export default function App() {
     if (Number(inserted) > 0) loadNotifications();
   }
 
+  async function runSubcontractorReminderCheck() {
+    if (!supabase || !profile?.is_active || !profile.company_id || profile.role === "builder") return;
+    const cooldownKey = `${profile.company_id}:subcontractors:${getWinnipegDateValue()}:${Math.floor(Date.now() / (5 * 60 * 1000))}`;
+    if (subcontractorReminderCheckRef.current === cooldownKey) return;
+    subcontractorReminderCheckRef.current = cooldownKey;
+
+    const { data: inserted, error } = await supabase.rpc("create_subcontractor_confirmation_reminders");
+    if (error) {
+      if (error.code !== "42883" && error.code !== "PGRST202") console.warn("Subcontractor reminder check failed", error);
+      return;
+    }
+    if (Number(inserted) > 0) loadNotifications();
+  }
+
   const errorContextRef = useRef({});
   const realtimeRefreshTimersRef = useRef({});
   useEffect(() => {
@@ -1794,11 +1870,12 @@ export default function App() {
         ? supabase.from("profiles").select("*").order("is_active", { ascending: true }).order("full_name")
         : supabase.from("profiles").select("*").eq("is_active", true).order("full_name");
 
-      const [companyResult, projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult, visitNotesResult, notificationsResult] = await Promise.all([
+      const [companyResult, projectsResult, peopleResult, equipmentResult, subcontractorsResult, visitsResult, filesResult, activityResult, visitNotesResult, notificationsResult] = await Promise.all([
         supabase.from("companies").select("feature_flags").eq("id", nextProfile.company_id).single(),
         supabase.from("projects").select("*").order("created_at", { ascending: false }),
         peopleQuery,
         supabase.from("equipment").select("*").order("name"),
+        supabase.from("subcontractors").select("*").order("company_name"),
         supabase.from("visit_schedule_view").select("*").order("visit_date", { ascending: false }).order("start_time"),
         supabase.from("visit_files").select("*").order("created_at", { ascending: false }),
         supabase.from("visit_activity").select("*").order("created_at", { ascending: false }).limit(500),
@@ -1808,6 +1885,7 @@ export default function App() {
 
       const failed = [companyResult, projectsResult, peopleResult, equipmentResult, visitsResult, filesResult, activityResult].find((result) => result.error);
       if (failed) throw failed.error;
+      if (subcontractorsResult.error && subcontractorsResult.error.code !== "42P01") throw subcontractorsResult.error;
       if (visitNotesResult.error && visitNotesResult.error.code !== "42P01") throw visitNotesResult.error;
       if (notificationsResult.error && notificationsResult.error.code !== "42P01") throw notificationsResult.error;
 
@@ -1828,6 +1906,7 @@ export default function App() {
         people: allPeople.filter((person) => person.is_active && (!person.is_bot || nextFeatureFlags.testBots)),
         pendingPeople: allPeople.filter((person) => !person.is_active && !person.is_bot),
         equipment: equipmentResult.data ?? [],
+        subcontractors: subcontractorsResult.error?.code === "42P01" ? [] : subcontractorsResult.data ?? [],
         visits: visitsResult.data ?? [],
         siteVisits: siteVisitsResult.data ?? [],
         changeOrders: changeOrdersResult.data ?? [],
@@ -1896,7 +1975,7 @@ export default function App() {
   }, [activeNav]);
 
   useEffect(() => {
-    if ((activeNav === "people" || activeNav === "equipment") && !canManage) setActiveNav("overview");
+    if ((activeNav === "people" || activeNav === "equipment" || activeNav === "subcontractors") && !canManage) setActiveNav("overview");
     if (activeNav === "safetyReports" && !activeFeatureFlags.safetyForm) setActiveNav("overview");
     if (activeNav === "siteVisits" && (!activeFeatureFlags.siteInspections || !canCreateSiteInspections)) setActiveNav("overview");
     if (activeNav === "changeOrders" && (!activeFeatureFlags.changeOrders || !canCreateChangeOrders)) setActiveNav("overview");
@@ -2028,6 +2107,12 @@ export default function App() {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "visit_equipment" }, () => {
         scheduleRealtimeLoad("visits", () => void loadVisits());
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "visit_subcontractors" }, () => {
+        scheduleRealtimeLoad("visits", () => void loadVisits());
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "subcontractors", filter: `company_id=eq.${profile.company_id}` }, () => {
+        scheduleRealtimeLoad("subcontractors", () => void loadSubcontractors());
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "visit_activity", filter: `company_id=eq.${profile.company_id}` }, () => {
         scheduleRealtimeLoad("activities", () => void loadActivities());
@@ -2201,6 +2286,7 @@ export default function App() {
   const profileById = useMemo(() => new Map((rowsSource.people ?? []).map((person) => [person.id, person])), [rowsSource.people]);
   const projectById = useMemo(() => new Map((rowsSource.projects ?? []).map((project) => [project.id, project])), [rowsSource.projects]);
   const equipmentById = useMemo(() => new Map((rowsSource.equipment ?? []).map((item) => [item.id, item])), [rowsSource.equipment]);
+  const subcontractorById = useMemo(() => new Map((rowsSource.subcontractors ?? []).map((item) => [item.id, item])), [rowsSource.subcontractors]);
   const assignmentsByPerson = useMemo(() => {
     const grouped = new Map();
     (assignmentsSource ?? []).forEach((item) => {
@@ -2261,6 +2347,7 @@ export default function App() {
   const selectedChangeOrderFiles = useMemo(() => (rowsSource.files ?? []).filter((file) => selectedChangeOrder?.id && file.change_order_id === selectedChangeOrder.id), [rowsSource.files, selectedChangeOrder?.id]);
   const currentVisitPeople = useMemo(() => (currentVisit ? (currentVisit.people_ids ?? []).map((id) => profileById.get(id)).filter(Boolean) : []), [currentVisit, profileById]);
   const currentVisitEquipment = useMemo(() => (currentVisit ? (currentVisit.equipment_ids ?? []).map((id) => equipmentById.get(id)).filter(Boolean) : []), [currentVisit, equipmentById]);
+  const currentVisitSubcontractors = useMemo(() => (currentVisit ? normalizeVisitSubcontractorAssignments(currentVisit, subcontractorById) : []), [currentVisit, subcontractorById]);
   const selectedProjectActivities = useMemo(() => (selectedProject ? (rowsSource.activities ?? []).filter((item) => item.project_id === selectedProject.id) : []), [rowsSource.activities, selectedProject]);
   const workflowVisit = useMemo(() => (workflowVisitId ? (rowsSource.visits ?? []).find((visit) => visit.id === workflowVisitId) ?? currentVisit : currentVisit), [currentVisit, rowsSource.visits, workflowVisitId]);
   const workflowProject = useMemo(() => (workflowVisit ? projectById.get(workflowVisit.project_id) ?? selectedProject : selectedProject), [projectById, selectedProject, workflowVisit]);
@@ -2308,11 +2395,12 @@ export default function App() {
     if (!isLive) return undefined;
     const check = () => {
       void runActiveTicketReminderCheck();
+      void runSubcontractorReminderCheck();
     };
     check();
     const interval = window.setInterval(check, 60000);
     return () => window.clearInterval(interval);
-  }, [isLive, profile?.company_id, profile?.id, rowsSource.visits]);
+  }, [isLive, profile?.company_id, profile?.id, profile?.role, rowsSource.visits]);
 
   useEffect(() => {
     let alive = true;
@@ -2408,6 +2496,7 @@ export default function App() {
                 color: isSiteVisit ? "green" : colors[index % colors.length],
                 people: isSiteVisit ? [profileById.get(item.created_by)].filter(Boolean) : (item.people_ids ?? []).map((id) => profileById.get(id)).filter(Boolean),
                 equipment: isSiteVisit ? [] : (item.equipment_ids ?? []).map((id) => equipmentById.get(id)).filter(Boolean),
+                subcontractors: isSiteVisit ? [] : normalizeVisitSubcontractorAssignments(item, subcontractorById),
                 laneIndex: visitLanes.laneByVisitId.get(item.id) ?? 0,
                 laneCount: visitLanes.laneCount,
               };
@@ -2415,7 +2504,7 @@ export default function App() {
           };
         })
         .filter((project) => project.assignments.length > 0),
-    [activeFeatureFlags.siteInspections, equipmentById, profileById, rowsSource.projects, rowsSource.siteVisits, rowsSource.visits, selectedDate],
+    [activeFeatureFlags.siteInspections, equipmentById, profileById, rowsSource.projects, rowsSource.siteVisits, rowsSource.visits, selectedDate, subcontractorById],
   );
   const availableTodayPeople = useMemo(
     () => rowsSource.people.filter((person) => getPersonWorkStatus({ date: selectedDate, person, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }).tone === "available"),
@@ -2440,6 +2529,10 @@ export default function App() {
         pickerStatus: getEquipmentWorkStatus({ date: visitForm.visit_date, equipment, projects: rowsSource.projects, visits: rowsSource.visits ?? [] }),
       })),
     [rowsSource.equipment, rowsSource.projects, rowsSource.visits, visitForm.visit_date],
+  );
+  const visitPickerSubcontractors = useMemo(
+    () => (rowsSource.subcontractors ?? []).filter((item) => item.is_active !== false).sort((a, b) => subcontractorDisplayName(a).localeCompare(subcontractorDisplayName(b))),
+    [rowsSource.subcontractors],
   );
   const visitFormProject = useMemo(() => projectById.get(visitForm.project_id) ?? null, [projectById, visitForm.project_id]);
   const visitProjectAddressOptions = useMemo(() => getProjectAddressOptions(visitFormProject), [visitFormProject]);
@@ -2704,6 +2797,24 @@ export default function App() {
     } catch (error) {
       setServerConnected(false);
       setNotice(error.message);
+    } finally {
+      if (!quiet) setLoading(false);
+    }
+  }
+
+  async function loadSubcontractors({ quiet = true } = {}) {
+    if (!supabase || !session) return;
+    if (!quiet) setLoading(true);
+    try {
+      const { data: subcontractors, error } = await supabase.from("subcontractors").select("*").order("company_name");
+      if (error) throw error;
+      commitWorkspaceData((current) => ({ ...current, subcontractors: subcontractors ?? [] }));
+      setServerConnected(true);
+    } catch (error) {
+      if (error.code !== "42P01") {
+        setServerConnected(false);
+        setNotice(error.message);
+      }
     } finally {
       if (!quiet) setLoading(false);
     }
@@ -3194,6 +3305,70 @@ export default function App() {
     refreshData();
   }
 
+  async function saveSubcontractor(event) {
+    event.preventDefault();
+    if (preventSaveDuringDictation(event)) return;
+    if (!supabase || !profile || !canManage) return;
+    const companyName = subcontractorForm.company_name.trim();
+    if (!companyName) {
+      setNotice("Company name is required.");
+      return;
+    }
+
+    setLoading(true);
+    const payload = {
+      company_id: profile.company_id,
+      company_name: companyName,
+      contact_person: subcontractorForm.contact_person.trim() || null,
+      email: subcontractorForm.email.trim() || null,
+      notes: subcontractorForm.notes.trim() || null,
+      phone: subcontractorForm.phone.trim() || null,
+      trade: subcontractorForm.trade.trim() || "Other",
+    };
+    const { error } = editingSubcontractorId
+      ? await supabase.from("subcontractors").update(payload).eq("id", editingSubcontractorId)
+      : await supabase.from("subcontractors").insert(payload);
+    setLoading(false);
+
+    if (error) {
+      recordClientError(error, { ...errorContextRef.current, source: "saveSubcontractor" });
+      setNotice(error.message);
+      return;
+    }
+
+    setSubcontractorForm(emptySubcontractorForm);
+    setEditingSubcontractorId(null);
+    setModalType(null);
+    triggerSoftPulse();
+    setNotice(editingSubcontractorId ? "Subcontractor changes saved." : "Subcontractor saved.");
+    loadSubcontractors({ quiet: true });
+  }
+
+  async function deleteSubcontractor(item) {
+    if (!supabase || !canManage || !item?.id) return;
+    const confirmed = await confirmAction({
+      title: "Remove subcontractor?",
+      message: `Remove "${subcontractorDisplayName(item)}" from subcontractors? Existing ticket history keeps the saved company details.`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    const previousData = data;
+    commitWorkspaceData((current) => ({
+      ...current,
+      subcontractors: (current.subcontractors ?? []).filter((row) => row.id !== item.id),
+    }));
+    const { error } = await supabase.from("subcontractors").delete().eq("id", item.id);
+    if (error) {
+      commitWorkspaceData(previousData);
+      setNotice(error.message);
+      return;
+    }
+    triggerSoftPulse();
+    setNotice("Subcontractor removed.");
+  }
+
   async function saveVisit(event) {
     event.preventDefault();
     if (preventSaveDuringDictation(event)) return;
@@ -3281,20 +3456,27 @@ export default function App() {
         const { data: visit, error: visitError } = await visitQuery;
         if (visitError) throw visitError;
         if (!firstVisit) firstVisit = visit;
-        savedVisits.push({ ...visit, people_ids: visitForm.people_ids, equipment_ids: visitForm.equipment_ids });
+        savedVisits.push({ ...visit, people_ids: visitForm.people_ids, equipment_ids: visitForm.equipment_ids, subcontractors: visitForm.subcontractors });
         if (!editingVisitId) createdVisitIds.push(visit.id);
 
         if (editingVisitId) {
           const clearPeople = await supabase.from("visit_people").delete().eq("visit_id", visit.id);
           const clearEquipment = await supabase.from("visit_equipment").delete().eq("visit_id", visit.id);
-          if (clearPeople.error || clearEquipment.error) throw clearPeople.error || clearEquipment.error;
+          const clearSubcontractors = await supabase.from("visit_subcontractors").delete().eq("visit_id", visit.id);
+          if (clearPeople.error || clearEquipment.error || (clearSubcontractors.error && clearSubcontractors.error.code !== "42P01")) throw clearPeople.error || clearEquipment.error || clearSubcontractors.error;
         }
 
         const peopleRowsToInsert = visitForm.people_ids.map((profileId) => ({ visit_id: visit.id, profile_id: profileId }));
         const equipmentRowsToInsert = visitForm.equipment_ids.map((equipmentId) => ({ visit_id: visit.id, equipment_id: equipmentId }));
+        const subcontractorRowsToInsert = (visitForm.subcontractors ?? []).map((item) => ({
+          visit_id: visit.id,
+          subcontractor_id: item.subcontractor_id,
+          status: normalizeSubcontractorStatus(item.status),
+        }));
         const peopleResult = peopleRowsToInsert.length ? await supabase.from("visit_people").insert(peopleRowsToInsert) : { error: null };
         const equipmentResult = equipmentRowsToInsert.length ? await supabase.from("visit_equipment").insert(equipmentRowsToInsert) : { error: null };
-        const assignmentError = peopleResult.error || equipmentResult.error;
+        const subcontractorResult = subcontractorRowsToInsert.length ? await supabase.from("visit_subcontractors").insert(subcontractorRowsToInsert) : { error: null };
+        const assignmentError = peopleResult.error || equipmentResult.error || subcontractorResult.error;
         if (assignmentError) throw assignmentError;
       }
 
@@ -3329,6 +3511,20 @@ export default function App() {
         type: editingVisitId ? "ticket_updated" : "ticket_assigned",
         visitId: firstVisit.id,
       });
+      const plannedSubcontractors = (visitForm.subcontractors ?? [])
+        .filter((item) => normalizeSubcontractorStatus(item.status) === "planned")
+        .map((item) => subcontractorById.get(item.subcontractor_id))
+        .filter(Boolean);
+      if (plannedSubcontractors.length > 0) {
+        void createNotifications({
+          managers: true,
+          message: `${plannedSubcontractors.map((item) => subcontractorDisplayName(item)).join(", ")} waiting for confirmation on ${formatDateLabel(firstVisit.visit_date)}.`,
+          projectId: firstVisit.project_id,
+          title: "Waiting for subcontractor confirmation",
+          type: "subcontractor_waiting_confirmation",
+          visitId: firstVisit.id,
+        });
+      }
       triggerSoftPulse();
       setNotice(
         editingVisitId
@@ -5165,6 +5361,60 @@ export default function App() {
     }
   }
 
+  async function assignSubcontractorToVisit({ subcontractorId, visitId }) {
+    if (!supabase || !canManage) {
+      setNotice("Only Owner, PM, or Office Manager can assign subcontractors.");
+      return;
+    }
+    if (!subcontractorId || !visitId) return;
+    const visit = (rowsSource.visits ?? []).find((item) => item.id === visitId);
+    const subcontractor = subcontractorById.get(subcontractorId);
+    if (!visit || !subcontractor) return;
+    const currentAssignments = normalizeVisitSubcontractorAssignments(visit, subcontractorById);
+    if (currentAssignments.some((item) => (item.subcontractor_id || item.id) === subcontractorId)) {
+      setNotice(`${subcontractorDisplayName(subcontractor)} is already assigned to this ticket.`);
+      return;
+    }
+
+    const previousData = data;
+    commitWorkspaceData((current) => ({
+      ...current,
+      visits: (current.visits ?? []).map((item) => {
+        if (item.id !== visitId) return item;
+        return {
+          ...item,
+          subcontractors: [...normalizeVisitSubcontractorAssignments(item, subcontractorById), { ...subcontractor, subcontractor_id: subcontractorId, status: "planned" }],
+          subcontractor_ids: [...new Set([...(item.subcontractor_ids ?? []), subcontractorId])],
+        };
+      }),
+    }));
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("visit_subcontractors").insert({ visit_id: visitId, subcontractor_id: subcontractorId, status: "planned" });
+      if (error) throw error;
+      await logVisitActivity(visit, "subcontractor_assigned", `${currentUserName} assigned ${subcontractorDisplayName(subcontractor)} to this ticket.`, { subcontractorId, status: "planned" });
+      void createNotifications({
+        managers: true,
+        message: `${subcontractorDisplayName(subcontractor)} waiting for confirmation on ${formatDateLabel(visit.visit_date)}.`,
+        projectId: visit.project_id,
+        title: "Waiting for subcontractor confirmation",
+        type: "subcontractor_waiting_confirmation",
+        visitId,
+      });
+      triggerSoftPulse();
+      setNotice(`${subcontractorDisplayName(subcontractor)} assigned as Planned.`);
+      loadVisits();
+      loadActivities();
+    } catch (error) {
+      commitWorkspaceData(previousData);
+      setNotice(error.message);
+      loadVisits();
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function removePersonFromVisit({ personId, visitId }) {
     if (!supabase || !canManage) {
       setNotice("Only Owner, PM, or Office Manager can change ticket crews.");
@@ -5248,6 +5498,11 @@ export default function App() {
       setEditingEquipmentId(null);
       setEquipmentForm(emptyEquipmentForm);
       setModalType("equipment");
+    }
+    else if (activeNav === "subcontractors") {
+      setEditingSubcontractorId(null);
+      setSubcontractorForm(emptySubcontractorForm);
+      setModalType("subcontractor");
     }
     else if (activeNav === "siteVisits") {
       setEditingSiteVisitId(null);
@@ -5340,6 +5595,64 @@ export default function App() {
     }
   }
 
+  async function updateVisitSubcontractorStatus({ subcontractorId, status, visitId }) {
+    if (!supabase || !canManage) {
+      setNotice("Only Owner, PM, or Office Manager can update subcontractors.");
+      return;
+    }
+    if (!subcontractorId || !visitId) return;
+    const nextStatus = normalizeSubcontractorStatus(status);
+    const visit = (rowsSource.visits ?? []).find((item) => item.id === visitId);
+    const subcontractor = subcontractorById.get(subcontractorId);
+    if (!visit || !subcontractor) return;
+
+    const previousData = data;
+    commitWorkspaceData((current) => ({
+      ...current,
+      visits: (current.visits ?? []).map((item) => {
+        if (item.id !== visitId) return item;
+        const currentAssignments = normalizeVisitSubcontractorAssignments(item, subcontractorById).map((assignment) =>
+          (assignment.subcontractor_id || assignment.id) === subcontractorId ? { ...assignment, status: nextStatus } : assignment,
+        );
+        return { ...item, subcontractors: currentAssignments };
+      }),
+    }));
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from("visit_subcontractors")
+        .update({ status: nextStatus })
+        .eq("visit_id", visitId)
+        .eq("subcontractor_id", subcontractorId);
+      if (error) throw error;
+      await logVisitActivity(visit, "subcontractor_status_updated", `${currentUserName} marked ${subcontractorDisplayName(subcontractor)} ${subcontractorStatusLabel(nextStatus)}.`, {
+        subcontractorId,
+        status: nextStatus,
+      });
+      if (nextStatus === "planned") {
+        void createNotifications({
+          managers: true,
+          message: `${subcontractorDisplayName(subcontractor)} is waiting for confirmation on ${formatDateLabel(visit.visit_date)}.`,
+          projectId: visit.project_id,
+          title: "Waiting for subcontractor confirmation",
+          type: "subcontractor_waiting_confirmation",
+          visitId,
+        });
+      }
+      triggerSoftPulse();
+      setNotice(`${subcontractorDisplayName(subcontractor)} marked ${subcontractorStatusLabel(nextStatus)}.`);
+      loadVisits();
+      loadActivities();
+    } catch (error) {
+      commitWorkspaceData(previousData);
+      setNotice(error.message);
+      loadVisits();
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function openVisitModal(projectId = selectedProject?.id, defaults = {}) {
     if (!canManage) {
       setNotice("Only Owner, PM, or Office Manager can schedule visits.");
@@ -5357,6 +5670,7 @@ export default function App() {
       ...defaults,
       people_ids: defaults.people_ids ?? [],
       equipment_ids: defaults.equipment_ids ?? [],
+      subcontractors: defaults.subcontractors ?? [],
       work_scopes: defaults.work_scopes ?? [defaults.work_scope ?? ""],
     };
     setVisitForm(nextVisitForm);
@@ -5458,6 +5772,23 @@ export default function App() {
     setModalType("equipment");
   }
 
+  function editSubcontractor(item) {
+    if (!canManage) {
+      setNotice("Only Owner, PM, or Office Manager can edit subcontractors.");
+      return;
+    }
+    setEditingSubcontractorId(item.id);
+    setSubcontractorForm({
+      company_name: item.company_name ?? "",
+      contact_person: item.contact_person ?? "",
+      phone: item.phone ?? "",
+      email: item.email ?? "",
+      trade: item.trade ?? "Other",
+      notes: item.notes ?? "",
+    });
+    setModalType("subcontractor");
+  }
+
   function selectProject(project) {
     setSelectedAssignmentId("");
     openProjectOverlay(project, "project");
@@ -5500,6 +5831,10 @@ export default function App() {
       is_first_visit: Boolean(visit.is_first_visit),
       people_ids: visit.people_ids ?? [],
       equipment_ids: visit.equipment_ids ?? [],
+      subcontractors: normalizeVisitSubcontractorAssignments(visit, subcontractorById).map((item) => ({
+        subcontractor_id: item.subcontractor_id || item.id,
+        status: normalizeSubcontractorStatus(item.status),
+      })),
     };
     setVisitForm(nextVisitForm);
     editorInitialSnapshotRef.current.visit = serializeVisitEditorForm(nextVisitForm);
@@ -5724,7 +6059,7 @@ export default function App() {
         .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`));
       const files = await hydrateExportFiles((rowsSource.files ?? []).filter((file) => file.project_id === project.id));
       const activities = (rowsSource.activities ?? []).filter((item) => item.project_id === project.id);
-      await exportProjectPdf({ project, visits, files, activities, people: rowsSource.people, equipment: rowsSource.equipment, getProfileName });
+      await exportProjectPdf({ project, visits, files, activities, people: rowsSource.people, equipment: rowsSource.equipment, subcontractors: rowsSource.subcontractors, getProfileName });
       setNotice("Project PDF exported.");
     } catch (error) {
       setNotice(error.message);
@@ -5748,6 +6083,7 @@ export default function App() {
         activities,
         people: rowsSource.people.filter((person) => visit.people_ids?.includes(person.id)),
         equipment: rowsSource.equipment.filter((item) => visit.equipment_ids?.includes(item.id)),
+        subcontractors: normalizeVisitSubcontractorAssignments(visit, subcontractorById),
         getProfileName,
       });
       setNotice("Ticket PDF exported.");
@@ -5855,7 +6191,7 @@ export default function App() {
       const visits = (rowsSource.visits ?? [])
         .filter((visit) => visit.project_id === project.id)
         .sort((a, b) => `${a.visit_date} ${a.start_time}`.localeCompare(`${b.visit_date} ${b.start_time}`));
-      exportProjectTicketsXlsx({ project, visits, people: rowsSource.people, equipment: rowsSource.equipment, getProfileName });
+      exportProjectTicketsXlsx({ project, visits, people: rowsSource.people, equipment: rowsSource.equipment, subcontractors: rowsSource.subcontractors, getProfileName });
       setNotice("Project tickets Excel exported.");
     } catch (error) {
       setNotice(error.message);
@@ -5933,16 +6269,38 @@ export default function App() {
       setActiveNav("people");
     } else if (result.type === "equipment") {
       setActiveNav("equipment");
+    } else if (result.type === "subcontractor") {
+      setActiveNav("subcontractors");
     }
   }
 
-  function toggleVisitArray(key, value) {
+function toggleVisitArray(key, value) {
+  setVisitForm((current) => {
+    const next = new Set(current[key]);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    return { ...current, [key]: [...next] };
+  });
+}
+
+  function toggleVisitSubcontractor(subcontractorId) {
     setVisitForm((current) => {
-      const next = new Set(current[key]);
-      if (next.has(value)) next.delete(value);
-      else next.add(value);
-      return { ...current, [key]: [...next] };
+      const currentItems = current.subcontractors ?? [];
+      if (currentItems.some((item) => item.subcontractor_id === subcontractorId)) {
+        return { ...current, subcontractors: currentItems.filter((item) => item.subcontractor_id !== subcontractorId) };
+      }
+      return {
+        ...current,
+        subcontractors: [...currentItems, { subcontractor_id: subcontractorId, status: "planned" }],
+      };
     });
+  }
+
+  function updateVisitSubcontractorStatusDraft(subcontractorId, status) {
+    setVisitForm((current) => ({
+      ...current,
+      subcontractors: (current.subcontractors ?? []).map((item) => (item.subcontractor_id === subcontractorId ? { ...item, status: normalizeSubcontractorStatus(status) } : item)),
+    }));
   }
 
   function updateVisitProject(projectId) {
@@ -6022,6 +6380,7 @@ export default function App() {
     if (result.type === "changeOrder") return <FileBarChart2 size={18} />;
     if (result.type === "person") return <UsersRound size={18} />;
     if (result.type === "equipment") return <Truck size={18} />;
+    if (result.type === "subcontractor") return <Construction size={18} />;
     return <Calendar size={18} />;
   }
 
@@ -6146,6 +6505,17 @@ export default function App() {
         </>
       );
     }
+    if (activeNav === "subcontractors") {
+      if (!canManage) {
+        return <InfoView icon={Construction} title="Subcontractors access locked" text="Subcontractors are managed by Owner, Project Manager, and Office Manager roles." />;
+      }
+      return (
+        <>
+          <SectionToolbar label="Subcontractors" onAdd={openAddModal} />
+          <SubcontractorsView subcontractors={rowsSource.subcontractors ?? []} onDelete={deleteSubcontractor} onEdit={editSubcontractor} />
+        </>
+      );
+    }
     if (activeNav === "siteVisits") {
       if (!activeFeatureFlags.siteInspections) {
         return <InfoView icon={ClipboardCheck} title="Site Inspection hidden" text="Site Inspection is disabled in Developer mode. Existing records stay saved in Supabase." />;
@@ -6227,6 +6597,7 @@ export default function App() {
         onAssignEquipment={assignEquipmentToVisit}
         onAssignPerson={assignPersonToVisit}
         onAssignPeopleGroup={assignPeopleGroupToVisit}
+        onAssignSubcontractor={assignSubcontractorToVisit}
         onCreateVisitFromDrop={openVisitModalFromScheduleDrop}
         onDropAssignment={moveVisitAssignment}
         onOpenPerson={openPersonOverlay}
@@ -6234,6 +6605,7 @@ export default function App() {
         onRemoveEquipmentFromVisit={removeEquipmentFromVisit}
         onRemovePersonFromVisit={removePersonFromVisit}
         onRemoveVisit={deleteVisit}
+        subcontractors={rowsSource.subcontractors ?? []}
         onSelect={selectAssignment}
       />
     );
@@ -6708,6 +7080,7 @@ export default function App() {
             onExportPdf={() => exportCurrentVisitPdf(currentVisit)}
             onOpenAttachment={openAttachment}
             onOpenNote={openVisitNoteModal}
+            onSubcontractorStatus={updateVisitSubcontractorStatus}
             onUploaded={(message) => {
               setNotice(message);
               loadFiles();
@@ -6719,6 +7092,7 @@ export default function App() {
             project={selectedProject}
             notes={currentVisitNotes}
             safetyLocked={visitActionsBlockedBySafety(currentVisit)}
+            subcontractors={currentVisitSubcontractors}
             today={todayValue}
             visit={currentVisit}
           />
@@ -6912,6 +7286,19 @@ export default function App() {
           </AppModal>
         )}
 
+        {modalType === "subcontractor" && (
+          <AppModal
+            title={editingSubcontractorId ? "Edit subcontractor" : "Add subcontractor"}
+            onClose={() => {
+              setEditingSubcontractorId(null);
+              setSubcontractorForm(emptySubcontractorForm);
+              setModalType(null);
+            }}
+          >
+            <SubcontractorForm dictation={dictation} form={subcontractorForm} loading={loading} onChange={setSubcontractorForm} onSubmit={saveSubcontractor} />
+          </AppModal>
+        )}
+
         {modalType === "visit" && (
           <AppModal title={editingVisitId ? "Edit visit" : "Schedule visit"} onClose={closeEditorModal} wide>
             <form className="stackForm twoColumns" onSubmit={saveVisit}>
@@ -6982,6 +7369,12 @@ export default function App() {
               </label>
               <GroupedPickerList groups={groupedVisitPickerPeople} selected={visitForm.people_ids} onToggle={(id) => toggleVisitArray("people_ids", id)} title="People by Trade" />
               <PickerList title="Equipment" items={visitPickerEquipment} selected={visitForm.equipment_ids} labelKey="name" onToggle={(id) => toggleVisitArray("equipment_ids", id)} />
+              <SubcontractorPickerList
+                items={visitPickerSubcontractors}
+                selected={visitForm.subcontractors}
+                onStatusChange={updateVisitSubcontractorStatusDraft}
+                onToggle={toggleVisitSubcontractor}
+              />
               <div className="formActions wide">
                 <button className="addButton" type="submit" disabled={visitSaving || dictationBusy || !visitForm.project_id}>
                   <Save size={18} />
@@ -7510,7 +7903,7 @@ function CrewStatusGroup({ emptyText, people = [], title, tone }) {
   );
 }
 
-function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationBusy = false, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onDownloadArchive, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onUploaded, people, profileId, profiles, project, safetyLocked = false, today = getWinnipegDateValue(), visit }) {
+function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationBusy = false, equipment, featureFlags = defaultFeatureFlags, files, getProfileName, notes = [], onArrive, onClose, onComplete, onDownloadArchive, onEdit, onExportPdf, onOpenAttachment, onOpenNote, onRemove, onSubcontractorStatus, onUploaded, people, profileId, profiles, project, safetyLocked = false, subcontractors = [], today = getWinnipegDateValue(), visit }) {
   const ticketAddress = getVisitAddress(visit, project);
   const safetyEnabled = normalizeFeatureFlags(featureFlags).safetyForm;
   const dateRelation = compareDateValue(visit.visit_date, today);
@@ -7565,6 +7958,7 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
         <ProjectFact icon={ClipboardCheck} label="Assigned by" value={getProfileName(visit.assigned_by ?? visit.created_by)} />
         <ProjectFact icon={UsersRound} label="Team" value={people.map((person) => person.full_name || person.email).join(", ") || "No team assigned"} />
         <ProjectFact icon={Truck} label="Equipment" value={equipment.map((item) => item.name).join(", ") || "No equipment"} />
+        <ProjectFact icon={Construction} label="Subcontractors" value={subcontractors.map((item) => `${subcontractorDisplayName(item)} (${subcontractorStatusLabel(item.status)})`).join(", ") || "No subcontractors"} />
       </dl>
 
       {people.length > 0 && (
@@ -7577,6 +7971,45 @@ function VisitDetailOverlay({ canDeleteTickets, companyId, dictation, dictationB
             <CrewStatusGroup title="Arrived" tone="arrived" people={arrivedPeople} emptyText="No one marked arrived yet." />
             <CrewStatusGroup title="Not arrived yet" tone="waiting" people={notArrivedPeople} emptyText="Everyone is on site." />
             {safetyEnabled && <CrewStatusGroup title="Safety form missing" tone="missing" people={missingSafetyPeople} emptyText="All safety forms are signed." />}
+          </div>
+        </section>
+      )}
+
+      {subcontractors.length > 0 && (
+        <section className="subcontractorTicketCard">
+          <div className="panelSectionHeader">
+            <h3>Subcontractors</h3>
+            <span>{subcontractors.length}</span>
+          </div>
+          <div className="subcontractorTicketList">
+            {subcontractors.map((item) => {
+              const status = normalizeSubcontractorStatus(item.status);
+              return (
+                <article className={`subcontractorTicketItem ${status}`} key={item.subcontractor_id || item.id}>
+                  <span className="subcontractorAvatar">
+                    <Construction size={20} />
+                  </span>
+                  <div>
+                    <strong>{subcontractorDisplayName(item)}</strong>
+                    <small>{item.trade || "Subcontractor"}{item.contact_person ? ` / ${item.contact_person}` : ""}</small>
+                    {(item.phone || item.email) && <small>{[item.phone, item.email].filter(Boolean).join(" / ")}</small>}
+                  </div>
+                  <em className={`subcontractorStatusBadge ${status}`}>{subcontractorStatusLabel(status)}</em>
+                  {canDeleteTickets && status !== "completed" && (
+                    <div className="subcontractorStatusActions">
+                      {status === "planned" && (
+                        <button className="outlineButton" type="button" onClick={() => onSubcontractorStatus?.({ subcontractorId: item.subcontractor_id || item.id, status: "confirmed", visitId: visit.id })}>
+                          Confirm
+                        </button>
+                      )}
+                      <button className="addButton compactButton" type="button" onClick={() => onSubcontractorStatus?.({ subcontractorId: item.subcontractor_id || item.id, status: "completed", visitId: visit.id })}>
+                        Complete
+                      </button>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
           </div>
         </section>
       )}
@@ -8659,7 +9092,7 @@ function SelectedPhotoCaptionCard({ caption, dictation, file, onCaption }) {
   );
 }
 
-function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeople = [], avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projectRows = [], projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, visits = [], onAdd, onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onCreateVisitFromDrop, onDropAssignment, onOpenPerson, onOpenProject, onRemoveEquipmentFromVisit, onRemovePersonFromVisit, onRemoveVisit, onSelect }) {
+function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeople = [], avatarUrls, canDeleteTickets, equipmentRows, peopleRows, projectRows = [], projects = [], scheduleMode, selectedDate, setScheduleMode, setSelectedDate, subcontractors = [], visits = [], onAdd, onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onAssignSubcontractor, onCreateVisitFromDrop, onDropAssignment, onOpenPerson, onOpenProject, onRemoveEquipmentFromVisit, onRemovePersonFromVisit, onRemoveVisit, onSelect }) {
   const [dragPreview, setDragPreview] = useState(null);
   const [peopleGroupDrag, setPeopleGroupDrag] = useState(null);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -8772,7 +9205,7 @@ function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeop
             />
           )}
 
-          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} peopleGroupDrag={peopleGroupDrag} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignEquipment={onAssignEquipment} onAssignPerson={onAssignPerson} onAssignPeopleGroup={onAssignPeopleGroup} onCreateVisitFromDrop={onCreateVisitFromDrop} onDropAssignment={onDropAssignment} onOpenPerson={onOpenPerson} onOpenProject={onOpenProject} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
+          <ResourceGroup avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} dragPreview={dragPreview} peopleGroupDrag={peopleGroupDrag} setDragPreview={setDragPreview} title="Projects" count={projectRows.length} icon={FolderKanban} rows={projectRows} selectedDate={selectedDate} visits={visits} onAssignEquipment={onAssignEquipment} onAssignPerson={onAssignPerson} onAssignPeopleGroup={onAssignPeopleGroup} onAssignSubcontractor={onAssignSubcontractor} onCreateVisitFromDrop={onCreateVisitFromDrop} onDropAssignment={onDropAssignment} onOpenPerson={onOpenPerson} onOpenProject={onOpenProject} onRemoveVisit={onRemoveVisit} onSelect={onSelect} />
         </div>
       ) : (
         <CalendarTileGrid equipment={equipmentRows} mode={scheduleMode} people={peopleRows} projects={projects} selectedDate={selectedDate} today={today} visits={visits} onSelectDay={openDay} />
@@ -8782,6 +9215,7 @@ function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeop
         <div className="availablePools">
           <AvailablePeoplePool avatarUrls={avatarUrls} people={availablePeople} onGroupDragEnd={() => setPeopleGroupDrag(null)} onGroupDragStart={setPeopleGroupDrag} onOpenPerson={onOpenPerson} onRemovePersonFromVisit={onRemovePersonFromVisit} />
           <AvailableEquipmentPool equipment={availableEquipment} onRemoveEquipmentFromVisit={onRemoveEquipmentFromVisit} />
+          <AvailableSubcontractorPool subcontractors={subcontractors} />
         </div>
       )}
     </>
@@ -9264,6 +9698,73 @@ function EquipmentView({ equipment, onEdit }) {
   );
 }
 
+function SubcontractorForm({ dictation, form, loading, onChange, onSubmit }) {
+  return (
+    <form className="stackForm subcontractorForm" onSubmit={onSubmit}>
+      <FormField label="Company name">
+        <input required value={form.company_name} onChange={(event) => onChange({ ...form, company_name: event.target.value })} />
+      </FormField>
+      <FormField label="Contact person">
+        <input value={form.contact_person} onChange={(event) => onChange({ ...form, contact_person: event.target.value })} />
+      </FormField>
+      <div className="twoColumns">
+        <FormField label="Phone">
+          <input autoComplete="tel" type="tel" value={form.phone} onChange={(event) => onChange({ ...form, phone: event.target.value })} />
+        </FormField>
+        <FormField label="Email">
+          <input autoComplete="email" type="email" value={form.email} onChange={(event) => onChange({ ...form, email: event.target.value })} />
+        </FormField>
+      </div>
+      <FormField label="Trade">
+        <select value={form.trade} onChange={(event) => onChange({ ...form, trade: event.target.value })}>
+          {subcontractorTradeOptions.map((trade) => (
+            <option value={trade} key={trade}>
+              {trade}
+            </option>
+          ))}
+        </select>
+      </FormField>
+      <FormField label="Notes">
+        <VoiceTextArea dictation={dictation} value={form.notes} onChange={(value) => onChange({ ...form, notes: value })} />
+      </FormField>
+      <div className="formActions">
+        <button className="addButton" type="submit" disabled={loading}>
+          <Save size={18} />
+          {loading ? "Saving..." : "Save subcontractor"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function SubcontractorsView({ onDelete, onEdit, subcontractors = [] }) {
+  const sorted = [...subcontractors].sort((a, b) => subcontractorDisplayName(a).localeCompare(subcontractorDisplayName(b)));
+  return (
+    <div className="listView subcontractorsList">
+      {sorted.length === 0 && <div className="emptyState">No subcontractors yet. Press Add to create vendor companies for Schedule.</div>}
+      {sorted.map((item) => (
+        <div className="listRow subcontractorListRow" key={item.id}>
+          <span className="subcontractorAvatar">
+            <Construction size={22} />
+          </span>
+          <span>
+            <strong>{subcontractorDisplayName(item)}</strong>
+            <small>{item.contact_person || item.phone || item.email || "No contact saved"}</small>
+            <small>{[item.phone, item.email].filter(Boolean).join(" / ") || "Contact details can be added later"}</small>
+          </span>
+          <em>{item.trade || "Other"}</em>
+          <button className="iconButton soft" type="button" title="Edit subcontractor" onClick={() => onEdit?.(item)}>
+            <Edit3 size={17} />
+          </button>
+          <button className="iconButton danger" type="button" title="Remove subcontractor" onClick={() => onDelete?.(item)}>
+            <Trash2 size={17} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DocumentsView({ featureFlags = defaultFeatureFlags, files, isRefreshing = false, onOpen, profiles, projects }) {
   const flags = normalizeFeatureFlags(featureFlags);
   const sortedFiles = [...files].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
@@ -9543,6 +10044,8 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
         const callablePhone = sitePhone.replace(/[^\d+]/g, "");
         const assignedPeople = (data.people ?? []).filter((person) => visit.people_ids?.includes(person.id));
         const assignedEquipment = (data.equipment ?? []).filter((item) => visit.equipment_ids?.includes(item.id));
+        const subcontractorLookup = new Map((data.subcontractors ?? []).map((item) => [item.id, item]));
+        const assignedSubcontractors = normalizeVisitSubcontractorAssignments(visit, subcontractorLookup);
         const ticketAddress = getVisitAddress(visit, project);
 
         return (
@@ -9627,6 +10130,20 @@ function OverviewView({ data, getProfileName, getVisitFiles, onArrive, onComplet
                   </div>
                 ) : (
                   <p>No equipment assigned.</p>
+                )}
+              </section>
+              <section>
+                <h3>Subcontractors</h3>
+                {assignedSubcontractors.length ? (
+                  <div className="overviewChipList subcontractorOverviewChips">
+                    {assignedSubcontractors.map((item) => (
+                      <span className={normalizeSubcontractorStatus(item.status)} key={item.subcontractor_id || item.id}>
+                        {subcontractorDisplayName(item)} / {subcontractorStatusLabel(item.status)}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p>No subcontractors assigned.</p>
                 )}
               </section>
             </div>
@@ -9900,6 +10417,7 @@ function SettingsHub({ canManage, canUseDeveloperMode, featureFlags = defaultFea
   const quickLinks = [
     canManage ? { id: "people", label: "People", text: "Approve requests, roles, trades, availability.", icon: UsersRound } : null,
     canManage ? { id: "equipment", label: "Equipment", text: "Manage equipment avatars and units.", icon: Truck } : null,
+    canManage ? { id: "subcontractors", label: "Subcontractors", text: "Manage vendor companies for tickets and Schedule.", icon: Construction } : null,
     { id: "documents", label: "Documents", text: "Browse project files, photos, PDF, and Excel.", icon: FileText },
     flags.safetyForm ? { id: "safetyReports", label: "Safety Reports", text: "Open saved Safety Form PDFs.", icon: ClipboardCheck } : null,
   ].filter(Boolean);
@@ -10352,6 +10870,49 @@ function PickerList({ title, items, selected, labelKey, onToggle }) {
   );
 }
 
+function SubcontractorPickerList({ items = [], onStatusChange, onToggle, selected = [] }) {
+  const selectedById = new Map((selected ?? []).map((item) => [item.subcontractor_id, item]));
+  return (
+    <fieldset className="pickerList subcontractorPickerList wide">
+      <legend>Subcontractors</legend>
+      {items.length === 0 && <span className="mutedLine">No subcontractors yet. Add them in Settings first.</span>}
+      {items.map((item) => {
+        const assignment = selectedById.get(item.id);
+        const checked = Boolean(assignment);
+        const status = normalizeSubcontractorStatus(assignment?.status);
+        return (
+          <label className={checked ? "pickerOption subcontractorPickerOption active" : "pickerOption subcontractorPickerOption"} key={item.id}>
+            <input type="checkbox" checked={checked} onChange={() => onToggle(item.id)} />
+            <span className="subcontractorAvatar small">
+              <Construction size={17} />
+            </span>
+            <span className="pickerOptionText">
+              <strong>{subcontractorDisplayName(item)}</strong>
+              <small>{item.trade || "Other"}{item.contact_person ? ` / ${item.contact_person}` : ""}</small>
+            </span>
+            {checked ? (
+              <select
+                className={`subcontractorStatusSelect ${status}`}
+                value={status}
+                onChange={(event) => onStatusChange(item.id, event.target.value)}
+                onClick={(event) => event.stopPropagation()}
+              >
+                {subcontractorStatusOptions.map((option) => (
+                  <option value={option.value} key={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <em className="resourceStatusChip subcontractorChip">{item.trade || "Vendor"}</em>
+            )}
+          </label>
+        );
+      })}
+    </fieldset>
+  );
+}
+
 function GroupedPickerList({ groups = [], onToggle, selected = [], title }) {
   return (
     <fieldset className="pickerList groupedPickerList">
@@ -10738,7 +11299,7 @@ function AuthGate({
   );
 }
 
-function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleGroupDrag, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onCreateVisitFromDrop, onDropAssignment, onOpenPerson, onOpenProject, onRemoveVisit, onSelect }) {
+function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleGroupDrag, setDragPreview, title, count, icon: Icon, rows, selectedDate, visits = [], onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onAssignSubcontractor, onCreateVisitFromDrop, onDropAssignment, onOpenPerson, onOpenProject, onRemoveVisit, onSelect }) {
   return (
     <div className="resourceGroup">
       <div className="groupLabel">
@@ -10845,7 +11406,7 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleG
                 project_id: assignment.projectId,
                 visit_date: selectedDate,
               };
-              return <ScheduleBlock assignment={assignment} avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} key={assignment.id || assignment.visitId} peopleGroupDrag={peopleGroupDrag} visits={visits} onAssignEquipment={onAssignEquipment} onAssignPerson={onAssignPerson} onAssignPeopleGroup={onAssignPeopleGroup} onOpenPerson={onOpenPerson} onRemove={() => onRemoveVisit?.(visit)} onSelect={onSelect} />;
+              return <ScheduleBlock assignment={assignment} avatarUrls={avatarUrls} canDeleteTickets={canDeleteTickets} key={assignment.id || assignment.visitId} peopleGroupDrag={peopleGroupDrag} visits={visits} onAssignEquipment={onAssignEquipment} onAssignPerson={onAssignPerson} onAssignPeopleGroup={onAssignPeopleGroup} onAssignSubcontractor={onAssignSubcontractor} onOpenPerson={onOpenPerson} onRemove={() => onRemoveVisit?.(visit)} onSelect={onSelect} />;
             })}
           </div>
         </div>
@@ -10994,7 +11555,44 @@ function AvailableEquipmentPool({ equipment = [], onRemoveEquipmentFromVisit }) 
   );
 }
 
-function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGroupDrag, visits = [], onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onOpenPerson, onRemove, onSelect }) {
+function AvailableSubcontractorPool({ subcontractors = [] }) {
+  const sorted = [...subcontractors].filter((item) => item.is_active !== false).sort((a, b) => subcontractorDisplayName(a).localeCompare(subcontractorDisplayName(b)));
+
+  return (
+    <section className="availablePeoplePool availableSubcontractorPool">
+      <div>
+        <strong>Subcontractors</strong>
+        <span>{sorted.length ? "Drag a subcontractor into a ticket" : "Add subcontractors in Settings"}</span>
+      </div>
+      <div className="availableSubcontractorStrip">
+        {sorted.map((item) => (
+          <button
+            className="availableSubcontractorCard"
+            draggable
+            key={item.id}
+            type="button"
+            title={`${subcontractorDisplayName(item)} / ${item.trade || "Subcontractor"} / ${item.contact_person || "No contact"}`}
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "copy";
+              event.dataTransfer.setData("application/x-buildcore-subcontractor", item.id);
+              setCompactDragImage(event, { count: 1, label: item.trade || "Subcontractor", tone: "vendor" });
+            }}
+          >
+            <span className="subcontractorAvatar small">
+              <Construction size={17} />
+            </span>
+            <span>
+              <strong>{subcontractorDisplayName(item)}</strong>
+              <small>{item.trade || "Other"}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGroupDrag, visits = [], onAssignEquipment, onAssignPerson, onAssignPeopleGroup, onAssignSubcontractor, onOpenPerson, onRemove, onSelect }) {
   const [dropHint, setDropHint] = useState(null);
   const span = scheduleEndHour - scheduleStartHour;
   const left = Math.max(0, ((assignment.start - scheduleStartHour) / span) * 100);
@@ -11038,7 +11636,8 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
           event.dataTransfer.types.includes("application/x-buildcore-person-group") ||
           event.dataTransfer.types.includes("application/x-buildcore-assigned-person") ||
           event.dataTransfer.types.includes("application/x-buildcore-equipment") ||
-          event.dataTransfer.types.includes("application/x-buildcore-assigned-equipment")
+          event.dataTransfer.types.includes("application/x-buildcore-assigned-equipment") ||
+          event.dataTransfer.types.includes("application/x-buildcore-subcontractor")
         ) {
           event.preventDefault();
           event.stopPropagation();
@@ -11063,6 +11662,9 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
           } else if (event.dataTransfer.types.includes("application/x-buildcore-equipment") || event.dataTransfer.types.includes("application/x-buildcore-assigned-equipment")) {
             event.dataTransfer.dropEffect = "copy";
             setDropHint({ label: "+ equipment", detail: "Assign to ticket", tone: "ready" });
+          } else if (event.dataTransfer.types.includes("application/x-buildcore-subcontractor")) {
+            event.dataTransfer.dropEffect = "copy";
+            setDropHint({ label: "+ subcontractor", detail: "Add as Planned", tone: "ready" });
           } else {
             setDropHint({ label: "+ person", detail: "Assign to ticket", tone: "ready" });
           }
@@ -11078,8 +11680,9 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
         const assignedPersonRaw = event.dataTransfer.getData("application/x-buildcore-assigned-person");
         const equipmentId = event.dataTransfer.getData("application/x-buildcore-equipment");
         const assignedEquipmentRaw = event.dataTransfer.getData("application/x-buildcore-assigned-equipment");
+        const subcontractorId = event.dataTransfer.getData("application/x-buildcore-subcontractor");
         const hasPeopleGroupDrag = Boolean(peopleGroupDrag && event.dataTransfer.types.includes("application/x-buildcore-person-group"));
-        if (!personId && !personGroupRaw && !hasPeopleGroupDrag && !assignedPersonRaw && !equipmentId && !assignedEquipmentRaw) return;
+        if (!personId && !personGroupRaw && !hasPeopleGroupDrag && !assignedPersonRaw && !equipmentId && !assignedEquipmentRaw && !subcontractorId) return;
         event.preventDefault();
         event.stopPropagation();
         setDropHint(null);
@@ -11098,6 +11701,10 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
         }
         if (equipmentId) {
           onAssignEquipment?.({ equipmentId, visitId: assignment.visitId });
+          return;
+        }
+        if (subcontractorId) {
+          onAssignSubcontractor?.({ subcontractorId, visitId: assignment.visitId });
           return;
         }
         if (assignedPersonRaw) {
@@ -11132,7 +11739,7 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
         {assignment.status && <em className="scheduleBlockStatus">{assignment.recordType === "siteVisit" && assignment.status === "completed" ? "Done" : normalizeVisitStatus(assignment.status)}</em>}
       </span>
       {assignment.timeText && <small className="scheduleBlockTime">{assignment.timeText}</small>}
-      {(assignment.people?.length > 0 || assignment.equipment?.length > 0) && (
+      {(assignment.people?.length > 0 || assignment.equipment?.length > 0 || assignment.subcontractors?.length > 0) && (
         <div className="assignmentResources">
           {assignment.people?.length > 0 && (
             <div className="assignmentResourceRow peopleRow">
@@ -11191,6 +11798,23 @@ function ScheduleBlock({ assignment, avatarUrls = {}, canDeleteTickets, peopleGr
                       <small>{item.unit_number || item.type || "Equipment"}</small>
                     </span>
                   </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {assignment.subcontractors?.length > 0 && (
+            <div className="assignmentResourceRow subcontractorRow">
+              <span className="assignmentResourceLabel">Subcontractors</span>
+              <div className="assignmentResourceItems subcontractorResourceItems">
+                {assignment.subcontractors.map((item) => (
+                  <span className={`scheduleSubcontractorCard ${normalizeSubcontractorStatus(item.status)}`} key={item.subcontractor_id || item.id} title={`${subcontractorDisplayName(item)} / ${item.trade || "Subcontractor"} / ${subcontractorStatusLabel(item.status)}`}>
+                    <Construction size={14} />
+                    <span>
+                      <strong>{item.trade || "Subcontractor"}</strong>
+                      <small>{subcontractorDisplayName(item)}</small>
+                    </span>
+                    <em>{subcontractorStatusLabel(item.status)}</em>
+                  </span>
                 ))}
               </div>
             </div>

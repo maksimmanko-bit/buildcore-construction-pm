@@ -36,6 +36,20 @@ function changeOrderStatusLabel(status) {
   return status === "approved" || status === "completed" ? "Approved" : "Requested";
 }
 
+function subcontractorName(item) {
+  return text(item?.company_name || item?.name || "Subcontractor");
+}
+
+function subcontractorStatusLabel(status) {
+  if (status === "confirmed") return "Confirmed";
+  if (status === "completed") return "Completed";
+  return "Planned";
+}
+
+function subcontractorSummary(items = []) {
+  return items.map((item) => `${subcontractorName(item)} (${item.trade || "Subcontractor"} / ${subcontractorStatusLabel(item.status)})`).join(", ");
+}
+
 async function loadPublicAssetDataUrl(path) {
   const base = import.meta.env?.BASE_URL || "/";
   const normalizedBase = base.endsWith("/") ? base : `${base}/`;
@@ -183,7 +197,7 @@ async function maybeAddPhoto(doc, file, y) {
   }
 }
 
-function ticketRow(visit, project, people, equipment, getProfileName) {
+function ticketRow(visit, project, people, equipment, subcontractors, getProfileName) {
   return [
     project?.job_number || "",
     project?.name || "",
@@ -193,6 +207,7 @@ function ticketRow(visit, project, people, equipment, getProfileName) {
     visit.work_scope || "",
     people.map((person) => person.full_name || person.email).join(", "),
     equipment.map((item) => item.name).join(", "),
+    subcontractorSummary(subcontractors),
     getProfileName?.(visit.assigned_by ?? visit.created_by, "") || "",
     visit.arrived_at || "",
     visit.completed_at || "",
@@ -217,15 +232,18 @@ export function exportProjectsXlsx(projects = [], getProfileName) {
   downloadBlob(makeWorkbook(rows), "buildcore-projects.xlsx");
 }
 
-export function exportProjectTicketsXlsx({ project, visits = [], people = [], equipment = [], getProfileName }) {
+export function exportProjectTicketsXlsx({ project, visits = [], people = [], equipment = [], subcontractors = [], getProfileName }) {
   const rows = [
-    ["Job number", "Project", "Date", "Scheduled time", "Status", "Work scope", "People", "Equipment", "Assigned by", "Actual start", "Actual finish"],
+    ["Job number", "Project", "Date", "Scheduled time", "Status", "Work scope", "People", "Equipment", "Subcontractors", "Assigned by", "Actual start", "Actual finish"],
     ...visits.map((visit) =>
       ticketRow(
         visit,
         project,
         people.filter((person) => visit.people_ids?.includes(person.id)),
         equipment.filter((item) => visit.equipment_ids?.includes(item.id)),
+        Array.isArray(visit.subcontractors)
+          ? visit.subcontractors
+          : subcontractors.filter((item) => visit.subcontractor_ids?.includes(item.id)),
         getProfileName,
       ),
     ),
@@ -233,7 +251,7 @@ export function exportProjectTicketsXlsx({ project, visits = [], people = [], eq
   downloadBlob(makeWorkbook(rows), `${cleanFileName(project?.job_number || project?.name)}-tickets.xlsx`);
 }
 
-export async function exportVisitPdf({ visit, project, people = [], equipment = [], files = [], activities = [], getProfileName }) {
+export async function exportVisitPdf({ visit, project, people = [], equipment = [], subcontractors = [], files = [], activities = [], getProfileName }) {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   doc.setFillColor(17, 24, 39);
   doc.rect(0, 0, 612, 86, "F");
@@ -255,6 +273,7 @@ export async function exportVisitPdf({ visit, project, people = [], equipment = 
   y = addWrapped(doc, `Assigned by: ${getProfileName?.(visit.assigned_by ?? visit.created_by, "Not set")}`, 50, y + 4, 500);
   y = addWrapped(doc, `People: ${people.map((person) => person.full_name || person.email).join(", ") || "-"}`, 50, y + 4, 500);
   y = addWrapped(doc, `Equipment: ${equipment.map((item) => item.name).join(", ") || "-"}`, 50, y + 4, 500);
+  y = addWrapped(doc, `Subcontractors: ${subcontractorSummary(subcontractors) || "-"}`, 50, y + 4, 500);
 
   y = addSection(doc, "Work", y + 18);
   y = addWrapped(doc, `Project description: ${project?.description || "-"}`, 50, y, 500);
@@ -276,7 +295,7 @@ export async function exportVisitPdf({ visit, project, people = [], equipment = 
   downloadBlob(doc.output("blob"), `${cleanFileName(project?.job_number || project?.name)}-${visit.visit_date}-ticket.pdf`);
 }
 
-export async function exportProjectPdf({ project, visits = [], people = [], equipment = [], files = [], activities = [], getProfileName }) {
+export async function exportProjectPdf({ project, visits = [], people = [], equipment = [], subcontractors = [], files = [], activities = [], getProfileName }) {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   doc.setFillColor(17, 24, 39);
   doc.rect(0, 0, 612, 86, "F");
@@ -299,10 +318,14 @@ export async function exportProjectPdf({ project, visits = [], people = [], equi
   for (const visit of visits) {
     const visitPeople = people.filter((person) => visit.people_ids?.includes(person.id));
     const visitEquipment = equipment.filter((item) => visit.equipment_ids?.includes(item.id));
+    const visitSubcontractors = Array.isArray(visit.subcontractors)
+      ? visit.subcontractors
+      : subcontractors.filter((item) => visit.subcontractor_ids?.includes(item.id));
     y = addWrapped(doc, `${dateLabel(visit.visit_date)} / ${timeRange(visit.start_time, visit.end_time)} / ${visit.status || ""}`, 50, y, 500);
     y = addWrapped(doc, `Scope: ${visit.work_scope || "-"}`, 62, y + 2, 486);
     y = addWrapped(doc, `People: ${visitPeople.map((person) => person.full_name || person.email).join(", ") || "-"}`, 62, y + 2, 486);
     y = addWrapped(doc, `Equipment: ${visitEquipment.map((item) => item.name).join(", ") || "-"}`, 62, y + 2, 486);
+    y = addWrapped(doc, `Subcontractors: ${subcontractorSummary(visitSubcontractors) || "-"}`, 62, y + 2, 486);
     y += 8;
   }
 

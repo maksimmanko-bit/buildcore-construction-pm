@@ -10731,6 +10731,356 @@ html {
   border-radius: 11px;
 }
 
+.subcontractorAvatar {
+  display: inline-grid;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(71, 85, 105, 0.16);
+  border-radius: 15px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.72)),
+    #f8fafc;
+  color: #0f172a;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 12px 24px rgba(15, 23, 42, 0.1);
+}
+
+.subcontractorAvatar.small {
+  flex-basis: 30px;
+  width: 30px;
+  height: 30px;
+  border-radius: 11px;
+}
+
+.subcontractorListRow {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+}
+
+.subcontractorListRow small {
+  color: #64748b;
+  font-weight: 800;
+}
+
+.subcontractorForm .formGrid.wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.subcontractorPickerList {
+  grid-column: 1 / -1;
+}
+
+.subcontractorPickerOption {
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.subcontractorPickerOption.active {
+  border-color: rgba(37, 99, 235, 0.26);
+  background: linear-gradient(135deg, rgba(239, 246, 255, 0.92), rgba(255, 255, 255, 0.96));
+}
+
+.subcontractorStatusSelect {
+  width: min(138px, 34vw);
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.subcontractorStatusSelect.planned {
+  border-color: rgba(202, 138, 4, 0.28);
+  color: #854d0e;
+}
+
+.subcontractorStatusSelect.confirmed {
+  border-color: rgba(22, 163, 74, 0.28);
+  color: #166534;
+}
+
+.subcontractorStatusSelect.completed {
+  border-color: rgba(51, 65, 85, 0.24);
+  color: #334155;
+}
+
+.subcontractorChip,
+.subcontractorRow .assignmentResourceLabel {
+  border-color: rgba(30, 64, 175, 0.16);
+  background: rgba(239, 246, 255, 0.68);
+  color: rgba(30, 64, 175, 0.84);
+}
+
+.subcontractorRow {
+  border-style: dashed;
+  background: linear-gradient(135deg, rgba(239, 246, 255, 0.24), rgba(248, 250, 252, 0.16));
+}
+
+.subcontractorResourceItems {
+  align-items: stretch;
+  gap: 8px;
+}
+
+.scheduleSubcontractorCard {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: min(230px, 100%);
+  max-width: 100%;
+  padding: 7px 8px;
+  border: 1px dashed rgba(100, 116, 139, 0.34);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(241, 245, 249, 0.62));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  color: #0f172a;
+}
+
+.scheduleSubcontractorCard svg {
+  color: #334155;
+}
+
+.scheduleSubcontractorCard span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.scheduleSubcontractorCard strong,
+.scheduleSubcontractorCard small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scheduleSubcontractorCard strong {
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.scheduleSubcontractorCard small {
+  color: #475569;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.scheduleSubcontractorCard em,
+.subcontractorStatusBadge {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.scheduleSubcontractorCard.planned,
+.subcontractorTicketItem.planned {
+  border-style: dashed;
+  border-color: rgba(202, 138, 4, 0.36);
+  background: linear-gradient(135deg, rgba(254, 252, 232, 0.86), rgba(255, 255, 255, 0.74));
+}
+
+.scheduleSubcontractorCard.confirmed,
+.subcontractorTicketItem.confirmed {
+  border-style: solid;
+  border-color: rgba(22, 163, 74, 0.28);
+  background: linear-gradient(135deg, rgba(240, 253, 244, 0.88), rgba(255, 255, 255, 0.74));
+}
+
+.scheduleSubcontractorCard.completed,
+.subcontractorTicketItem.completed {
+  border-style: solid;
+  border-color: rgba(51, 65, 85, 0.22);
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.9), rgba(226, 232, 240, 0.56));
+}
+
+.scheduleSubcontractorCard.planned em,
+.subcontractorStatusBadge.planned {
+  background: rgba(254, 243, 199, 0.9);
+  color: #92400e;
+}
+
+.scheduleSubcontractorCard.confirmed em,
+.subcontractorStatusBadge.confirmed {
+  background: rgba(220, 252, 231, 0.92);
+  color: #166534;
+}
+
+.scheduleSubcontractorCard.completed em,
+.subcontractorStatusBadge.completed {
+  background: rgba(226, 232, 240, 0.92);
+  color: #334155;
+}
+
+.availableSubcontractorPool {
+  border-color: rgba(30, 64, 175, 0.12);
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.92), rgba(239, 246, 255, 0.7));
+}
+
+.availableSubcontractorStrip {
+  display: grid;
+  gap: 8px;
+}
+
+.availableSubcontractorCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #0f172a;
+  cursor: grab;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.84),
+    0 12px 24px rgba(15, 23, 42, 0.08);
+}
+
+.availableSubcontractorCard:active {
+  cursor: grabbing;
+}
+
+.availableSubcontractorCard strong,
+.availableSubcontractorCard small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.availableSubcontractorCard strong {
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.availableSubcontractorCard small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.availableSubcontractorCard em {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.subcontractorTicketCard {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.88));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 18px 42px rgba(15, 23, 42, 0.08);
+}
+
+.subcontractorTicketCard header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.subcontractorTicketCard h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.subcontractorTicketCard header span {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.subcontractorTicketList {
+  display: grid;
+  gap: 10px;
+}
+
+.subcontractorTicketItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 18px;
+}
+
+.subcontractorTicketItem strong,
+.subcontractorTicketItem small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subcontractorTicketItem strong {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.subcontractorTicketItem small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.subcontractorStatusActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.subcontractorOverviewChips span {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.subcontractorOverviewChips .planned {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.subcontractorOverviewChips .confirmed {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.subcontractorOverviewChips .completed {
+  background: #e2e8f0;
+  color: #334155;
+}
+
 .crewAvatarButton + .crewAvatarButton {
   margin-left: 0;
 }
@@ -12173,6 +12523,59 @@ html {
   box-shadow: 0 18px 36px rgba(220, 38, 38, 0.25);
   font-weight: 900;
   cursor: pointer;
+}
+
+@media (max-width: 860px) {
+  .subcontractorListRow,
+  .subcontractorTicketItem {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .subcontractorListRow .rowActions,
+  .subcontractorStatusBadge,
+  .subcontractorStatusActions {
+    grid-column: 1 / -1;
+  }
+
+  .subcontractorStatusActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .subcontractorPickerOption {
+    grid-template-columns: auto auto minmax(0, 1fr);
+  }
+
+  .subcontractorPickerOption .subcontractorStatusSelect,
+  .subcontractorPickerOption .resourceStatusChip {
+    grid-column: 2 / -1;
+    width: 100%;
+  }
+
+  .availableSubcontractorCard {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .availableSubcontractorCard em {
+    grid-column: 2;
+    width: fit-content;
+  }
+
+  .scheduleBlock .subcontractorResourceItems {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scheduleSubcontractorCard {
+    min-width: 0;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .scheduleSubcontractorCard em {
+    grid-column: 2;
+    width: fit-content;
+  }
 }
 
 @media (max-width: 860px) {

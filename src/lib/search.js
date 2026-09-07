@@ -2,6 +2,7 @@ const searchableFields = {
   project: ["job_number", "name", "address", "contact_name", "contact_email", "contact_phone", "description"],
   person: ["full_name", "role", "trade", "phone"],
   equipment: ["name", "type", "unit_number", "status"],
+  subcontractor: ["company_name", "contact_person", "phone", "email", "trade", "notes"],
   visit: ["visit_date", "start_time", "end_time", "work_scope", "office_notes", "status"],
   siteVisit: ["visit_date", "start_time", "end_time", "description", "status"],
   changeOrder: ["order_number", "order_date", "order_time", "description", "proposed_work", "approved_by", "status"],
@@ -38,8 +39,8 @@ function collectMatches(type, rows, query) {
       return {
         id: `${type}-${row.id}`,
         type,
-        title: row.name ?? row.full_name ?? row.file_name ?? row.visit_date ?? row.order_date,
-        subtitle: row.address ?? row.trade ?? row.type ?? row.project_name ?? row.status ?? row.approved_by,
+        title: row.name ?? row.company_name ?? row.full_name ?? row.file_name ?? row.visit_date ?? row.order_date,
+        subtitle: row.address ?? row.trade ?? row.contact_person ?? row.type ?? row.project_name ?? row.status ?? row.approved_by,
         snippet: makeSnippet(row[matchedField], query),
         fileKind: row.file_kind,
       };
@@ -54,6 +55,7 @@ export function localGlobalSearch(data, query) {
     ...collectMatches("project", data.projects, normalized),
     ...collectMatches("person", data.people, normalized),
     ...collectMatches("equipment", data.equipment, normalized),
+    ...collectMatches("subcontractor", data.subcontractors ?? [], normalized),
     ...collectMatches("visit", data.visits, normalized),
     ...collectMatches("siteVisit", data.siteVisits ?? [], normalized),
     ...collectMatches("changeOrder", data.changeOrders ?? [], normalized),
