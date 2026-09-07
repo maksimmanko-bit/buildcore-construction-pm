@@ -5887,17 +5887,19 @@ export default function App() {
     return { start_time: toTimeValue(startHour), end_time: toTimeValue(endHour) };
   }
 
-  async function openVisitModalFromScheduleDrop({ clientX, groupLabel, personId, personIds, projectId, trackElement }) {
+  async function openVisitModalFromScheduleDrop({ clientX, groupLabel, personId, personIds, projectId, subcontractorId, trackElement }) {
     const requestedPersonIds = [...new Set(personIds?.length ? personIds : personId ? [personId] : [])];
-    if (requestedPersonIds.length === 0) return;
+    if (requestedPersonIds.length === 0 && !subcontractorId) return;
     const selectedPeople = requestedPersonIds
       .map((id) => rowsSource.people.find((item) => item.id === id))
       .filter(Boolean);
+    const selectedSubcontractor = subcontractorId ? rowsSource.subcontractors.find((item) => item.id === subcontractorId && item.is_active !== false) : null;
     const project = rowsSource.projects.find((item) => item.id === projectId);
-    if (selectedPeople.length === 0) return;
+    if (requestedPersonIds.length > 0 && selectedPeople.length === 0) return;
+    if (subcontractorId && !selectedSubcontractor) return;
     const availablePeople = selectedPeople.filter((person) => person.availability_status !== "not_available");
     const skippedCount = selectedPeople.length - availablePeople.length;
-    if (availablePeople.length === 0) {
+    if (requestedPersonIds.length > 0 && availablePeople.length === 0) {
       setNotice(groupLabel ? `${groupLabel} has no available people for this ticket.` : `${profileDisplayName(selectedPeople[0])} is marked Not Available.`);
       return;
     }
@@ -5908,12 +5910,17 @@ export default function App() {
       project_id: project?.id ?? "",
       address: primaryProjectAddress(project),
       people_ids: availablePeople.map((person) => person.id),
+      subcontractors: selectedSubcontractor ? [{ subcontractor_id: selectedSubcontractor.id, status: "planned" }] : [],
     });
-    setNotice(
-      availablePeople.length > 1
-        ? `${availablePeople.length} people from ${groupLabel || "group"} selected for the new ticket${skippedCount ? `, ${skippedCount} skipped` : ""}.`
-        : `${profileDisplayName(availablePeople[0])} selected for the new ticket.`,
-    );
+    if (selectedSubcontractor && availablePeople.length === 0) {
+      setNotice(`${subcontractorDisplayName(selectedSubcontractor)} selected for the new ticket.`);
+    } else {
+      setNotice(
+        availablePeople.length > 1
+          ? `${availablePeople.length} people from ${groupLabel || "group"} selected for the new ticket${skippedCount ? `, ${skippedCount} skipped` : ""}.`
+          : `${profileDisplayName(availablePeople[0])} selected for the new ticket.`,
+      );
+    }
   }
 
   function openChangeOrderForVisit(visit = currentVisit) {
@@ -9519,9 +9526,12 @@ function ScheduleView({ assignmentsReady, availableEquipment = [], availablePeop
 }
 
 function EmptyScheduleDropZone({ dragPreview, onCreateVisitFromDrop, setDragPreview }) {
-  const acceptsAvailablePeople = (event) => event.dataTransfer.types.includes("application/x-buildcore-person") || event.dataTransfer.types.includes("application/x-buildcore-person-group");
+  const acceptsAvailableResource = (event) =>
+    event.dataTransfer.types.includes("application/x-buildcore-person") ||
+    event.dataTransfer.types.includes("application/x-buildcore-person-group") ||
+    event.dataTransfer.types.includes("application/x-buildcore-subcontractor");
   const updatePreview = (event) => {
-    if (!acceptsAvailablePeople(event)) return;
+    if (!acceptsAvailableResource(event)) return;
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     const percent = Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width)));
@@ -9548,10 +9558,11 @@ function EmptyScheduleDropZone({ dragPreview, onCreateVisitFromDrop, setDragPrev
         onDragLeave={() => setDragPreview?.(null)}
         onDragOver={updatePreview}
         onDrop={(event) => {
-          if (!acceptsAvailablePeople(event)) return;
+          if (!acceptsAvailableResource(event)) return;
           event.preventDefault();
           const personId = event.dataTransfer.getData("application/x-buildcore-person");
           const groupRaw = event.dataTransfer.getData("application/x-buildcore-person-group");
+          const subcontractorId = event.dataTransfer.getData("application/x-buildcore-subcontractor");
           const group = groupRaw ? JSON.parse(groupRaw) : null;
           setDragPreview?.(null);
           onCreateVisitFromDrop?.({
@@ -9559,12 +9570,13 @@ function EmptyScheduleDropZone({ dragPreview, onCreateVisitFromDrop, setDragPrev
             groupLabel: group?.trade,
             personId,
             personIds: group?.personIds,
+            subcontractorId,
             trackElement: event.currentTarget,
           });
         }}
       >
         {dragPreview?.rowId === "__empty__" && <div className="dragPreview" style={{ left: `${dragPreview.left}%`, width: `${dragPreview.width}%` }}>{dragPreview.label}</div>}
-        <div className="emptyTimeline">Drag an available person or group here to create a ticket.</div>
+        <div className="emptyTimeline">Drag an available person, group, or subcontractor here to create a ticket.</div>
       </div>
     </div>
   );
@@ -11675,7 +11687,8 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleG
               const raw = event.dataTransfer.getData("application/json");
               const personId = event.dataTransfer.getData("application/x-buildcore-person");
               const hasPersonGroup = event.dataTransfer.types.includes("application/x-buildcore-person-group");
-              if (!raw && !(row.kind === "project" && (personId || hasPersonGroup))) return;
+              const subcontractorId = event.dataTransfer.getData("application/x-buildcore-subcontractor");
+              if (!raw && !(row.kind === "project" && (personId || hasPersonGroup || subcontractorId))) return;
               const rect = event.currentTarget.getBoundingClientRect();
               const percent = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
               const assignment = raw ? JSON.parse(raw) : null;
@@ -11687,7 +11700,7 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleG
                 rowId: row.id,
                 left: ((start - scheduleStartHour) / (scheduleEndHour - scheduleStartHour)) * 100,
                 width: ((end - start) / (scheduleEndHour - scheduleStartHour)) * 100,
-                label: row.kind === "project" && !assignment && (personId || hasPersonGroup) ? `New ticket ${formatTimeRange(toTimeValue(start), toTimeValue(end))}` : formatTimeRange(toTimeValue(start), toTimeValue(end)),
+                label: row.kind === "project" && !assignment && (personId || hasPersonGroup || subcontractorId) ? `New ticket ${formatTimeRange(toTimeValue(start), toTimeValue(end))}` : formatTimeRange(toTimeValue(start), toTimeValue(end)),
               });
             }}
             onDrop={(event) => {
@@ -11701,9 +11714,10 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleG
               const personId = event.dataTransfer.getData("application/x-buildcore-person");
               const personGroupRaw = event.dataTransfer.getData("application/x-buildcore-person-group");
               const hasPersonGroup = Boolean(personGroupRaw);
-              if (!raw && !(row.kind === "project" && (personId || hasPersonGroup))) return;
+              const subcontractorId = event.dataTransfer.getData("application/x-buildcore-subcontractor");
+              if (!raw && !(row.kind === "project" && (personId || hasPersonGroup || subcontractorId))) return;
               setDragPreview?.(null);
-              if (row.kind === "project" && (personId || hasPersonGroup)) {
+              if (row.kind === "project" && (personId || hasPersonGroup || subcontractorId)) {
                 const group = personGroupRaw ? JSON.parse(personGroupRaw) : null;
                 onCreateVisitFromDrop?.({
                   clientX: event.clientX,
@@ -11711,6 +11725,7 @@ function ResourceGroup({ avatarUrls = {}, canDeleteTickets, dragPreview, peopleG
                   personId,
                   personIds: group?.personIds,
                   projectId: row.id,
+                  subcontractorId,
                   trackElement: event.currentTarget,
                 });
                 return;
